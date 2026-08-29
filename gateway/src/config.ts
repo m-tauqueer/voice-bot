@@ -36,6 +36,85 @@ const envFileSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GOOGLE_CALLBACK_URL: z.string().url(),
   GOOGLE_OIDC_DISCOVERY_URL: z.string().url(),
+  GOOGLE_SCOPES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("openid email profile"),
+  ),
+  GOOGLE_AUTH_PROMPT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("select_account"),
+  ),
+  GOOGLE_REQUIRE_EMAIL_VERIFIED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  GOOGLE_ID_TOKEN_ISSUERS: optionalNonEmpty,
+  GOOGLE_PKCE_METHOD: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("S256"),
+  ),
+  SESSION_COOKIE_NAME: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("vb_session"),
+  ),
+  SESSION_COOKIE_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/"),
+  ),
+  SESSION_COOKIE_SAMESITE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["lax", "strict", "none"]).default("lax"),
+  ),
+  SESSION_TTL_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(604800),
+  ),
+  SESSION_COOKIE_SECURE: z.preprocess((val) => {
+    if (val === undefined || val === "") return undefined;
+    return val;
+  }, z.enum(["true", "false"]).optional()),
+  SESSION_REDIS_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("session:"),
+  ),
+  SESSION_ID_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(32),
+  ),
+  OAUTH_REDIS_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("oauth:"),
+  ),
+  OAUTH_PENDING_TTL_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(600),
+  ),
+  OAUTH_TOKEN_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(32),
+  ),
+  OIDC_DISCOVERY_TTL_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(3600),
+  ),
+  OIDC_CLOCK_TOLERANCE_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(60),
+  ),
+  OIDC_HTTP_TIMEOUT_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(10000),
+  ),
+  WORKER_HTTP_TIMEOUT_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(120000),
+  ),
+  INTERNAL_SECRET_HEADER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("x-internal-secret"),
+  ),
+  POST_LOGIN_REDIRECT_URL: optionalUrl,
+  ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
   AZURE_STORAGE_KEY: optionalNonEmpty,
   AZURE_BLOB_CONTAINER: optionalNonEmpty,
@@ -78,5 +157,45 @@ export function loadGatewayConfig(
       .join("; ");
     throw new Error(`Invalid gateway environment: ${msg}`);
   }
+  const callback = new URL(parsed.data.GOOGLE_CALLBACK_URL);
+  const publicUrl = new URL(parsed.data.GATEWAY_PUBLIC_URL);
+  if (callback.origin !== publicUrl.origin) {
+    throw new Error(
+      "Invalid gateway environment: GOOGLE_CALLBACK_URL origin must match GATEWAY_PUBLIC_URL",
+    );
+  }
   return parsed.data;
+}
+
+export function sessionCookieSecure(config: GatewayConfig): boolean {
+  if (config.SESSION_COOKIE_SECURE === "true") {
+    return true;
+  }
+  if (config.SESSION_COOKIE_SECURE === "false") {
+    return false;
+  }
+  return config.NODE_ENV === "production";
+}
+
+export function googleCallbackPath(config: GatewayConfig): string {
+  return new URL(config.GOOGLE_CALLBACK_URL).pathname;
+}
+
+export function postLoginRedirectUrl(config: GatewayConfig): string {
+  return config.POST_LOGIN_REDIRECT_URL ?? config.FRONTEND_ORIGIN;
+}
+
+export function googleIdTokenIssuers(
+  config: GatewayConfig,
+  discoveryIssuer: string,
+): string[] {
+  if (config.GOOGLE_ID_TOKEN_ISSUERS) {
+    const issuers = config.GOOGLE_ID_TOKEN_ISSUERS.split(/\s+/).filter(
+      (value) => value.length > 0,
+    );
+    if (issuers.length > 0) {
+      return issuers;
+    }
+  }
+  return [discoveryIssuer];
 }

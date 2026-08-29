@@ -35,6 +35,7 @@ class WorkerSettings(BaseSettings):
     worker_port: int = Field(gt=0)
     database_url: str = Field(min_length=1)
     internal_api_secret: str = Field(min_length=16)
+    internal_secret_header: str = Field(default="x-internal-secret")
     engram_api_key: str | None = None
     engram_org_id: str | None = None
     engram_base_url: HttpUrl | None = None
@@ -45,6 +46,13 @@ class WorkerSettings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str | None = None
     openai_base_url: str | None = None
+
+    @field_validator("internal_secret_header", mode="before")
+    @classmethod
+    def default_internal_header(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip() == "":
+            return "x-internal-secret"
+        return value
 
     @field_validator(
         "engram_api_key",

@@ -6,6 +6,7 @@ import structlog
 import uvicorn
 from fastapi import FastAPI
 
+from worker.api.subscribe import build_subscribe_router
 from worker.config import WorkerSettings, load_settings
 
 settings = load_settings()
@@ -33,6 +34,7 @@ def _configure_logging(loaded: WorkerSettings) -> None:
 _configure_logging(settings)
 
 app = FastAPI(title="voice-bot-worker")
+app.include_router(build_subscribe_router(settings))
 
 
 @app.get("/health")
