@@ -21,6 +21,7 @@ import { upsertGoogleUser } from "../auth/users.js";
 import {
   type GatewayConfig,
   googleCallbackPath,
+  isOwnerEmail,
   postLoginRedirectUrl,
 } from "../config.js";
 
@@ -118,6 +119,7 @@ export async function registerAuthRoutes(
       id: user.id,
       email: user.email,
       engram_user_id: user.engramUserId,
+      owner: isOwnerEmail(user.email, config),
     };
   });
 }

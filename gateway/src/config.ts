@@ -26,6 +26,10 @@ const envFileSchema = z.object({
   GATEWAY_PORT: requiredPort,
   GATEWAY_PUBLIC_URL: z.string().url(),
   FRONTEND_ORIGIN: z.string().url(),
+  CORS_ALLOWED_METHODS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("GET,HEAD,POST,PUT,PATCH,DELETE"),
+  ),
   WORKER_URL: z.string().url(),
   BYO_LLM_PUBLIC_URL: optionalUrl,
   DATABASE_URL: z.string().min(1),
@@ -114,6 +118,14 @@ const envFileSchema = z.object({
     z.string().min(1).default("x-internal-secret"),
   ),
   POST_LOGIN_REDIRECT_URL: optionalUrl,
+  OWNER_EMAILS: z.preprocess(
+    (val) => (val === undefined ? "" : val),
+    z.string(),
+  ),
+  ADMIN_INGEST_MAX_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(8388608),
+  ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
   AZURE_STORAGE_KEY: optionalNonEmpty,
@@ -198,4 +210,22 @@ export function googleIdTokenIssuers(
     }
   }
   return [discoveryIssuer];
+}
+
+export function corsAllowedMethods(config: GatewayConfig): string[] {
+  return config.CORS_ALLOWED_METHODS.split(/[,\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => value.length > 0);
+}
+
+export function ownerEmails(config: GatewayConfig): Set<string> {
+  return new Set(
+    config.OWNER_EMAILS.split(/[,\s]+/)
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0),
+  );
+}
+
+export function isOwnerEmail(email: string, config: GatewayConfig): boolean {
+  return ownerEmails(config).has(email.trim().toLowerCase());
 }

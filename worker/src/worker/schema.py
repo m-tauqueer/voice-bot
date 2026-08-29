@@ -1,0 +1,2 @@
+SUBSCRIPTION_ACTIVE = "active"
+SUBSCRIPTION_REVOKED = "revoked"

@@ -1,9 +1,11 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { createPostgres, createRedis } from "./clients.js";
-import { loadGatewayConfig } from "./config.js";
+import { corsAllowedMethods, loadGatewayConfig } from "./config.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 
 const config = loadGatewayConfig();
@@ -22,12 +24,17 @@ const app = Fastify({
 await app.register(cors, {
   origin: config.FRONTEND_ORIGIN,
   credentials: true,
+  methods: corsAllowedMethods(config),
 });
 await app.register(cookie, {
   secret: config.SESSION_SECRET,
 });
+await app.register(multipart, {
+  limits: { fileSize: config.ADMIN_INGEST_MAX_BYTES },
+});
 await app.register(websocket);
 await registerAuthRoutes(app, { config, sql, redis });
+await registerAdminRoutes(app, { config });
 
 app.get("/health", async () => ({
   ok: true,

@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from worker.admin.errors import AdminError
+from worker.admin.service import PersonaAdmin
+from worker.config import load_settings
+
+
+def _voice_config(raw: str | None) -> dict[str, Any]:
+    if raw is None or raw == "":
+        return {}
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise AdminError(
+            "voice_config must be a JSON object",
+            reason="invalid_voice_config",
+        )
+    return parsed
+
+
+def _print(payload: Any) -> None:
+    print(json.dumps(payload, indent=2, default=str))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m worker.admin")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    create = sub.add_parser(
+        "create-persona",
+        help="record a dashboard persona locally, or try Engram create",
+    )
+    create.add_argument("--engram-persona-id")
+    create.add_argument("--handle")
+    create.add_argument("--display-name")
+    create.add_argument("--description")
+    create.add_argument("--voice-config")
+    create.add_argument(
+        "--create-remote",
+        action="store_true",
+        help="call Engram create (fails if the key cannot manage the org)",
+    )
+
+    teach = sub.add_parser("teach")
+    teach.add_argument("--text", required=True)
+
+    answer = sub.add_parser("answer")
+    answer.add_argument("--question-key", required=True)
+    answer.add_argument("--text", required=True)
+
+    sub.add_parser("list-questions")
+
+    ingest = sub.add_parser("ingest-doc")
+    ingest.add_argument("--path", required=True)
+
+    subscribe = sub.add_parser("subscribe")
+    subscribe.add_argument(
+        "--user",
+        required=True,
+        help="email, app user id, or Engram user id",
+    )
+    subscribe.add_argument(
+        "--record-local",
+        action="store_true",
+        help="write the local subscription row if Engram refuses subscribe",
+    )
+
+    sub.add_parser("show")
+
+    args = parser.parse_args(argv)
+    settings = load_settings()
+    admin = PersonaAdmin(settings)
+
+    try:
+        if args.command == "create-persona":
+            voice = _voice_config(args.voice_config)
+            if args.create_remote:
+                if not args.display_name or not args.handle:
+                    raise AdminError(
+                        "create-remote requires --display-name and --handle",
+                        reason="missing_fields",
+                    )
+                _print(
+                    admin.create_remote(
+                        name=args.display_name,
+                        handle=args.handle,
+                        description=args.description or "",
+                        voice_config=voice,
+                    ),
+                )
+                return 0
+            persona_id = args.engram_persona_id or settings.engram_persona_id
+            if not persona_id:
+                raise AdminError(
+                    "pass --engram-persona-id or set ENGRAM_PERSONA_ID",
+                    reason="missing_persona_id",
+                )
+            _print(
+                admin.register(
+                    engram_persona_id=persona_id,
+                    handle=args.handle,
+                    display_name=args.display_name,
+                    description=args.description,
+                    voice_config=voice,
+                ),
+            )
+            return 0
+        if args.command == "teach":
+            _print(admin.teach(args.text))
+            return 0
+        if args.command == "answer":
+            _print(admin.answer(args.question_key, args.text))
+            return 0
+        if args.command == "list-questions":
+            _print(admin.questions())
+            return 0
+        if args.command == "ingest-doc":
+            path = Path(args.path)
+            if not path.is_file():
+                raise AdminError("ingest path is not a file", reason="missing_file")
+            _print(admin.ingest_document(path))
+            return 0
+        if args.command == "subscribe":
+            _print(admin.subscribe(args.user, record_local=args.record_local))
+            return 0
+        if args.command == "show":
+            _print(admin.show())
+            return 0
+    except AdminError as exc:
+        print(json.dumps({"error": str(exc), "reason": exc.reason}), file=sys.stderr)
+        return 1
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

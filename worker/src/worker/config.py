@@ -43,6 +43,7 @@ class WorkerSettings(BaseSettings):
     engram_message_join: str = Field(default=" ")
     engram_read_max_retries: int = Field(default=2, ge=0)
     engram_persona_id: str | None = None
+    admin_ingest_max_bytes: int = Field(default=8388608, gt=0)
     openai_api_key: str | None = None
     openai_model: str | None = None
     openai_base_url: str | None = None

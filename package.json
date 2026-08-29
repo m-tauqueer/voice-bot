@@ -23,7 +23,8 @@
     "infra:reset": "docker compose -f infra/compose.yaml --env-file .env down -v && docker compose -f infra/compose.yaml --env-file .env up -d --wait",
     "infra:ps": "docker compose -f infra/compose.yaml --env-file .env ps",
     "smoke": "npm run smoke -w gateway",
-    "migrate": "npm run migrate -w gateway"
+    "migrate": "npm run migrate -w gateway",
+    "admin": "uv run --directory worker python -m worker.admin"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4"
