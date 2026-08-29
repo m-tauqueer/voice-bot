@@ -78,6 +78,7 @@ npm run lint
 cd worker && uv sync
 uv run ruff check src
 uv run python -m worker.engram.probe   # live Engram wrapper check (needs Engram keys)
+uv run python -m worker.reframe.probe # live reframe check (needs OpenAI keys)
 cd ..
 
 # Dev processes (need a filled .env; bind ports come from that file)

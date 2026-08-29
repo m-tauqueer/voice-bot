@@ -45,8 +45,14 @@ class WorkerSettings(BaseSettings):
     engram_persona_id: str | None = None
     admin_ingest_max_bytes: int = Field(default=8388608, gt=0)
     openai_api_key: str | None = None
-    openai_model: str | None = None
+    openai_model: str = Field(default="gpt-4o-mini")
     openai_base_url: str | None = None
+    openai_api_base_url: str | None = None
+    reframe_history_turns: int = Field(default=8, ge=0)
+    reframe_temperature: float = Field(default=0.2, ge=0, le=2)
+    reframe_max_tokens: int = Field(default=256, gt=0)
+    reframe_timeout_seconds: float = Field(default=30, gt=0)
+    reframe_system_prompt: str | None = None
 
     @field_validator("internal_secret_header", mode="before")
     @classmethod
@@ -60,8 +66,9 @@ class WorkerSettings(BaseSettings):
         "engram_org_id",
         "engram_persona_id",
         "openai_api_key",
-        "openai_model",
         "openai_base_url",
+        "openai_api_base_url",
+        "reframe_system_prompt",
         mode="before",
     )
     @classmethod
@@ -84,6 +91,15 @@ class WorkerSettings(BaseSettings):
             return " "
         if isinstance(value, str) and value == "":
             return " "
+        return value
+
+    @field_validator("openai_model", mode="before")
+    @classmethod
+    def default_openai_model(cls, value: object) -> object:
+        if value is None:
+            return "gpt-4o-mini"
+        if isinstance(value, str) and value.strip() == "":
+            return "gpt-4o-mini"
         return value
 
 
