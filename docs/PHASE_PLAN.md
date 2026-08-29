@@ -109,8 +109,8 @@ Goal: a signed-in user holds a **typed** conversation with the persona, grounded
 - Goal: the canonical data model exists.
 - Tasks:
   - Implement tables from [TRD](TRD.md) §5 (`users`, `personas`, `subscriptions`, `sessions`, `turns`, `memory_refs`, `audio_assets`, `latency_spans`).
-  - Migration tooling + up/down; seed nothing hardcoded.
-- Manual test: migrations apply cleanly to an empty DB and roll back.
+  - Forward-only SQL runner in the gateway (`npm run migrate`); one `schema_migrations` ledger; smoke uses that runner. Seed nothing hardcoded.
+- Manual test: migrations apply cleanly to an empty DB; re-running is a no-op.
 - Commit gate: on Tauqueer's word.
 
 ### Part 1.2 — Engram client wrapper (behind an interface)

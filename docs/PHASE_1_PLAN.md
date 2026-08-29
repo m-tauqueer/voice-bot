@@ -159,6 +159,10 @@ These are settled and used throughout the sections below.
 
 Add FK indexes and the uniqueness constraints above. Keep the enum-like columns as `text` with a CHECK constraint (values come from a shared constant, not scattered literals) rather than Postgres enums, to keep migrations simple.
 
+**Deletes (locked):** `users` and `personas` are `ON DELETE RESTRICT` (a delete is refused while children exist — the canonical record is not wiped by accident). `sessions` → `turns` → `memory_refs` / `audio_assets` / `latency_spans` are `ON DELETE CASCADE`.
+
+**`subscriptions.status` (locked):** `active` | `revoked`. Unsubscribe sets `revoked`; the row stays for admin visibility.
+
 **Config.** None new beyond `DATABASE_URL`.
 
 **Errors.** Runner is transactional per file; a failing file aborts and is not recorded in `schema_migrations`.

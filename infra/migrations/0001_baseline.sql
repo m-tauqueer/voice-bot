@@ -1,2 +1,2 @@
--- Phase 0.6 baseline. Product tables are Part 1.1.
+-- Empty baseline. Product tables are in later numbered files.
 SELECT 1;

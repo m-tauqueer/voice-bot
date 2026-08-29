@@ -1,0 +1,34 @@
+export const SUBSCRIPTION_STATUS = {
+  ACTIVE: "active",
+  REVOKED: "revoked",
+} as const;
+
+export const SESSION_CHANNEL = {
+  TEXT: "text",
+  VOICE: "voice",
+} as const;
+
+export const TURN_SPEAKER = {
+  USER: "user",
+  PERSONA: "persona",
+} as const;
+
+export const CONTROLLER_ACTION = {
+  SPEAK: "speak",
+  SILENCE: "silence",
+} as const;
+
+export const AUDIO_DIRECTION = {
+  USER: "user",
+  BOT: "bot",
+} as const;
+
+export type SubscriptionStatus =
+  (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
+export type SessionChannel =
+  (typeof SESSION_CHANNEL)[keyof typeof SESSION_CHANNEL];
+export type TurnSpeaker = (typeof TURN_SPEAKER)[keyof typeof TURN_SPEAKER];
+export type ControllerAction =
+  (typeof CONTROLLER_ACTION)[keyof typeof CONTROLLER_ACTION];
+export type AudioDirection =
+  (typeof AUDIO_DIRECTION)[keyof typeof AUDIO_DIRECTION];

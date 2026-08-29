@@ -1,7 +1,6 @@
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { createBlobService, createPostgres, createRedis } from "./clients.js";
-import { loadGatewayConfig, repoRootFromHere } from "./config.js";
+import { loadGatewayConfig } from "./config.js";
+import { applyMigrations, formatMigrationDetail } from "./migrate.js";
 
 type Status = "ok" | "skip" | "fail";
 
@@ -50,37 +49,16 @@ async function checkRedis(
   return ok("redis", "PING PONG");
 }
 
-async function applyBaselineMigrations(
+async function checkMigrations(
   sql: ReturnType<typeof createPostgres>,
 ): Promise<Check> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id text PRIMARY KEY,
-      applied_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-  const dir = join(repoRootFromHere(), "infra/migrations");
-  const files = (await readdir(dir))
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
-  if (files.length === 0) {
-    return fail("migration", `no .sql files in ${dir}`);
+  try {
+    const run = await applyMigrations(sql);
+    return ok("migration", formatMigrationDetail(run));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return fail("migration", detail);
   }
-  const applied: string[] = [];
-  for (const file of files) {
-    const existing = await sql`
-      SELECT id FROM schema_migrations WHERE id = ${file}
-    `;
-    if (existing.length > 0) {
-      applied.push(`${file} (already)`);
-      continue;
-    }
-    const body = await readFile(join(dir, file), "utf8");
-    await sql.unsafe(body);
-    await sql`INSERT INTO schema_migrations (id) VALUES (${file})`;
-    applied.push(file);
-  }
-  return ok("migration", applied.join(", "));
 }
 
 async function checkGoogle(
@@ -221,7 +199,7 @@ async function main(): Promise<void> {
   try {
     checks.push(await checkPostgres(sql));
     checks.push(await checkRedis(redis));
-    checks.push(await applyBaselineMigrations(sql));
+    checks.push(await checkMigrations(sql));
     checks.push(await checkGoogle(config));
     checks.push(await checkAzure(config));
     checks.push(await checkDeepgram());

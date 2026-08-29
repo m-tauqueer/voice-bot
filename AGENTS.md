@@ -81,6 +81,7 @@ cd ..
 
 # Dev processes (need a filled .env; bind ports come from that file)
 npm run infra:up       # Postgres + Redis (or: make infra-up)
+npm run migrate        # apply infra/migrations (or: make migrate)
 npm run smoke          # external + local infra checks (or: make smoke)
 npm run dev:frontend    # Vite, port 5188 / FRONTEND_ORIGIN
 npm run dev:gateway
