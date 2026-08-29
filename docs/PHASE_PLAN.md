@@ -67,6 +67,10 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
 - Tasks:
   - Compose file: Postgres + Redis (+ dev containers for gateway/worker/frontend as chosen).
   - Health checks; helper scripts (`make`/npm scripts) to start/stop/reset.
+- Locked for this part:
+  - **Postgres 16 + Redis 7 only.** Gateway, worker, and frontend stay on the host (`DATABASE_URL` / `REDIS_URL` use `localhost`). App images are Phase 3.
+  - Compose file: [`infra/compose.yaml`](../infra/compose.yaml). Credentials and ports come from the repo-root `.env` (`POSTGRES_*`, `REDIS_PORT`).
+  - Scripts: `npm run infra:up|down|reset|ps` and matching `make infra-*` targets. `up` uses `--wait` so it returns after healthchecks pass.
 - Manual test: `compose up` brings Postgres and Redis to healthy; services start.
 - Commit gate: on Tauqueer's word.
 
@@ -75,6 +79,9 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
 - Tasks:
   - Wire the frontend entry, confirm design tokens/styles load in correct order (see the component library README notes).
   - Confirm dev server runs and a base page renders.
+- Locked / verified:
+  - CSS is imported only from [`frontend/src/main.tsx`](../frontend/src/main.tsx), in the documented order (`oc.tailwind.css` → `oc.css` → `fonts.css` → `index.css` → `surfaces.css` → `dial.css` → `ui.css` → `app-shell.css` → `dashboard.css`). No component imports CSS.
+  - `npm run dev:frontend` serves Vite at port **5188**. `/` and `/components` are the gallery; `/dashboard` is the sample shell.
 - Manual test: open the local frontend; base UI renders with correct styling.
 - Commit gate: on Tauqueer's word.
 

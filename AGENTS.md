@@ -62,7 +62,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-Until **Phase 0** is complete the remaining parts are Docker (0.4), frontend render check (0.5), and external-account smoke (0.6).
+Until **Phase 0** is complete the remaining parts are frontend render check (0.5) and external-account smoke (0.6).
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -78,9 +78,14 @@ uv run ruff check src
 cd ..
 
 # Dev processes (need a filled .env; bind ports come from that file)
+npm run infra:up       # Postgres + Redis (or: make infra-up)
 npm run dev:frontend    # Vite, port 5188 / FRONTEND_ORIGIN
 npm run dev:gateway
 npm run dev:worker
+
+# Stop / wipe local data volumes
+npm run infra:down
+npm run infra:reset
 ```
 
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
