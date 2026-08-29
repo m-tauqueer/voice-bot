@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Literal
+
+from pydantic import Field, HttpUrl, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def env_file_path() -> Path:
+    override = os.environ.get("ENV_FILE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[3] / ".env"
+
+
+def _empty_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+class WorkerSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=env_file_path(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    node_env: Literal["development", "production", "test"]
+    log_level: str
+    worker_host: str
+    worker_port: int = Field(gt=0)
+    database_url: str = Field(min_length=1)
+    internal_api_secret: str = Field(min_length=16)
+    engram_api_key: str | None = None
+    engram_org_id: str | None = None
+    engram_base_url: HttpUrl | None = None
+    engram_timeout_seconds: int = Field(default=120, gt=0)
+    openai_api_key: str | None = None
+    openai_model: str | None = None
+    openai_base_url: str | None = None
+
+    @field_validator(
+        "engram_api_key",
+        "engram_org_id",
+        "openai_api_key",
+        "openai_model",
+        "openai_base_url",
+        mode="before",
+    )
+    @classmethod
+    def blank_optional(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return _empty_to_none(value)
+
+    @field_validator("engram_base_url", mode="before")
+    @classmethod
+    def blank_engram_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return _empty_to_none(value)
+
+
+def load_settings() -> WorkerSettings:
+    try:
+        return WorkerSettings()
+    except Exception as exc:
+        raise RuntimeError(f"Invalid worker environment: {exc}") from exc

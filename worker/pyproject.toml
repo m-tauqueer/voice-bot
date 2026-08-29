@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "worker"
+version = "0.1.0"
+description = "Engram SDK and reframe LLM (the BYO-LLM brain)"
+requires-python = ">=3.12"
+dependencies = [
+    "engram-ai-sdk",
+    "fastapi",
+    "openai",
+    "psycopg[binary]",
+    "pydantic-settings",
+    "python-dotenv",
+    "structlog",
+    "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = ["ruff"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/worker"]
+
+[tool.ruff]
+target-version = "py312"
+src = ["src"]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
