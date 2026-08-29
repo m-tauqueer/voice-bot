@@ -35,6 +35,7 @@ const envFileSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GOOGLE_CALLBACK_URL: z.string().url(),
+  GOOGLE_OIDC_DISCOVERY_URL: z.string().url(),
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
   AZURE_STORAGE_KEY: optionalNonEmpty,
   AZURE_BLOB_CONTAINER: optionalNonEmpty,
@@ -46,7 +47,7 @@ const envFileSchema = z.object({
 
 export type GatewayConfig = z.infer<typeof envFileSchema>;
 
-function repoRootFromHere(): string {
+export function repoRootFromHere(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, "../..");
 }

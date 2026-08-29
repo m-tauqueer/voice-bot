@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down infra-reset infra-ps
+.PHONY: infra-up infra-down infra-reset infra-ps smoke
 
 infra-up:
 	docker compose -f infra/compose.yaml --env-file .env up -d --wait
@@ -12,3 +12,6 @@ infra-reset:
 
 infra-ps:
 	docker compose -f infra/compose.yaml --env-file .env ps
+
+smoke:
+	npm run smoke

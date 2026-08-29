@@ -95,7 +95,7 @@ flowchart LR
   ctl --> brain
   brain --> engram
   brain --> reframe
-  reframe -->|"reply.text"| dg
+  reframe -->|"reframed utterance"| dg
   bridge --> redis
   worker --> pg
   bridge --> blob
@@ -119,9 +119,9 @@ sequenceDiagram
   D->>W: BYO-LLM request (running messages)
   W->>W: controller gate (speak/silence)
   W->>E: personas.chat(pid, text, session_id)
-  E-->>W: reply (grounded, may write private pool)
-  W->>W: reframe (Engram reply + last N turns)
-  W-->>D: reframed reply.text (full)
+  E-->>W: PersonaReply (messages, memories_used, session_id)
+  W->>W: flatten messages; reframe (Engram reply + last N turns)
+  W-->>D: reframed utterance (full)
   D-->>G: Aura-2 audio (stream)
   G-->>U: playback
   W->>P: persist turn, decision, engram ids, latency
@@ -148,9 +148,9 @@ Rules the worker MUST follow:
 
 - **Never build tenant strings by hand.** Use persona endpoints. A three-segment `{org}:{persona}:{user}` tenant is refused on generic routes by design.
 - **Client shape:** `EngramClient(org_id, user_id, api_key=...)`. Each end user maps to one Engram `user_id`; the persona is one Engram persona under one product org.
-- **Reply path:** `reply = engram.personas.chat(pid, message, session_id=sid)`. Use `reply.text` (flatten the 1-3 bubbles into one utterance). Carry `reply.session_id` forward for the whole conversation — omitting it makes the persona amnesiac.
+- **Reply path:** `reply = engram.personas.chat(pid, message, session_id=sid)`. The SDK (`engram-ai-sdk` 0.4.0) returns `PersonaReply` with **`messages: list[str]`** (1–3 texting-style bubbles), `memories_used`, `session_id`, and `raw`. There is **no `reply.text`**. Flatten `messages` into one utterance (join order = list order; separator from config) before the reframe and before sending speech. Persist both the raw `messages` list and the flattened string. Carry `reply.session_id` forward for the whole conversation — omitting it makes the persona amnesiac.
 - **Reads:** if the controller ever needs raw memory, use `engram.personas.retrieve(pid, query)` and read `tenant` off each row (not the top-level `tenants` list). Not used on the default per-turn path.
-- **Seeding (admin):** `personas.create(name, handle, description=...)`; teach via `personas.teach(pid, fact)` and `personas.answer(pid, key, text)` (question bank from `personas.questions(pid)`); ingest documents into the shared pool via `personas.shared(pid).ingest.document(...)`. Subscribe testers with `personas.subscribe(pid, user_id)` — chatting without a subscription returns 403.
+- **Seeding (admin):** `personas.create(name, handle=..., description=...)`; teach via `personas.teach(pid, text)` and `personas.answer(pid, question_key, text)` (question bank from `personas.questions(pid)`); ingest documents into the shared pool via `personas.shared(pid).document(...)`. Subscribe testers with `personas.subscribe(pid, user_id)` — chatting without a subscription returns 403.
 - **Writes on chat:** `chat` writes the caller's private pool automatically (both user turn and reply). No extra ingest in Phase 1/2.
 - **Consent:** we send text only, so audio/video/FER consent flags do not apply. Do not send audio to Engram.
 - **Errors:** handle the documented taxonomy (401/402/403/404/409/422/5xx). Reads may retry on 429/502/503/504; **writes are never blind-retried**. Set client `timeout` generously.

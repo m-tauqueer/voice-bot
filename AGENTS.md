@@ -44,6 +44,7 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 
 - Commit **only on Tauqueer's explicit instruction**, only after part completion.
 - **Commit message style: normal, plain, human.** Imperative mood, concise subject, optional short body explaining the "why."
+- **Do not mention phase numbers or part numbers** in commit messages, code comments, or PR titles. Describe the work in plain language (do not write "Phase 0", "Part 1.2", "1.6", and so on). Those labels live only in the plan docs Tauqueer uses to name work.
 - **No AI attribution of any kind.** Do not add `Co-authored-by`, "Generated with", "Co-authored by an AI", tool banners, or emojis to commit messages.
 - Never skip hooks, never force-push, never amend a pushed commit, never touch git config.
 - One part per commit unless Tauqueer says otherwise.
@@ -55,6 +56,7 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 - [`docs/PRD.md`](docs/PRD.md) — Product Requirements. What we're building and for whom, scope in/out, success criteria.
 - [`docs/TRD.md`](docs/TRD.md) — Technical Requirements & Design. **The locked decisions, architecture, data model, external services, risks, and future improvements.** This is the source of truth for how things are built.
 - [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — The build plan: Phase 0 (setup) plus 3 phases, each split into parts, each part with defined tasks, manual-test gates, and commit gates.
+- [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8): exact logic, the verified Engram SDK surface, data model DDL, and per-part manual tests. Phase 0 is complete.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -62,7 +64,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-Until **Phase 0** is complete the remaining parts are frontend render check (0.5) and external-account smoke (0.6).
+**Phase 0 is complete** (repo layout, toolchains, config, Compose, frontend base, smoke). Product work starts at Phase 1 when Tauqueer names a part.
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -79,6 +81,7 @@ cd ..
 
 # Dev processes (need a filled .env; bind ports come from that file)
 npm run infra:up       # Postgres + Redis (or: make infra-up)
+npm run smoke          # external + local infra checks (or: make smoke)
 npm run dev:frontend    # Vite, port 5188 / FRONTEND_ORIGIN
 npm run dev:gateway
 npm run dev:worker
@@ -97,7 +100,7 @@ npm run infra:reset
 - `infra/` — Docker Compose, migrations, scripts.
 - `docs/` — PRD, TRD, phase plan.
 
-External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config — see Phase 0.
+External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure, Deepgram, Engram, and OpenAI are optional until the parts that use them; `npm run smoke` reports `SKIP` for those until the keys are set.
 
 ---
 

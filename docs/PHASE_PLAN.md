@@ -7,16 +7,18 @@ The build plan. Owner: Tauqueer. Read [AGENTS.md](../AGENTS.md), [PRD](PRD.md), 
 - **Tauqueer names a phase and a part.** Do only that part.
 - Complete every task in the part to production quality (see principles in [AGENTS.md](../AGENTS.md) §7).
 - Where a part has a **Manual test**, it must pass before the part is considered done.
-- **Commit gate:** commit only when Tauqueer explicitly says so, after the part is complete and its manual test passes. Commit style: normal, plain, no AI attribution.
+- **Commit gate:** commit only when Tauqueer explicitly says so, after the part is complete and its manual test passes. Commit style: normal, plain, no AI attribution. Do not mention phase numbers or part numbers in the commit message — describe the work in plain language. Those labels stay in this plan only.
 - Do not start the next part until told.
 
 **Structure:** Phase 0 is setup. Phases 1-3 are the product, each split into parts. Each part is a self-contained unit of work.
 
 ---
 
-## Phase 0 — Setup (repo and toolchain ready to build)
+## Phase 0 — Setup (repo and toolchain ready to build) — ✅ COMPLETE
 
 Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for all three services locally, with every external dependency reachable. No product behavior yet.
+
+**Status: complete.** All parts 0.1–0.6 are implemented and their manual tests pass. `npm run infra:up && npm run smoke` reports `OK` for postgres, redis, the empty baseline migration, and Google (OIDC discovery + dummy token exchange); `SKIP` for Azure/Deepgram/OpenAI/Engram until those keys are set. Detailed Phase 1 build plan: [PHASE_1_PLAN.md](PHASE_1_PLAN.md).
 
 ### Part 0.1 — Repo layout & conventions
 - Goal: initialize the repository and its skeleton.
@@ -89,8 +91,13 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
 - Goal: prove every external dependency is reachable with the provided credentials.
 - Tasks:
   - Scripts that: reach Engram (account/config), validate Deepgram key, list OpenAI models (or reframe LLM), create/list an Azure Blob container, confirm the Google OAuth app config, run an empty DB migration.
-- Manual test: run all smoke checks; each reports success.
-- Commit gate: on Tauqueer's word. **Phase 0 done.**
+- Locked / verified:
+  - Smoke entry: `npm run smoke` (or `make smoke`) → `gateway/src/smoke.ts`. Prints `OK` / `SKIP` / `FAIL` per check; secrets are never logged. Exit code 1 if any check is `FAIL`.
+  - Required (must be `OK`): Postgres, Redis, empty baseline migration (`infra/migrations/0001_baseline.sql` is `SELECT 1;` only; product tables are Part 1.1), Google (OIDC discovery + dummy token exchange expecting structured `invalid_grant`, not `invalid_client`).
+  - Optional until later parts: Azure, Deepgram, OpenAI, Engram. Unset keys report `SKIP` (not a failure). If a key is set, the matching base URL must be set and the live call must succeed.
+  - Google OIDC discovery URL: `GOOGLE_OIDC_DISCOVERY_URL` (required to boot the gateway).
+- Manual test: `npm run infra:up` then `npm run smoke`; required checks OK; optional checks SKIP or OK. **Phase 0 done.**
+- Commit gate: on Tauqueer's word.
 
 ---
 
