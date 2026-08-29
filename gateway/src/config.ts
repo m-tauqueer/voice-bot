@@ -205,6 +205,20 @@ export function postLoginRedirectUrl(config: GatewayConfig): string {
   return config.POST_LOGIN_REDIRECT_URL ?? config.FRONTEND_ORIGIN;
 }
 
+export function frontendPathRedirect(
+  config: GatewayConfig,
+  raw: string | undefined,
+): string | undefined {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
+    return undefined;
+  }
+  const resolved = new URL(raw, config.FRONTEND_ORIGIN);
+  if (resolved.origin !== new URL(config.FRONTEND_ORIGIN).origin) {
+    return undefined;
+  }
+  return `${resolved.pathname}${resolved.search}`;
+}
+
 export function googleIdTokenIssuers(
   config: GatewayConfig,
   discoveryIssuer: string,

@@ -6,12 +6,40 @@ export function gatewayOrigin(): string {
   return value.replace(/\/+$/, "");
 }
 
-export function googleSignInUrl(): string {
-  return `${gatewayOrigin()}/auth/google`;
+export function googleSignInUrl(next?: string): string {
+  const url = new URL("/auth/google", `${gatewayOrigin()}/`);
+  if (next) {
+    url.searchParams.set("next", next);
+  }
+  return url.toString();
 }
 
-export function logoutUrl(): string {
-  return `${gatewayOrigin()}/auth/logout`;
+export function logoutUrl(next?: string): string {
+  const url = new URL("/auth/logout", `${gatewayOrigin()}/`);
+  if (next) {
+    url.searchParams.set("next", next);
+  }
+  return url.toString();
+}
+
+export function chatSessionStorageKey(): string {
+  const value = import.meta.env.VITE_CHAT_SESSION_STORAGE_KEY;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("VITE_CHAT_SESSION_STORAGE_KEY is not set");
+  }
+  return value;
+}
+
+export function readStoredChatSessionId(userId: string): string | null {
+  return window.localStorage.getItem(`${chatSessionStorageKey()}:${userId}`);
+}
+
+export function writeStoredChatSessionId(userId: string, sessionId: string): void {
+  window.localStorage.setItem(`${chatSessionStorageKey()}:${userId}`, sessionId);
+}
+
+export function clearStoredChatSessionId(userId: string): void {
+  window.localStorage.removeItem(`${chatSessionStorageKey()}:${userId}`);
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {

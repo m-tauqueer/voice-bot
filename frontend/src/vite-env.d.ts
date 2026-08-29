@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_GATEWAY_URL: string;
+  readonly VITE_CHAT_SESSION_STORAGE_KEY: string;
 }
 
 interface ImportMeta {

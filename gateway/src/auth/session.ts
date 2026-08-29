@@ -11,6 +11,7 @@ const sessionRecordSchema = z.object({
 const oauthPendingSchema = z.object({
   nonce: z.string().min(1),
   code_verifier: z.string().min(1),
+  next: z.string().min(1).optional(),
 });
 
 export type OauthPending = z.infer<typeof oauthPendingSchema>;

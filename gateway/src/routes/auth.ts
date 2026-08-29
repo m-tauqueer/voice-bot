@@ -20,6 +20,7 @@ import { subscribeUserToActivePersona } from "../auth/subscribe.js";
 import { upsertGoogleUser } from "../auth/users.js";
 import {
   type GatewayConfig,
+  frontendPathRedirect,
   googleCallbackPath,
   isOwnerEmail,
   postLoginRedirectUrl,
@@ -33,6 +34,10 @@ const callbackQuerySchema = z.object({
   error: z.string().optional(),
 });
 
+const googleStartQuerySchema = z.object({
+  next: z.string().optional(),
+});
+
 export async function registerAuthRoutes(
   app: FastifyInstance,
   deps: {
@@ -44,11 +49,13 @@ export async function registerAuthRoutes(
   const { config, sql, redis } = deps;
   const requireAppUser = createRequireAppUser(deps);
 
-  app.get("/auth/google", async (_request, reply) => {
+  app.get("/auth/google", async (request, reply) => {
+    const start = googleStartQuerySchema.parse(request.query);
     const secrets = createOauthSecrets(config);
     await storeOauthPending(redis, config, secrets.state, {
       nonce: secrets.nonce,
       code_verifier: secrets.codeVerifier,
+      next: frontendPathRedirect(config, start.next),
     });
     const url = await buildGoogleAuthorizationUrl(config, {
       state: secrets.state,
@@ -80,6 +87,10 @@ export async function registerAuthRoutes(
       const user = await upsertGoogleUser(sql, identity);
       await subscribeUserToActivePersona(sql, config, user, request.log);
       await createSession(redis, reply, config, user.id);
+      const next = frontendPathRedirect(config, pending.next);
+      if (next) {
+        return reply.redirect(new URL(next, config.FRONTEND_ORIGIN).toString());
+      }
       return reply.redirect(postLoginRedirectUrl(config));
     } catch (error) {
       if (error instanceof SignInError) {
@@ -94,6 +105,13 @@ export async function registerAuthRoutes(
   async function logout(request: FastifyRequest, reply: FastifyReply) {
     await destroySession(redis, request, reply, config);
     if (request.method === "GET") {
+      const next = frontendPathRedirect(
+        config,
+        googleStartQuerySchema.parse(request.query).next,
+      );
+      if (next) {
+        return reply.redirect(new URL(next, config.FRONTEND_ORIGIN).toString());
+      }
       return reply.redirect(postLoginRedirectUrl(config));
     }
     return reply.code(204).send();

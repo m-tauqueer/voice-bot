@@ -4,6 +4,7 @@ import type postgres from "postgres";
 import { z } from "zod";
 import { touchChatActivity } from "../chat/activity.js";
 import { createTextSession, getSessionForUser } from "../chat/sessions.js";
+import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
 import { resolveActivePersona } from "../personas.js";
@@ -14,6 +15,21 @@ const chatBodySchema = z.object({
   text: z.string().min(1),
   session_id: z.string().uuid().optional(),
 });
+
+const chatQuerySchema = z.object({
+  session_id: z.string().uuid().optional(),
+});
+
+function personaPayload(
+  persona: NonNullable<Awaited<ReturnType<typeof resolveActivePersona>>>,
+) {
+  return {
+    id: persona.id,
+    handle: persona.handle,
+    display_name: persona.displayName,
+    description: persona.description,
+  };
+}
 
 async function sendWorker(reply: FastifyReply, response: Response) {
   const text = await response.text();
@@ -41,6 +57,38 @@ export async function registerChatRoutes(
   deps: { config: GatewayConfig; sql: Sql; redis: Redis },
 ): Promise<void> {
   const { config, sql, redis } = deps;
+
+  app.get("/api/chat", async (request, reply) => {
+    const user = request.appUser;
+    if (!user) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const parsed = chatQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid query" });
+    }
+    let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
+    try {
+      persona = await resolveActivePersona(sql, config);
+    } catch {
+      return reply.code(409).send({ error: "multiple personas" });
+    }
+    if (!persona) {
+      return reply.code(404).send({ error: "persona not recorded" });
+    }
+    if (!parsed.data.session_id) {
+      return { persona: personaPayload(persona), turns: [] as const };
+    }
+    const turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+    if (turns === null) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    return {
+      persona: personaPayload(persona),
+      session_id: parsed.data.session_id,
+      turns,
+    };
+  });
 
   app.post("/api/chat", async (request, reply) => {
     const user = request.appUser;
