@@ -11,7 +11,13 @@ def create_postgres(settings: WorkerSettings) -> psycopg.Connection:
 
 
 def openai_base_url(settings: WorkerSettings) -> str | None:
-    return settings.openai_base_url or settings.openai_api_base_url
+    raw = settings.openai_base_url or settings.openai_api_base_url
+    if not raw:
+        return None
+    trimmed = raw.rstrip("/")
+    if trimmed.endswith("/v1"):
+        return trimmed
+    return f"{trimmed}/v1"
 
 
 def create_openai(settings: WorkerSettings) -> OpenAI:

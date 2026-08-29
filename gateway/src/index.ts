@@ -7,6 +7,7 @@ import { createPostgres, createRedis } from "./clients.js";
 import { corsAllowedMethods, loadGatewayConfig } from "./config.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerChatRoutes } from "./routes/chat.js";
 
 const config = loadGatewayConfig();
 const sql = createPostgres(config);
@@ -35,6 +36,7 @@ await app.register(multipart, {
 await app.register(websocket);
 await registerAuthRoutes(app, { config, sql, redis });
 await registerAdminRoutes(app, { config });
+await registerChatRoutes(app, { config, sql, redis });
 
 app.get("/health", async () => ({
   ok: true,

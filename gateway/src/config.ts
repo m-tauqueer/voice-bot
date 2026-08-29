@@ -81,6 +81,14 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("session:"),
   ),
+  CHAT_ACTIVITY_REDIS_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("chat-activity:"),
+  ),
+  CHAT_ACTIVITY_TTL_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(86400),
+  ),
   SESSION_ID_BYTES: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(32),

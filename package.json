@@ -26,7 +26,8 @@
     "migrate": "npm run migrate -w gateway",
     "admin": "uv run --directory worker python -m worker.admin",
     "reframe": "uv run --directory worker python -m worker.reframe.probe",
-    "controller": "uv run --directory worker python -m worker.controller.probe"
+    "controller": "uv run --directory worker python -m worker.controller.probe",
+    "chat": "uv run --directory worker python -m worker.turn.probe"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4"
