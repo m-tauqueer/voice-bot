@@ -77,6 +77,7 @@ npm run lint
 # Python worker (uv pins CPython 3.12 via worker/.python-version)
 cd worker && uv sync
 uv run ruff check src
+uv run python -m worker.engram.probe   # live Engram wrapper check (needs Engram keys)
 cd ..
 
 # Dev processes (need a filled .env; bind ports come from that file)

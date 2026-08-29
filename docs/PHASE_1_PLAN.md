@@ -27,7 +27,7 @@ Detailed, implementation-level plan for Phase 1. Owner: Tauqueer. Read [AGENTS.m
 | Gateway app | `gateway/src/index.ts` | Fastify + `@fastify/cors` (origin = `FRONTEND_ORIGIN`) + `@fastify/websocket`, `GET /health`. |
 | Gateway smoke | `gateway/src/smoke.ts` | Applies `infra/migrations/*.sql` via a `schema_migrations` ledger; vendor reachability checks. |
 | Worker config (pydantic-settings) | `worker/src/worker/config.py` | Loads root `.env`, fail-fast. `load_settings()`. |
-| Worker clients | `worker/src/worker/clients.py` | `create_postgres` (psycopg), `create_engram` (EngramClient), `create_openai`. |
+| Worker clients | `worker/src/worker/clients.py` | `create_postgres` (psycopg), `create_openai`. Engram client construction is inside the wrapper. |
 | Worker app | `worker/src/worker/main.py` | FastAPI + structlog, `GET /health`. |
 | Migrations dir | `infra/migrations/0001_baseline.sql` | `SELECT 1;` only. Product tables come in Part 1.1. |
 
@@ -48,7 +48,7 @@ EngramClient(org_id: str, user_id: str = "", *, api_key: str | None = None,
 ```
 
 - Instance namespaces include: `personas`, `sessions`, `threads`, `conversation`, `memory`, `ingest`, `insights`, `members`, `account`, `config`, `health`.
-- `create_engram(settings, user_id)` in `worker/src/worker/clients.py` already constructs this correctly (org_id, user_id, api_key, base_url, timeout). **Each end user gets their own client instance scoped to their Engram `user_id`.**
+- `create_engram(settings, user_id)` lives in `worker/src/worker/engram/factory.py` (the only module that constructs `EngramClient`). **Each end user gets their own client instance scoped to their Engram `user_id`.**
 
 ### 2.2 `client.personas` methods (Phase 1 uses these)
 
@@ -199,11 +199,13 @@ Add FK indexes and the uniqueness constraints above. Keep the enum-like columns 
 - Map SDK exceptions → app errors: reads may retry on 429/502/503/504 (bounded, from config); **writes (`chat`, `teach`, `answer`, `ingest`, `subscribe`) are never blind-retried**. `ForbiddenError` on `chat` → a typed `NotSubscribedError`.
 - Timeout comes from `ENGRAM_TIMEOUT_SECONDS` (already in config; generous default 120).
 
-**Config.** `ENGRAM_API_KEY`, `ENGRAM_ORG_ID`, `ENGRAM_BASE_URL`, `ENGRAM_TIMEOUT_SECONDS` (present). New: `ENGRAM_MESSAGE_JOIN` (separator for flattening `messages`, default `" "`), `ENGRAM_READ_MAX_RETRIES` (int, default 2).
+**Config.** `ENGRAM_API_KEY`, `ENGRAM_ORG_ID`, `ENGRAM_BASE_URL`, `ENGRAM_TIMEOUT_SECONDS` (present). New: `ENGRAM_MESSAGE_JOIN` (separator for flattening `messages`, default `" "`), `ENGRAM_READ_MAX_RETRIES` (int, default 2), `ENGRAM_PERSONA_ID` (the persona created in the Engram dashboard — API keys in this alpha cannot `create`).
+
+**Persona create (locked):** create/teach/subscribe from the Engram dashboard while signed in as org admin. API keys only offer `memory:*` / `metrics:read` / `members:read` / `billing:read` / `tokens:read` and cannot be granted `org:manage`. The wrapper still exposes `create_persona` / `teach` / `subscribe` for when that changes. The app stores the dashboard id in `ENGRAM_PERSONA_ID` (later also in `personas`).
 
 **Errors.** All raised as the app-level types from `errors.py`; callers never see `engram_sdk` exceptions.
 
-**Manual test.** A throwaway script (`worker` `uv run` entry): create a temporary persona, `teach` one fact, `subscribe` a test user, `chat` a question referencing that fact, and confirm the reply is grounded (`memories_used` non-empty and the fact reflected in `messages`). Requires real Engram keys in `.env`.
+**Manual test.** Owner creates the persona in the Engram dashboard, sets `ENGRAM_PERSONA_ID`, teaches at least one fact there. Probe (`uv run --directory worker python -m worker.engram.probe`) loads that persona, chats, and confirms `messages` + `session_id` (and `memories_used` if teach is visible to the key).
 
 **Done when.** Every method works against live Engram, contracts hold, the SDK is imported in no file other than the wrapper, and the manual test passes.
 
@@ -248,6 +250,7 @@ Add FK indexes and the uniqueness constraints above. Keep the enum-like columns 
 
 **Logic.**
 - The "active persona" is resolved from the `personas` table (single row for the first build); nothing about the persona is hardcoded in logic.
+- **Create happens in the Engram dashboard** (API keys cannot `org:manage`). This part records that Engram id into `personas` and does teach / question-bank / ingest / subscribe from the CLI and admin UI (or from the dashboard if those writes are also refused).
 - Persona textual content (which historical figure, facts, documents, voice rules) is supplied by the owner at seeding time.
 
 **Config.** Owner identity for admin authorization via config (`OWNER_EMAILS`), not a literal in code.

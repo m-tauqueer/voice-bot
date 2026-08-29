@@ -39,6 +39,9 @@ class WorkerSettings(BaseSettings):
     engram_org_id: str | None = None
     engram_base_url: HttpUrl | None = None
     engram_timeout_seconds: int = Field(default=120, gt=0)
+    engram_message_join: str = Field(default=" ")
+    engram_read_max_retries: int = Field(default=2, ge=0)
+    engram_persona_id: str | None = None
     openai_api_key: str | None = None
     openai_model: str | None = None
     openai_base_url: str | None = None
@@ -46,6 +49,7 @@ class WorkerSettings(BaseSettings):
     @field_validator(
         "engram_api_key",
         "engram_org_id",
+        "engram_persona_id",
         "openai_api_key",
         "openai_model",
         "openai_base_url",
@@ -63,6 +67,15 @@ class WorkerSettings(BaseSettings):
         if not isinstance(value, str):
             return value
         return _empty_to_none(value)
+
+    @field_validator("engram_message_join", mode="before")
+    @classmethod
+    def default_message_join(cls, value: object) -> object:
+        if value is None:
+            return " "
+        if isinstance(value, str) and value == "":
+            return " "
+        return value
 
 
 def load_settings() -> WorkerSettings:
