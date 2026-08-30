@@ -28,9 +28,9 @@ Context7 MCP is the first stop for Deepgram / OpenAI protocol lookups. If it is 
 | Active persona | `gateway/src/personas.ts`, `personas` table | Handle, display name, `voice_config`. |
 | Brain turn | `worker/src/worker/turn/service.py` `TurnRunner` | Pre-check → `chat` → `decide` → reframe → persist `sessions` / `turns` / `memory_refs` / `latency_spans`. |
 | Internal turn HTTP | `POST /internal/turn` | Guarded by `INTERNAL_API_SECRET` / `INTERNAL_SECRET_HEADER`. |
-| Session channel constants | `gateway/src/schema.ts` | `SESSION_CHANNEL.TEXT` and already `VOICE`. Worker `schema.py` only has text today — add voice when a voice session is inserted. |
+| Session channel constants | `gateway/src/schema.ts`, `worker/src/worker/schema.py` | `TEXT` and `VOICE` on both sides. |
 | Gateway WS plugin | `gateway/src/index.ts` | `@fastify/websocket` registered; **no voice route yet**. |
-| Deepgram config (optional) | `.env.example`, `gateway/src/config.ts`, `gateway/src/smoke.ts` | Zod schema has `DEEPGRAM_API_KEY`, `DEEPGRAM_STT_MODEL`, `DEEPGRAM_STT_LANGUAGE`, `DEEPGRAM_TTS_VOICE`. `DEEPGRAM_API_BASE_URL` is only read by `smoke.ts` (not the schema) — add it to the schema in the part that dials Deepgram. Smoke `SKIP` until the key is set. |
+| Deepgram config (optional) | `.env.example`, `gateway/src/config.ts`, `gateway/src/smoke.ts` | Zod schema has `DEEPGRAM_API_KEY`, `DEEPGRAM_STT_MODEL`, `DEEPGRAM_STT_LANGUAGE`, `DEEPGRAM_TTS_VOICE`. `DEEPGRAM_API_BASE_URL` is in the schema and used by `smoke.ts` and the spoken-call probe (which synthesises the caller's speech through Deepgram's speak API). Smoke `SKIP` until the key is set. |
 | BYO public URL | `BYO_LLM_PUBLIC_URL` | Optional on the gateway today. Deepgram must call this URL. |
 | Azure Blob client | `gateway/src/clients.ts` | Constructed; unused until audio persistence. |
 | Audio table | `audio_assets` | Exists, empty. |
@@ -73,7 +73,7 @@ Authoritative pages (re-read when implementing):
 | --- | --- |
 | `UserStartedSpeaking` | Barge-in: stop browser playback immediately (part 2.5). |
 | `ConversationText` | Forward transcript to the UI when the voice UI exists. Not a controller input. |
-| `AgentThinking` | Thinking-cue hook (part 2.6). |
+| `AgentThinking` | Documented, but **never actually emitted** — do not hang behaviour off it alone (see §8). |
 | Binary audio | Relay to the browser for playback. |
 | `AgentAudioDone` | Playback complete signal. |
 | `Error` / `Warning` | Log; `Error` ends the session honestly (TRD: Deepgram down = session ends + reconnect attempt). |
@@ -109,7 +109,7 @@ Persistence: `TurnRunner` still writes turns / memory_refs / brain+reframe spans
 
 Settled from the TRD and the Phase 1 code. Do not silently change them.
 
-- **D5 — Same brain.** Voice turns call `TurnRunner.run(...)`. No second controller, no second Engram path, no Deepgram-managed LLM.
+- **D5 — Same brain.** Voice turns and typed turns run through the same `TurnRunner`. One controller, no Deepgram-managed LLM. *Amended after the latency work:* which Engram call answers a turn is config (`BRAIN_MODE`, default `retrieve`), and both paths keep memory in Engram. Still one brain, one controller, one code path — see [TRD](TRD.md) §1.2.
 - **D6 — BYO-LLM is OpenAI Chat Completions on the worker.** Path and header names are config. Deepgram `think.endpoint.url` is `BYO_LLM_PUBLIC_URL` plus that path. Locally that URL is a tunnel to the worker; in Azure it is the public worker.
 - **D7 — Identity is gateway-minted headers.** When the user starts a call, the gateway creates (or resumes) a **voice** app session, then puts `INTERNAL_SECRET_HEADER` + configured id headers (app user, Engram user, persona, app session) on `think.endpoint.headers`. The worker rejects the request without a valid secret and a session row that matches those ids. Clients cannot supply another user's ids.
 - **D8 — New app session per voice call**, `sessions.channel = voice` (constant in schema modules). Typed `/chat` sessions stay `text`. Do not reuse a typed-chat `session_id` for voice unless Tauqueer later says so. One Engram `session_id` per app session, same as text (already in `TurnRunner`).
@@ -120,13 +120,13 @@ Settled from the TRD and the Phase 1 code. Do not silently change them.
 
 ---
 
-## 5. Ask Tauqueer before guessing
+## 5. Settled during the build
 
-Stop if any of these is still unset when the named part needs it:
+All three are resolved; kept for the record.
 
-1. **`BYO_LLM_PUBLIC_URL`** — the exact tunnel or public URL Deepgram will POST to (and that it stays up for the manual test).
-2. **`DEEPGRAM_TTS_VOICE`** — the live Aura-2 model id Deepgram accepts today (TRD family is locked; the string must match Deepgram's current catalog).
-3. **Spoken greeting** — omit (default) vs an owner-supplied config string. No greeting in code.
+1. **`BYO_LLM_PUBLIC_URL`** — an ngrok tunnel to the worker in dev (`ngrok http 8000 --url <reserved>.ngrok-free.dev`); a public worker URL in Azure. Warm tunnel overhead measured at ~0.15s, ~2.4s on the first connection.
+2. **`DEEPGRAM_TTS_VOICE`** — `aura-2-athena-en`, accepted live.
+3. **Spoken greeting** — omitted, as the default. Nothing is spoken until the caller speaks first.
 
 ---
 
@@ -260,7 +260,7 @@ Stop if any of these is still unset when the named part needs it:
 
 **Files.**
 
-- Short thinking cue (audio and/or UI) triggered by `AgentThinking` / the start of the BYO request — config asset or config-selected existing sound, not a hardcoded phrase in code.
+- Short thinking cue (audio and/or UI). Intended to hang off `AgentThinking`; that event never fires, so it is triggered by the caller's transcript arriving (`ConversationText` with the user role — a structured field, not keyword matching). Config asset or config-selected existing sound, never a hardcoded phrase in code.
 - Latency: extend `latency_spans` writes. Worker already stores `brain_ms`, `reframe_ms`, `total_ms`. Gateway/worker add `stt_ms` and `tts_first_byte_ms` from Voice Agent / `Latency` events when those events carry timings (see current Deepgram event list). Do not invent numbers.
 
 **Logic.** Cue must not break barge-in (stop cue on `UserStartedSpeaking` too). Session row still created at call start (D9).

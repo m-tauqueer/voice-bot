@@ -41,14 +41,14 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 ### 1.4 Voice transport
 
-- **Deepgram Voice Agent API** (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a **bring-your-own-LLM (BYO-LLM) shim** = controller -> `personas.chat` -> reframe.
+- **Deepgram Voice Agent API** (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a **bring-your-own-LLM (BYO-LLM) shim** = controller -> Engram (`retrieve` by default, `chat` on the switch) -> the speaking LLM, streamed back token by token so speech starts on the first words.
 - One fixed Aura-2 voice (clone later). **Deepgram down = session ends** (+ reconnect attempt).
 - **Fallback:** a custom split pipeline (separate Deepgram STT WSS + Aura TTS WSS + our own turn-taking/barge-in) is used **only if** the Voice Agent API cannot acceptably host Engram-as-brain. The brain is written behind an interface so the swap is clean.
 
 ### 1.5 Controller
 
 - Phase-1 scope: **speak vs silence**, plus reply hints. More decisions (safety, end-session, handoff) later.
-- **No keyword matching / intent heuristics.** The decision derives from the Engram `chat` result and structured signals, never from string matching. Output is a small structured object (action + reason codes + optional hints).
+- **No keyword matching / intent heuristics.** The decision derives from the Engram result (a composed reply on `chat`, retrieved memories on `retrieve`) and structured signals, never from string matching. Output is a small structured object (action + reason codes + optional hints).
 
 ### 1.6 Platform
 
@@ -84,8 +84,8 @@ flowchart LR
 
   subgraph worker [Python AI Worker - BYO-LLM shim]
     ctl["Controller gate: speak / silence"]
-    brain["Engram personas.chat"]
-    reframe["Reframe LLM (gpt-4o-mini)"]
+    brain["Engram: retrieve (default) or chat"]
+    reframe["Speaking LLM (gpt-4o-mini), streamed"]
   end
 
   redis[("Redis: ephemeral state")]
@@ -100,7 +100,8 @@ flowchart LR
   ctl --> brain
   brain --> engram
   brain --> reframe
-  reframe -->|"reframed utterance"| dg
+  reframe -->|"utterance, streamed by token"| dg
+  worker -->|"converse write-back (retrieve path)"| engram
   bridge --> redis
   worker --> pg
   bridge --> blob
@@ -123,13 +124,14 @@ sequenceDiagram
   D-->>G: UserStartedSpeaking (barge-in: stop playback)
   D->>W: BYO-LLM request (running messages)
   W->>W: controller gate (speak/silence)
-  W->>E: personas.chat(pid, text, session_id)
-  E-->>W: PersonaReply (messages, memories_used, session_id)
-  W->>W: flatten messages; reframe (Engram reply + last N turns)
-  W-->>D: reframed utterance (full)
-  D-->>G: Aura-2 audio (stream)
+  W->>E: personas.retrieve(pid, text) — or personas.chat on the switch
+  E-->>W: memories (or a composed PersonaReply)
+  W->>W: compose or reframe, grounded only in what Engram returned
+  W-->>D: utterance, streamed token by token
+  D-->>G: Aura-2 audio (starts on the first token)
   G-->>U: playback
   W->>P: persist turn, decision, engram ids, latency
+  W->>E: personas.converse write-back (retrieve path, after the reply)
   G->>P: persist audio URLs (user + bot)
 ```
 
@@ -137,7 +139,7 @@ sequenceDiagram
 
 - **Frontend (`frontend/`):** sign-in, mic capture + playback, voice UI (mic states, live transcript, waveform/VU, persona listening/thinking/speaking states), minimal persona admin screen. Built on the existing component-library tokens/primitives.
 - **Gateway (`gateway/`, TypeScript):** Google OAuth + session; the client WebSocket; the bridge to the Deepgram Voice Agent WSS (Settings, audio relay both ways, event handling incl. barge-in); writing audio to Azure Blob and Redis ephemeral state. Holds no persona logic.
-- **AI Worker (`worker/`, Python):** the **BYO-LLM endpoint** Deepgram calls. Runs the controller gate, Engram `personas.chat`, and the reframe LLM. Owns the Engram client wrapper and writes canonical turn records to Postgres. This is where the brain lives and where the fallback pipeline would plug in.
+- **AI Worker (`worker/`, Python):** the **BYO-LLM endpoint** Deepgram calls. Runs the controller gate, the Engram call selected by `BRAIN_MODE`, and the speaking LLM, streaming the reply back as it is produced. Owns the Engram client wrapper and writes canonical turn records to Postgres. This is where the brain lives and where the fallback pipeline would plug in.
 
 ### 2.4 Fallback architecture (custom pipeline)
 
@@ -153,10 +155,13 @@ Rules the worker MUST follow:
 
 - **Never build tenant strings by hand.** Use persona endpoints. A three-segment `{org}:{persona}:{user}` tenant is refused on generic routes by design.
 - **Client shape:** `EngramClient(org_id, user_id, api_key=...)`. Each end user maps to one Engram `user_id`; the persona is one Engram persona under one product org.
-- **Reply path:** `reply = engram.personas.chat(pid, message, session_id=sid)`. The SDK (`engram-ai-sdk` 0.4.0) returns `PersonaReply` with **`messages: list[str]`** (1–3 texting-style bubbles), `memories_used`, `session_id`, and `raw`. There is **no `reply.text`**. Flatten `messages` into one utterance (join order = list order; separator from config) before the reframe and before sending speech. Persist both the raw `messages` list and the flattened string. Carry `reply.session_id` forward for the whole conversation — omitting it makes the persona amnesiac.
-- **Reads:** if the controller ever needs raw memory, use `engram.personas.retrieve(pid, query)` and read `tenant` off each row (not the top-level `tenants` list). Not used on the default per-turn path.
+- **Reply path (`BRAIN_MODE=retrieve`, default):** `engram.personas.retrieve(pid, query, top_k=...)` returns `{"results": [...], "tenants": [...]}`. Read `text` and `tenant` off **each row** (not the top-level `tenants` list). Those texts are the only permitted source of facts for the answer. `top_k` matters: at 10 the answers came out noticeably thinner than at 25.
+- **Reply path (`BRAIN_MODE=chat`):** `reply = engram.personas.chat(pid, message, session_id=sid)`. The SDK (`engram-ai-sdk` 0.4.0) returns `PersonaReply` with **`messages: list[str]`** (1–3 texting-style bubbles), `memories_used`, `session_id`, and `raw`. There is **no `reply.text`**. Flatten `messages` into one utterance (join order = list order; separator from config) before the reframe and before sending speech. Persist both the raw `messages` list and the flattened string.
+- **Session id:** carry one conversation id for the whole conversation — omitting it makes the persona amnesiac. The app claims it (`uuid4().hex`, which is what the SDK mints too) when a session first needs one, so two turns starting at once share a thread instead of minting one each. Engram treats it as an opaque caller-chosen key.
+- **No streaming:** `chat` is a single blocking call; the SDK exposes no token stream. Nothing downstream can start before it returns, which is why it costs the whole turn.
 - **Seeding (admin):** `personas.create(name, handle=..., description=...)`; teach via `personas.teach(pid, text)` and `personas.answer(pid, question_key, text)` (question bank from `personas.questions(pid)`); ingest documents into the shared pool via `personas.shared(pid).document(...)`. Subscribe testers with `personas.subscribe(pid, user_id)` — chatting without a subscription returns 403.
-- **Writes on chat:** `chat` writes the caller's private pool automatically (both user turn and reply). No extra ingest in Phase 1/2.
+- **Writes:** on `chat`, Engram writes the caller's private pool automatically (both user turn and reply). On `retrieve`, the app writes both sides with `personas.converse(pid, text, session_id=..., speaker=...)` **after** the reply has been delivered, on a small thread pool so it never holds the reply open. Written turns are retrievable immediately. Never blind-retried; a failed write-back is logged and dropped.
+- **Subscriptions are not an access gate today.** `personas.subscribe` needs the `org:manage` permission, which the current API key lacks (403 for every caller identity). Independently, an unknown `user_id` was allowed `chat`, `retrieve` and `converse` on this persona — so a missing subscription does not refuse anything. Per-user isolation therefore rests on the app: the gateway only ever mints an Engram id from an authenticated account, and `TurnRunner` refuses a session whose stored ids do not match (403). Private pools remain scoped per Engram `user_id`.
 - **Consent:** we send text only, so audio/video/FER consent flags do not apply. Do not send audio to Engram.
 - **Errors:** handle the documented taxonomy (401/402/403/404/409/422/5xx). Reads may retry on 429/502/503/504; **writes are never blind-retried**. Set client `timeout` generously.
 - **Latency reality:** Engram is alpha; `chat` latency is unknown and may be slow. Mitigate with session-open-at-call-start and a thinking cue; if unworkable under the Voice Agent API, trip the fallback.
@@ -178,16 +183,16 @@ Only non-language-understanding thresholds (endpointing ms, timeouts) are config
 
 ## 5. Data model (Postgres, canonical)
 
-Tables exist (Phase 1 migrations). All ids/keys configurable; no hardcoded values. `audio_assets` and voice `latency_spans` columns are written in Phase 2.
+Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurable; no hardcoded values.
 
 - `users` — app user id, Google subject, email, mapped Engram `user_id`, timestamps.
 - `personas` — local reference to the Engram persona (Engram `persona_id`, handle, display name, voice config).
 - `subscriptions` — which users are subscribed to the persona (mirrors Engram state for admin visibility).
 - `sessions` — a voice/chat session: app session id, user id, persona id, **Engram `session_id`**, channel, started/ended.
-- `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, created_at.
+- `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), created_at.
 - `memory_refs` — Engram gids/tenants referenced or produced by a turn (for audit/debug).
-- `audio_assets` — per turn/direction: Azure Blob URL, duration, format, size.
-- `latency_spans` — per turn: STT, brain (chat), reframe, TTS-first-byte, total.
+- `audio_assets` — per turn/direction: Azure Blob URL, duration, format, size. Written only when `VOICE_AUDIO_PERSIST_ENABLED` is on and the storage keys are set; off until there is a storage account.
+- `latency_spans` — per turn: `stt_ms`, `brain_ms` (the Engram call), `reframe_ms`, `reframe_first_token_ms` (when speech could start), `tts_first_byte_ms`, `total_ms`, and `transport_latency` holding the transport's own breakdown. That breakdown arrives as several single-field messages per turn and is merged before it is written.
 
 Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/cancel flags, interim-STT assembly buffer.
 
@@ -197,7 +202,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 
 - **Frontend:** React 18, Vite, Tailwind 3, TypeScript (from the existing component library). Biome. Vite `envDir` is the repo root so only `VITE_*` keys from `.env` reach the browser.
 - **Gateway:** TypeScript (Node 22). Plain Fastify + `@fastify/websocket` + `@fastify/cors`. `postgres` (postgres.js), **ioredis**, `@azure/storage-blob`, pino, dotenv, Zod. Google Sign-In is a small fetch util (Part 1.3), not Passport/`openid-client`.
-- **Worker:** Python 3.12, uv. FastAPI + uvicorn, `engram-ai-sdk`, OpenAI SDK, `psycopg[binary]`, pydantic-settings, structlog, Ruff.
+- **Worker:** Python 3.12, uv. FastAPI + uvicorn, `engram-ai-sdk`, OpenAI SDK, `psycopg[binary,pool]`, pydantic-settings, structlog, Ruff. The database pool, the Engram clients (one per user, LRU) and the OpenAI client are built once per process and reused across turns.
 - **Config:** one root `.env` / `.env.example`. Gateway Zod and worker pydantic-settings fail on boot if required keys are missing or invalid.
 - **Infra:** Docker Compose (Postgres, Redis, gateway, worker, frontend). Azure Blob external. Dev tunnel for BYO-LLM reachability.
 - **Quality:** Biome (TS), Ruff (Python); structured logging; lightweight turn tracing.
@@ -208,7 +213,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 
 - **Isolation:** a user can never read another user's private pool; enforced structurally by Engram and by never forging tenants. Mandatory.
 - **Latency:** ~2-2.5s/turn target for the first build; capture per-stage spans; a thinking cue masks brain latency. Measured to first spoken word: **~2.5-4s on the default `retrieve` brain**, against ~12.5s on `chat` (of which ~11s is Engram-side generation we do not control).
-- **Reliability:** Engram down = product down (honest messaging). Deepgram down = session ends + reconnect. Handle Engram error taxonomy; never blind-retry writes.
+- **Reliability:** Engram down = product down (honest messaging). Deepgram down = session ends + reconnect. Blob storage down = the call continues, logged and surfaced to the client as a warning — it is a secondary record, not the product. Handle Engram error taxonomy; never blind-retry writes.
 - **Security:** secrets server-side only; OAuth-gated; audit-friendly canonical store.
 - **Observability:** structured logs + turn-level durations from day one of Phase 2.
 
@@ -216,11 +221,11 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 
 ## 8. Risks & mitigations
 
-- **Engram alpha latency vs Voice Agent LLM wait window** — session-open early + thinking cue; fallback to custom pipeline; brain behind an interface.
+- **Engram alpha latency vs Voice Agent LLM wait window** — *resolved without changing transport.* `chat` cost ~11s per turn, and Deepgram warns `SLOW_THINK_REQUEST` every 5s while waiting (it does not drop the call). Measured `retrieve` at 0.7–1.5s against `chat` at ~10.6s, so the default brain now reads memory and composes here; the reply is streamed so speech starts on the first token. The thinking cue covers what remains. The custom-pipeline fallback was never needed.
 - **BYO-LLM public reachability in local dev** — `BYO_LLM_PUBLIC_URL` is a tunnel (or public worker URL) Deepgram can call; see [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 - **Engram alpha API churn** — client wrapped behind an interface; pin SDK; watch changelog.
-- **Barge-in correctness** — rely on Voice Agent `UserStartedSpeaking`; in fallback, pair `Clear` with playback flush (doing only one causes stalls).
-- **Persona voice drift / hallucination** — reframe is fact-locked to Engram output; persona identity seeded in the shared pool.
+- **Barge-in correctness** — rely on Voice Agent `UserStartedSpeaking`; in fallback, pair `Clear` with playback flush (doing only one causes stalls). The drop must also be cleared when a *new* agent turn starts: an interrupted utterance may never report its end, and latching on that alone can mute the rest of the call.
+- **Persona voice drift / hallucination** — the speaking LLM is fact-locked to whatever Engram returned, on both brains; persona identity seeded in the shared pool. On `retrieve` the app owns more of the answer, so this is the thing to keep watching: a side-by-side run confirmed it declines rather than invents when memory does not cover a question, and `npm run brains` re-runs that check.
 
 ---
 
@@ -229,7 +234,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 - Multilingual code-switching (`language=multi`) with tuned endpointing.
 - Per-persona voice + voice cloning.
 - Richer controller (safety filter, end-session, human handoff, tool use), still model/signal driven.
-- Streaming TTS per sentence for sub-1.5s perceived latency.
+- Sentence-level TTS shaping. Token streaming to the transport is done; speech already starts on the first words.
 - Selective salient-fact ingest and persona compression tuning.
 - Multi-persona admin UI and multi-tenant SaaS shape.
 - Consent, retention, delete-my-data, and usage/billing dashboards.

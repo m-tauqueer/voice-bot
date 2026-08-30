@@ -14,8 +14,8 @@ The one-line data flow for the shipping architecture:
 
 ```
 browser mic -> Deepgram Voice Agent API (STT + TTS + turn-taking + barge-in)
-            -> BYO-LLM shim (controller -> Engram personas.chat -> reframe LLM)
-            -> Deepgram speaks the reply
+            -> BYO-LLM shim (controller -> Engram memory -> speaking LLM, streamed)
+            -> Deepgram speaks the reply as the words are produced
 ```
 
 Full detail is in the docs below. Do not infer architecture from this summary — read the TRD.
@@ -65,7 +65,9 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phase 0 and Phase 1 are complete.** Typed chat works at `/chat` (Google sign-in, Engram memory, reframe, controller, Postgres). Voice work starts at Phase 2 when Tauqueer names a part from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) / [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`: Google sign-in, Engram memory, controller, streamed reply, barge-in, and a canonical record in Postgres. Phase 3 starts when Tauqueer names a part from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+
+Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 

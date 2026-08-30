@@ -215,36 +215,36 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 - Goal: the user can interrupt the bot.
 - Tasks:
   - Handle `UserStartedSpeaking`: stop playback + flush buffered audio immediately.
-- Manual test: talk over the bot mid-reply; playback stops and the new turn is heard. Not run live — Tauqueer was in a noisy environment; still needs a quiet-room confirmation.
+- Manual test: talk over the bot mid-reply; playback stops and the new turn is heard. **Confirmed live in a quiet room.** A synthetic-speech probe (`npm run bargein`, `npm run call`) covers the state machine, including the case where an interrupted utterance never reports its end.
 - Commit gate: on Tauqueer's word.
 
 ### Part 2.6 — Thinking cue & latency capture
-- Goal: mask brain latency and measure it.
+- Goal: mask brain latency and measure it. **Latency reduction was folded in here on Tauqueer's instruction** — see [PHASE_2_PLAN.md](PHASE_2_PLAN.md) §7.
 - Tasks:
   - Short "thinking" cue while the brain works; ensure Engram session opened at call start.
   - Capture per-stage latency spans (STT, brain, reframe, TTS first byte, total).
-- Manual test: latency spans recorded per turn; the cue plays without harming barge-in.
+- Manual test: latency spans recorded per turn; the cue plays without harming barge-in. **Done.** The cue had never played at all — it hung off an event the transport does not emit.
 - Commit gate: on Tauqueer's word.
 
 ### Part 2.7 — Audio persistence to Azure Blob
 - Goal: store both sides' audio.
 - Tasks:
   - Capture user input + bot TTS audio; upload to Azure Blob; store URLs + metadata in `audio_assets`, linked to turns.
-- Manual test: after a call, both user and bot audio are retrievable via stored URLs.
+- Manual test: after a call, both user and bot audio are retrievable via stored URLs. **Built and verified against the storage emulator**; switched off (`VOICE_AUDIO_PERSIST_ENABLED=false`) until there is a real storage account.
 - Commit gate: on Tauqueer's word.
 
 ### Part 2.8 — Canonical logging for voice turns
 - Goal: full canonical record for voice.
 - Tasks:
   - Persist STT finals, controller decisions, Engram ids, latency spans per voice turn; structured turn traces.
-- Manual test: a voice conversation produces complete, queryable Postgres records.
+- Manual test: a voice conversation produces complete, queryable Postgres records. **Done** — a call reconstructs from SQL alone, including transcript, controller reasons, memory refs, per-stage timings and which brain answered.
 - Commit gate: on Tauqueer's word.
 
 ### Part 2.9 — End-to-end voice acceptance
 - Goal: prove the PRD success criteria live.
 - Tasks:
   - Run the full experience; verify memory across turns and across restart, barge-in, audio storage, per-user isolation, latency logging.
-- Manual test: the [PRD](PRD.md) §7 checklist passes end-to-end. **Phase 2 done — the product works end to end.**
+- Manual test: the [PRD](PRD.md) §7 checklist passes end-to-end. **Phase 2 done — the product works end to end.** Criteria 1–3 and 6 confirmed by Tauqueer live plus probes; 4 verified against the storage emulator; 5 verified over real HTTP with two accounts, with a second Google sign-in the one outstanding click.
 - Commit gate: on Tauqueer's word.
 
 ---

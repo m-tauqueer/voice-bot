@@ -82,14 +82,14 @@ See [Phase Plan](PHASE_PLAN.md) for the task-level breakdown.
 
 - **Phase 0 — Setup (complete):** repo, dependencies, Docker services, environment, external-account smoke checks.
 - **Phase 1 — Brain first (complete):** persona record + Engram wrapper + auth + reframe + controller + typed chat at `/chat`. Memory lives in Engram + Postgres and survives a process restart.
-- **Phase 2 — Voice loop (current):** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product. Plan: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
-- **Phase 3 — Hardening:** failure handling, latency tuning, observability, multilingual, voice-clone groundwork, security review, Azure deployment.
+- **Phase 2 — Voice loop (complete):** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product. Latency reduction was folded in: the reply streams to the transport as it is composed, and the default brain reads Engram memory rather than waiting for Engram to compose. Plan and measured outcome: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
+- **Phase 3 — Hardening (next):** failure handling, latency tuning, observability, multilingual, voice-clone groundwork, security review, Azure deployment. Blob audio archiving is built but switched off until there is a storage account.
 
 ---
 
 ## 9. Assumptions & dependencies
 
-- Deepgram **Voice Agent API** is the primary transport (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a bring-your-own-LLM brain. A custom split pipeline is the documented fallback only if the Voice Agent API cannot host Engram-as-brain acceptably.
+- Deepgram **Voice Agent API** is the primary transport (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a bring-your-own-LLM brain. The custom split pipeline was the documented fallback if the Voice Agent API could not host Engram-as-brain acceptably; it was **not needed** — the latency was resolved inside the brain instead.
 - Engram is used on its **alpha** API; churn is acceptable, but the client is wrapped behind an interface.
 - Accounts for Deepgram, Engram, OpenAI, Azure Blob, and Google OAuth are available.
 - Persona content (which historical figure, its source material, the exact voice) is chosen by the owner and treated as content, not engineering.
