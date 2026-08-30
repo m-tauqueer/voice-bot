@@ -1,3 +1,4 @@
+import { sign as signCookie } from "@fastify/cookie";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import { z } from "zod";
@@ -66,12 +67,11 @@ export async function takeOauthPending(
   }
 }
 
-export async function createSession(
+export async function persistAuthSession(
   redis: Redis,
-  reply: FastifyReply,
   config: GatewayConfig,
   appUserId: string,
-): Promise<void> {
+): Promise<string> {
   const sessionId = randomUrlToken(config.SESSION_ID_BYTES);
   await redis.set(
     sessionRedisKey(config, sessionId),
@@ -79,6 +79,23 @@ export async function createSession(
     "EX",
     config.SESSION_TTL_SECONDS,
   );
+  return sessionId;
+}
+
+export function signSessionCookieValue(
+  config: GatewayConfig,
+  sessionId: string,
+): string {
+  return signCookie(sessionId, config.SESSION_SECRET);
+}
+
+export async function createSession(
+  redis: Redis,
+  reply: FastifyReply,
+  config: GatewayConfig,
+  appUserId: string,
+): Promise<void> {
+  const sessionId = await persistAuthSession(redis, config, appUserId);
   reply.setCookie(
     config.SESSION_COOKIE_NAME,
     sessionId,

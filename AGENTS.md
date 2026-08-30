@@ -85,6 +85,7 @@ npm run controller   # controller speak/silence probe
 npm run reframe      # reframe probe
 npm run chat         # two-turn live typed-loop probe
 npm run byo          # Chat Completions shim probe (needs Engram + OpenAI)
+npm run voice        # Voice Agent handshake + inject probe (needs Deepgram + public worker URL)
 npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)

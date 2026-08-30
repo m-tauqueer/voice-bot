@@ -28,7 +28,8 @@
     "reframe": "uv run --directory worker python -m worker.reframe.probe",
     "controller": "uv run --directory worker python -m worker.controller.probe",
     "chat": "uv run --directory worker python -m worker.turn.probe",
-    "byo": "uv run --directory worker python -m worker.byo.probe"
+    "byo": "uv run --directory worker python -m worker.byo.probe",
+    "voice": "npm run voice -w gateway"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4"
