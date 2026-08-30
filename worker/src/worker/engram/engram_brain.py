@@ -241,13 +241,32 @@ class EngramBrain(PersonaBrain):
                 if not isinstance(row, dict):
                     continue
                 tenant = row.get("tenant")
+                text = row.get("text")
                 hits.append(
                     RetrieveHit(
                         tenant=tenant if isinstance(tenant, str) else None,
+                        text=text if isinstance(text, str) else None,
                         raw=row,
                     ),
                 )
         return RetrieveOutcome(results=hits, raw=raw)
+
+    def converse(
+        self,
+        persona_id: str,
+        text: str,
+        *,
+        session_id: str | None = None,
+        speaker: str | None = None,
+    ) -> Any:
+        return self._write(
+            lambda: self._client.personas.converse(
+                persona_id,
+                text,
+                session_id=session_id,
+                speaker=speaker,
+            ),
+        )
 
     def close(self) -> None:
         self._client.close()

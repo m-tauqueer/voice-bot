@@ -37,15 +37,16 @@ def insert_turn(
     messages: list[str] | None = None,
     controller_action: str | None = None,
     controller_reasons: list[str] | None = None,
+    brain_mode: str | None = None,
 ) -> UUID:
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO turns (
               session_id, ordinal, speaker, text, messages,
-              controller_action, controller_reasons
+              controller_action, controller_reasons, brain_mode
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -56,6 +57,7 @@ def insert_turn(
                 Json(messages) if messages is not None else None,
                 controller_action,
                 Json(controller_reasons) if controller_reasons is not None else None,
+                brain_mode,
             ),
         )
         row = cur.fetchone()
@@ -87,15 +89,24 @@ def insert_latency_spans(
     turn_id: UUID,
     brain_ms: int | None,
     reframe_ms: int | None,
+    reframe_first_token_ms: int | None = None,
     total_ms: int | None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO latency_spans (turn_id, brain_ms, reframe_ms, total_ms)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO latency_spans (
+              turn_id, brain_ms, reframe_ms, reframe_first_token_ms, total_ms
+            )
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (str(turn_id), brain_ms, reframe_ms, total_ms),
+            (
+                str(turn_id),
+                brain_ms,
+                reframe_ms,
+                reframe_first_token_ms,
+                total_ms,
+            ),
         )
 
 

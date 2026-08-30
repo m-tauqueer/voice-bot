@@ -45,7 +45,7 @@ For the first build there are ~2-3 test users, then the product is productionize
 - **Channel:** browser microphone (WebRTC/MediaRecorder), audio played back in the browser.
 - **Interaction:** full-duplex with **barge-in** — the user can interrupt while the bot is speaking and the bot stops.
 - **Turn behavior:** the bot may speak, or deliberately stay silent/wait; the decision is model/signal driven, never keyword-based.
-- **Latency:** the bot composes the full reply, then speaks it; ~2-2.5s per turn is acceptable for the first build. A brief "thinking" cue covers brain latency.
+- **Latency:** the reply is streamed to the voice transport as it is composed, so speech starts on the first words rather than the last. Measured ~2.5-4s to the first spoken word; a brief "thinking" cue covers the wait. (The alternative brain, which asks Engram to compose the reply, costs ~12.5s and is kept only as a switch.)
 - **Language:** English first (Deepgram Nova-3). Multilingual code-switching is a later phase.
 - **Memory continuity:** the persona remembers earlier turns in the same call and prior conversations across restarts, because memory lives in Engram, not in the process.
 - **Reply fidelity:** the reframing LLM speaks the persona's recalled answer in natural, spoken, first-person style; it must not invent facts beyond what Engram returned (minor connective phrasing only).

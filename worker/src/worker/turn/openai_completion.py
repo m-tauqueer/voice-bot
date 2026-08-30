@@ -62,6 +62,30 @@ def _chunk(
     }
 
 
+def chunk_line(
+    settings: WorkerSettings,
+    *,
+    completion_id: str,
+    created: int,
+    model: str,
+    delta: dict[str, Any],
+    finish_reason: str | None = None,
+) -> str:
+    payload = _chunk(
+        settings,
+        completion_id=completion_id,
+        created=created,
+        model=model,
+        delta=delta,
+        finish_reason=finish_reason,
+    )
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def done_line(settings: WorkerSettings) -> str:
+    return f"data: {settings.byo_llm_sse_done}\n\n"
+
+
 def iter_sse_chunks(
     settings: WorkerSettings,
     *,
@@ -70,38 +94,28 @@ def iter_sse_chunks(
     model: str,
     content: str,
 ) -> Iterator[str]:
-    def line(payload: dict[str, Any]) -> str:
-        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-    yield line(
-        _chunk(
-            settings,
-            completion_id=completion_id,
-            created=created,
-            model=model,
-            delta={"role": settings.byo_llm_assistant_role},
-            finish_reason=None,
-        )
+    """Whole-utterance SSE. Used when the reply is already complete."""
+    yield chunk_line(
+        settings,
+        completion_id=completion_id,
+        created=created,
+        model=model,
+        delta={"role": settings.byo_llm_assistant_role},
     )
     if content:
-        yield line(
-            _chunk(
-                settings,
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={"content": content},
-                finish_reason=None,
-            )
-        )
-    yield line(
-        _chunk(
+        yield chunk_line(
             settings,
             completion_id=completion_id,
             created=created,
             model=model,
-            delta={},
-            finish_reason=settings.byo_llm_finish_reason,
+            delta={"content": content},
         )
+    yield chunk_line(
+        settings,
+        completion_id=completion_id,
+        created=created,
+        model=model,
+        delta={},
+        finish_reason=settings.byo_llm_finish_reason,
     )
-    yield f"data: {settings.byo_llm_sse_done}\n\n"
+    yield done_line(settings)

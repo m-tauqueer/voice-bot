@@ -23,6 +23,12 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_TRANSCRIPT_USER_ROLE: string;
   readonly VITE_VOICE_TRANSCRIPT_ASSISTANT_ROLE: string;
   readonly VITE_VOICE_VU_BAR_COUNT: string;
+  readonly VITE_VOICE_THINKING_CUE_ENABLED: string;
+  readonly VITE_VOICE_THINKING_CUE_URL: string;
+  readonly VITE_VOICE_THINKING_CUE_LOOP: string;
+  readonly VITE_VOICE_THINKING_CUE_INTERVAL_MS: string;
+  readonly VITE_VOICE_THINKING_CUE_MAX_MS: string;
+  readonly VITE_VOICE_THINKING_CUE_LABEL: string;
 }
 
 interface ImportMeta {

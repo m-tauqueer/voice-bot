@@ -4,69 +4,46 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-from openai import (
-    APIConnectionError,
-    APIStatusError,
-    APITimeoutError,
-    AuthenticationError,
-    OpenAI,
-    OpenAIError,
-)
+from openai import OpenAI, OpenAIError
 
 from worker.clients import create_openai
 from worker.config import WorkerSettings
-from worker.reframe.defaults import DEFAULT_REFRAME_SYSTEM_PROMPT
+from worker.reframe.defaults import DEFAULT_ANSWER_SYSTEM_PROMPT
 from worker.reframe.errors import (
     ReframeEmptyInputError,
     ReframeEmptyOutputError,
     ReframeError,
     ReframeUnavailableError,
 )
+from worker.reframe.reframer import translate_openai_error
 from worker.reframe.types import HistoryTurn
 
 
 def _payload(
-    messages: list[str],
+    memories: list[str],
     history: list[HistoryTurn],
+    question: str,
     voice_config: dict[str, Any],
 ) -> str:
     return json.dumps(
         {
-            "messages": messages,
+            "memories": memories,
             "history": [
                 {"speaker": turn.speaker, "text": turn.text} for turn in history
             ],
+            "question": question,
             "voice_config": voice_config,
         },
         ensure_ascii=False,
     )
 
 
-def translate_openai_error(exc: OpenAIError) -> ReframeError:
-    if isinstance(exc, AuthenticationError):
-        return ReframeUnavailableError(
-            "reframe LLM rejected the API key",
-            status=getattr(exc, "status_code", 401),
-            detail=str(exc),
-        )
-    if isinstance(exc, APITimeoutError):
-        return ReframeUnavailableError("reframe LLM timed out", detail=str(exc))
-    if isinstance(exc, APIConnectionError):
-        return ReframeUnavailableError("reframe LLM is unreachable", detail=str(exc))
-    if isinstance(exc, APIStatusError):
-        return ReframeError(
-            "reframe LLM request failed",
-            status=exc.status_code,
-            detail=str(exc),
-        )
-    return ReframeError("reframe LLM request failed", detail=str(exc))
+class Answerer:
+    """Speaks as the persona from memories retrieved for this turn.
 
-
-class Reframer:
-    """Fact-locked rewrite of an Engram reply into one spoken utterance.
-
-    One instance per process: the OpenAI client keeps its connections warm, so
-    a turn pays for generation only, not for setting up the connection.
+    Used when the brain reads memory and composes the reply here rather than
+    asking the memory service to compose it. Same fact lock as the reframer:
+    the retrieved memories are the only permitted source of facts.
     """
 
     def __init__(
@@ -85,40 +62,47 @@ class Reframer:
 
     def _request(
         self,
-        messages: list[str],
+        memories: list[str],
         history: list[HistoryTurn],
+        question: str,
         voice_config: dict[str, Any],
     ) -> tuple[str, list[dict[str, str]]]:
-        bubbles = [item for item in messages if isinstance(item, str) and item.strip()]
-        if not bubbles:
-            raise ReframeEmptyInputError("reframe requires at least one Engram message")
+        grounded = [
+            item for item in memories if isinstance(item, str) and item.strip()
+        ]
+        if not grounded:
+            raise ReframeEmptyInputError("answering requires at least one memory")
         if not isinstance(voice_config, dict):
             raise ReframeError("voice_config must be an object")
 
         limit = self._settings.reframe_history_turns
         recent = history[-limit:] if limit > 0 else []
-        system = self._settings.reframe_system_prompt or DEFAULT_REFRAME_SYSTEM_PROMPT
+        system = self._settings.answer_system_prompt or DEFAULT_ANSWER_SYSTEM_PROMPT
         model = self._settings.openai_model
         if not model:
             raise ReframeUnavailableError("OPENAI_MODEL is not set")
         return model, [
             {"role": "system", "content": system},
-            {"role": "user", "content": _payload(bubbles, recent, voice_config)},
+            {
+                "role": "user",
+                "content": _payload(grounded, recent, question, voice_config),
+            },
         ]
 
-    def reframe(
+    def answer(
         self,
-        messages: list[str],
+        memories: list[str],
         history: list[HistoryTurn],
+        question: str,
         voice_config: dict[str, Any],
     ) -> str:
-        model, request = self._request(messages, history, voice_config)
+        model, request = self._request(memories, history, question, voice_config)
         try:
             completion = self._client.chat.completions.create(
                 model=model,
                 messages=request,
                 temperature=self._settings.reframe_temperature,
-                max_completion_tokens=self._settings.reframe_max_tokens,
+                max_completion_tokens=self._settings.answer_max_tokens,
                 timeout=self._settings.reframe_timeout_seconds,
             )
         except OpenAIError as exc:
@@ -130,27 +114,23 @@ class Reframer:
             if isinstance(content, str):
                 spoken = content.strip()
         if not spoken:
-            raise ReframeEmptyOutputError("reframe LLM returned no text")
+            raise ReframeEmptyOutputError("answer model returned no text")
         return spoken
 
     def stream(
         self,
-        messages: list[str],
+        memories: list[str],
         history: list[HistoryTurn],
+        question: str,
         voice_config: dict[str, Any],
     ) -> Iterator[str]:
-        """Yield the spoken utterance in order as the model produces it.
-
-        Deepgram starts speaking on the first text token, so the caller must
-        forward each piece as it arrives rather than buffering the whole reply.
-        """
-        model, request = self._request(messages, history, voice_config)
+        model, request = self._request(memories, history, question, voice_config)
         try:
             stream = self._client.chat.completions.create(
                 model=model,
                 messages=request,
                 temperature=self._settings.reframe_temperature,
-                max_completion_tokens=self._settings.reframe_max_tokens,
+                max_completion_tokens=self._settings.answer_max_tokens,
                 timeout=self._settings.reframe_timeout_seconds,
                 stream=True,
             )
@@ -158,12 +138,11 @@ class Reframer:
             for chunk in stream:
                 if not chunk.choices:
                     continue
-                delta = chunk.choices[0].delta
-                piece = getattr(delta, "content", None)
+                piece = getattr(chunk.choices[0].delta, "content", None)
                 if isinstance(piece, str) and piece:
                     emitted = True
                     yield piece
         except OpenAIError as exc:
             raise translate_openai_error(exc) from exc
         if not emitted:
-            raise ReframeEmptyOutputError("reframe LLM returned no text")
+            raise ReframeEmptyOutputError("answer model returned no text")

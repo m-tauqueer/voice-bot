@@ -29,10 +29,13 @@ class TurnOut(BaseModel):
     reasons: list[str]
 
 
-def build_turn_router(settings: WorkerSettings) -> APIRouter:
+def build_turn_router(
+    settings: WorkerSettings,
+    runner: TurnRunner | None = None,
+) -> APIRouter:
     guard = require_internal_secret(settings)
     router = APIRouter(dependencies=[Depends(guard)])
-    runner = TurnRunner(settings)
+    runner = runner or TurnRunner(settings)
 
     @router.post("/internal/turn", response_model=TurnOut)
     def turn(body: TurnIn) -> TurnOut:

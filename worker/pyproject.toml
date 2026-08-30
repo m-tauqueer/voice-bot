@@ -12,7 +12,7 @@ dependencies = [
     "fastapi",
     "httpx",
     "openai",
-    "psycopg[binary]",
+    "psycopg[binary,pool]",
     "pydantic-settings",
     "python-dotenv",
     "python-multipart",

@@ -29,7 +29,12 @@
     "controller": "uv run --directory worker python -m worker.controller.probe",
     "chat": "uv run --directory worker python -m worker.turn.probe",
     "byo": "uv run --directory worker python -m worker.byo.probe",
-    "voice": "npm run voice -w gateway"
+    "brains": "uv run --directory worker python -m worker.brain.probe",
+    "voice": "npm run voice -w gateway",
+    "call": "npm run call -w gateway",
+    "isolation": "npm run isolation -w gateway",
+    "audio": "npm run audio -w gateway",
+    "bargein": "npm run bargein -w gateway"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4"

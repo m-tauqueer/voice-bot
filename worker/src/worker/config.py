@@ -42,7 +42,21 @@ class WorkerSettings(BaseSettings):
     engram_timeout_seconds: int = Field(default=120, gt=0)
     engram_message_join: str = Field(default=" ")
     engram_read_max_retries: int = Field(default=2, ge=0)
+    engram_client_cache_size: int = Field(default=8, gt=0)
+    # "retrieve" reads memory and lets the answer model compose the reply,
+    # writing the turn back with converse. "chat" lets Engram compose it, which
+    # costs about ten more seconds a turn.
+    brain_mode: Literal["chat", "retrieve"] = "retrieve"
+    engram_retrieve_top_k: int = Field(default=25, gt=0)
+    engram_converse_writeback: bool = Field(default=True)
+    engram_writeback_workers: int = Field(default=2, gt=0)
+    engram_converse_user_speaker: str = Field(default="user", min_length=1)
+    engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
+    db_pool_min_size: int = Field(default=1, ge=0)
+    db_pool_max_size: int = Field(default=8, gt=0)
+    db_pool_timeout_seconds: float = Field(default=10, gt=0)
+    db_pool_max_idle_seconds: float = Field(default=300, gt=0)
     admin_ingest_max_bytes: int = Field(default=8388608, gt=0)
     openai_api_key: str | None = None
     openai_model: str = Field(default="gpt-4o-mini")
@@ -52,7 +66,10 @@ class WorkerSettings(BaseSettings):
     reframe_temperature: float = Field(default=0.2, ge=0, le=2)
     reframe_max_tokens: int = Field(default=256, gt=0)
     reframe_timeout_seconds: float = Field(default=30, gt=0)
+    reframe_stream_enabled: bool = Field(default=True)
     reframe_system_prompt: str | None = None
+    answer_system_prompt: str | None = None
+    answer_max_tokens: int = Field(default=320, gt=0)
     byo_llm_chat_completions_path: str = Field(
         default="/v1/chat/completions",
         min_length=1,
@@ -98,6 +115,7 @@ class WorkerSettings(BaseSettings):
         "openai_base_url",
         "openai_api_base_url",
         "reframe_system_prompt",
+        "answer_system_prompt",
         mode="before",
     )
     @classmethod

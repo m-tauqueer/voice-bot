@@ -47,6 +47,12 @@ export type VoiceClientConfig = {
   transcriptUserRole: string;
   transcriptAssistantRole: string;
   vuBarCount: number;
+  thinkingCueEnabled: boolean;
+  thinkingCueUrl: string;
+  thinkingCueLoop: boolean;
+  thinkingCueIntervalMs: number;
+  thinkingCueMaxMs: number;
+  thinkingCueLabel: string;
 };
 
 export function loadVoiceClientConfig(): VoiceClientConfig {
@@ -138,6 +144,30 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     vuBarCount: requiredPositiveInt(
       "VITE_VOICE_VU_BAR_COUNT",
       import.meta.env.VITE_VOICE_VU_BAR_COUNT,
+    ),
+    thinkingCueEnabled: requiredBool(
+      "VITE_VOICE_THINKING_CUE_ENABLED",
+      import.meta.env.VITE_VOICE_THINKING_CUE_ENABLED,
+    ),
+    thinkingCueUrl: requiredString(
+      "VITE_VOICE_THINKING_CUE_URL",
+      import.meta.env.VITE_VOICE_THINKING_CUE_URL,
+    ),
+    thinkingCueLoop: requiredBool(
+      "VITE_VOICE_THINKING_CUE_LOOP",
+      import.meta.env.VITE_VOICE_THINKING_CUE_LOOP,
+    ),
+    thinkingCueIntervalMs: requiredPositiveInt(
+      "VITE_VOICE_THINKING_CUE_INTERVAL_MS",
+      import.meta.env.VITE_VOICE_THINKING_CUE_INTERVAL_MS,
+    ),
+    thinkingCueMaxMs: requiredPositiveInt(
+      "VITE_VOICE_THINKING_CUE_MAX_MS",
+      import.meta.env.VITE_VOICE_THINKING_CUE_MAX_MS,
+    ),
+    thinkingCueLabel: requiredString(
+      "VITE_VOICE_THINKING_CUE_LABEL",
+      import.meta.env.VITE_VOICE_THINKING_CUE_LABEL,
     ),
   };
 }

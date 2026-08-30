@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import structlog
 import uvicorn
@@ -11,6 +13,8 @@ from worker.api.chat_completions import build_chat_completions_router
 from worker.api.subscribe import build_subscribe_router
 from worker.api.turn import build_turn_router
 from worker.config import WorkerSettings, load_settings
+from worker.persistence.db import close_pool, pool
+from worker.turn.service import TurnRunner
 
 settings = load_settings()
 
@@ -36,11 +40,26 @@ def _configure_logging(loaded: WorkerSettings) -> None:
 
 _configure_logging(settings)
 
-app = FastAPI(title="voice-bot-worker")
+# One runner for the whole process: the database pool, the Engram clients and
+# the reframe client all stay warm between turns.
+runner = TurnRunner(settings)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    pool(settings)
+    try:
+        yield
+    finally:
+        runner.close()
+        close_pool()
+
+
+app = FastAPI(title="voice-bot-worker", lifespan=lifespan)
 app.include_router(build_subscribe_router(settings))
 app.include_router(build_admin_router(settings))
-app.include_router(build_turn_router(settings))
-app.include_router(build_chat_completions_router(settings))
+app.include_router(build_turn_router(settings, runner))
+app.include_router(build_chat_completions_router(settings, runner))
 
 
 @app.get("/health")

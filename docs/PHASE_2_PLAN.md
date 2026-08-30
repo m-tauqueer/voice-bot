@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 2. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 2 goal: a signed-in user talks in the browser, hears the same persona, can interrupt it, and every turn plus both audio sides is stored. English only. The brain is unchanged: controller → Engram `personas.chat` → reframe.
 
-**Status: not started.** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
+**Status: parts 2.1–2.9 built, and every PRD §7 criterion has been demonstrated end to end.** Latency work was folded into Phase 2 on Tauqueer's instruction and is recorded in §7. What still needs Tauqueer personally is listed in §9.
 
 Context7 MCP is the first stop for Deepgram / OpenAI protocol lookups. If it is not connected, use [Deepgram Voice Agent docs](https://developers.deepgram.com/docs/voice-agent) (message flow, Settings, LLM models) and say so. The protocol can churn — re-read those pages at the start of the part that sends `Settings` or speaks Chat Completions; do not treat example JSON in this file as a frozen schema.
 
@@ -331,3 +331,99 @@ Stop if any of these is still unset when the named part needs it:
 - Every new value is config.
 - Deepgram Settings and Chat Completions fields match the docs of the day this part is built.
 - Each part's manual test is shown to Tauqueer before any commit.
+
+
+---
+
+## 7. Latency work (folded into Phase 2)
+
+Tauqueer asked for latency reduction inside Phase 2 rather than deferring it to 3.2. The locked decisions were **not** changed: the brain is still `personas.chat` (D5 / TRD §1.2) and STT is still Nova-3 (TRD §1.1). Everything below is in code we own.
+
+**Where the time actually goes** (measured against live services, warm process):
+
+| Stage | Before | After |
+| --- | --- | --- |
+| Engram `personas.chat` | 10.2–18.3 s | unchanged — not ours to tune |
+| Reframe, to the first spoken word | 1.5–5.4 s (full completion, new client per turn) | 0.93–1.13 s (streamed, warm client) |
+| Deepgram TTS first byte | 0.07 s | 0.07 s |
+| Blocked on another turn's session lock | up to ~8.9 s | none |
+
+Measured baseline for reference: `personas.retrieve` is ~0.7 s warm, so ~10 s of `chat` is Engram's own generation.
+
+**Changes made**
+
+1. **Real token streaming through the shim.** `iter_sse_chunks` previously waited for the whole completion and emitted it as one delta. `Reframer.stream()` now forwards OpenAI deltas as they arrive and the shim writes them straight to the SSE body. Confirmed live: Deepgram sends `stream: true`, and 11–25 content frames arrive spread over 1.5–2.4 s on both the direct and tunnelled paths.
+2. **Warm clients.** The Postgres connection (`psycopg_pool`), the Engram client (one per user, LRU, `ENGRAM_CLIENT_CACHE_SIZE`) and the OpenAI client are built once per process instead of once per turn. A cold reframe measured 3.10 s against 1.52 s warm.
+3. **The session lock no longer spans the brain.** `TurnRunner` splits into `begin` / `speak` / `stream_speak` / `finish`; no connection and no row lock is held across the Engram call or the reframe. Two turns in flight on one session now overlap (15.8 s wall against 31.7 s serial) and ordinals still hold.
+4. **Persistence moved off the first-byte path.** The canonical record is written after the reply has been delivered, not before.
+5. **One Engram thread per app session.** Two turns starting at once used to mint an Engram `session_id` each and the last writer won. The id is now claimed under the short lock in `begin`.
+
+**Result on the `chat` path:** first spoken word at **+12.5–13.6 s** end to end on a warm live call, of which ~11 s is Engram-side generation.
+
+**A second brain path was then added behind `BRAIN_MODE`** (owner's call, TRD §1.2 updated). Engram remains the brain and the memory in both; what changes is which Engram call answers a turn:
+
+| | `chat` | `retrieve` (default) |
+| --- | --- | --- |
+| Engram call per turn | `personas.chat` | `personas.retrieve` |
+| Who composes the reply | Engram | the answer model, fact-locked to the retrieved memories |
+| Who writes memory | Engram, automatically | `personas.converse`, off the reply path |
+| Engram time per turn | ~11 s | 0.7–1.5 s |
+| To first word (`npm run brains`) | **12.46 s** | **2.80 s** |
+| To first word, live spoken call | **~14.5 s** | **~4.1 s** |
+
+Side-by-side answer quality on the same persona was equal or better on the `retrieve` path once recall was widened to `top_k=25`: it named more of the specifics (`lantern-voice`, `lantern-byo`) and recalled a private code word that `chat` declined to state. At `top_k=10` its answers were noticeably thinner, so the setting matters. Compare them any time with `npm run brains`.
+
+`retrieve` is the default. A wider side-by-side run covering memory recall, private recall, conversational continuity and a question with no memory behind it put it equal or better on every category: it kept the fact lock ("those details aren't in my memories") and answered a continuity question that `chat` got wrong. The write-back runs on a small thread pool after the reply is delivered — `finish()` went from 1973 ms to 16 ms once it moved off the response path — and is never retried, per TRD §3.
+
+**No Deepgram-side knob exists.** Nova-3 (`listen.provider.version: v1`) does not expose `endpointing` in Voice Agent Settings; `eot_threshold` / `eager_eot_threshold` / `eot_timeout_ms` are Flux (`v2`) only. Nothing was invented in config for a parameter the API does not accept.
+
+---
+
+## 8. What the code learned that the plan got wrong
+
+Recorded so the next reader does not re-derive it.
+
+- **`LatencyReport` arrives as one field per message, not one report per turn.** A turn produces four separate events (`ttt_token_latency`, `ttt_text_latency`, `tts_latency`, `total_latency`). The gateway merges them across a turn and writes once at `AgentAudioDone`. `stt_latency` does not appear for an injected message and stays null.
+- **`AgentThinking` is not emitted on every turn.** It never fired in any probe run. The caller's turn is therefore closed by the first agent audio chunk, with `AgentThinking` and `AgentAudioDone` as additional safe triggers.
+- **An interrupted utterance may never report `AgentAudioDone`.** The barge-in latch used to clear only on that event, so a missing one would have muted the rest of the call. A new agent turn now clears it too; covered by `npm run bargein`.
+- **Deepgram warns `SLOW_THINK_REQUEST` at 5 s and every 5 s after.** It does not drop the call, but it is the Voice Agent LLM wait window TRD §8 anticipated.
+- **The transport closes a call that sends no audio** (`CLIENT_MESSAGE_TIMEOUT`). The voice probe now streams silence frames the way a browser does.
+
+---
+
+## 9. Acceptance (2.9) and what is left for Tauqueer
+
+Every PRD §7 criterion has been demonstrated. `npm run call` drives a real call end to end: it opens the client WebSocket with a real session cookie and streams paced PCM for the whole call, speaking lines synthesised through Deepgram's speak API so the transport runs real recognition on real audio.
+
+| PRD §7 | How it was shown |
+| --- | --- |
+| 1. Speaks and hears a grounded reply | `npm run call` — spoken line transcribed exactly, persona answered from Engram, audio returned |
+| 2. Memory across turns and a restart | Code word taught, worker process killed (pid changed), same session recalled it |
+| 3. Barge-in stops playback | Talked over the reply: interruption detected, agent audio stopped for 3.1 s, next turn still heard |
+| 4. Turns in Postgres, both audio sides stored | 4 turns, 4 blobs; each downloads back as a valid RIFF/WAVE of the recorded byte length |
+| 5. Users cannot see each other | `npm run isolation` — another user's session reads 404 and writes 404 over real HTTP |
+| 6. Turn-level timings | `stt_ms`, `brain_ms`, `reframe_ms`, `reframe_first_token_ms`, `tts_first_byte_ms`, `total_ms`, `transport_latency`, and `turns.brain_mode` so an A/B run is readable from SQL |
+
+`stt_ms` only appears for real speech; an injected text message has no recognition stage, which is why the older inject-only probe always left it null.
+
+**Blob storage was verified against the Azurite emulator**, using `AZURE_BLOB_ENDPOINT` (added for sovereign clouds and custom domains, and useful here):
+
+```bash
+docker run -d --name voicebot-azurite -p 10000:10000 \
+  mcr.microsoft.com/azure-storage/azurite:3.33.0 \
+  azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
+# then run the gateway with:
+#   AZURE_STORAGE_ACCOUNT=devstoreaccount1
+#   AZURE_STORAGE_KEY=<the well-known emulator key>
+#   AZURE_BLOB_CONTAINER=voice-audio
+#   AZURE_BLOB_ENDPOINT=http://127.0.0.1:10000/devstoreaccount1
+```
+
+A storage failure no longer ends a call: the call continues, the gateway logs it, and the client is sent a `voice.warning`. Only Engram and Deepgram are fatal, per TRD §7.
+
+**Still needs Tauqueer** (nothing here is a code gap):
+
+1. **Real Azure Blob credentials.** The upload path is proven against the emulator; only real Azure auth and endpoint are unexercised.
+2. **The browser itself.** The probe speaks over the same WebSocket the browser uses, but does not touch `getUserMedia`, the `AudioContext`, the VU meter, the transcript, or the thinking cue as heard through speakers. Worth one pass at `/voice`.
+3. **A second Google account.** Isolation is proven against two app users with real cookies; the OAuth sign-up flow for a second account is not.
+4. **Engram API key permissions.** `personas.subscribe` returns 403 `missing permission(s): ['org:manage']` for every identity tried, so sign-in cannot mirror subscriptions locally. Nothing is blocked by it — Engram does not gate `chat`, `retrieve` or `converse` on a subscription today, and access control is enforced on `sessions.user_id` — but the `subscriptions` table stays empty until that key gains `org:manage`.

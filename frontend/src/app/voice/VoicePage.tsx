@@ -7,6 +7,7 @@ import Grainient from "../../components/Grainient";
 import { ApiError, api, googleSignInUrl, logoutUrl } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
+import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { navigate } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
@@ -157,6 +158,7 @@ export function VoicePage() {
     mic: MicCapture | null;
     playback: PcmPlayback | null;
     bargeIn: VoiceBargeIn | null;
+    thinkingCue: ThinkingCue | null;
     closedByUs: boolean;
     levelRaf: number | null;
     pendingLevel: number;
@@ -165,6 +167,7 @@ export function VoicePage() {
     mic: null,
     playback: null,
     bargeIn: null,
+    thinkingCue: null,
     closedByUs: false,
     levelRaf: null,
     pendingLevel: 0,
@@ -234,6 +237,7 @@ export function VoicePage() {
     const current = session.current;
     current.closedByUs = true;
     current.bargeIn?.dispose();
+    current.thinkingCue?.stop();
     if (current.levelRaf !== null) {
       window.cancelAnimationFrame(current.levelRaf);
     }
@@ -242,6 +246,7 @@ export function VoicePage() {
       mic: null,
       playback: null,
       bargeIn: null,
+      thinkingCue: null,
       closedByUs: true,
       levelRaf: null,
       pendingLevel: 0,
@@ -263,6 +268,7 @@ export function VoicePage() {
       return;
     }
     if (type === config.userStartedType) {
+      session.current.thinkingCue?.stop();
       session.current.bargeIn?.onUserStarted(() => {
         session.current.playback?.flush();
       });
@@ -270,10 +276,14 @@ export function VoicePage() {
       return;
     }
     if (type === config.thinkingType) {
+      // A new agent turn: any drop left over from an interruption is cleared.
+      session.current.bargeIn?.onAgentThinking();
+      session.current.thinkingCue?.start();
       setPhase("thinking");
       return;
     }
     if (type === config.audioDoneType) {
+      session.current.thinkingCue?.stop();
       session.current.bargeIn?.onAgentAudioDone();
       setPhase("listening");
       return;
@@ -296,6 +306,14 @@ export function VoicePage() {
       }
       return [...current, { role, content }];
     });
+    if (!interim && role === config.transcriptUserRole) {
+      // The caller's turn has been transcribed, so the brain is now working.
+      // This is the signal the transport actually sends; it does not announce
+      // thinking separately.
+      session.current.bargeIn?.onAgentThinking();
+      session.current.thinkingCue?.start();
+      setPhase("thinking");
+    }
   }
 
   async function startCall() {
@@ -315,6 +333,8 @@ export function VoicePage() {
       session.current.playback = playback;
       const bargeIn = createVoiceBargeIn();
       session.current.bargeIn = bargeIn;
+      const thinkingCue = createThinkingCue(config);
+      session.current.thinkingCue = thinkingCue;
       const live = { current: false };
       const mic = await startMicCapture(config, {
         onFrame: (frame) => {
@@ -335,6 +355,7 @@ export function VoicePage() {
           if (!bargeIn.acceptBinary()) {
             return;
           }
+          thinkingCue.stop();
           setPhase("speaking");
           playback.enqueue(bytes);
         },
@@ -514,8 +535,10 @@ export function VoicePage() {
                 {turn.content}
               </div>
             ))}
-            {phase === "thinking" && (
-              <p style={{ color: "var(--text-mid)" }}>Thinking…</p>
+            {phase === "thinking" && clientConfig && (
+              <p style={{ color: "var(--text-mid)" }}>
+                {clientConfig.thinkingCueLabel}
+              </p>
             )}
             <div ref={bottom} />
           </div>

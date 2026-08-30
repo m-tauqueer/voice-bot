@@ -178,7 +178,7 @@ Goal: a signed-in user holds a **typed** conversation with the persona, grounded
 
 Goal: the end-to-end spoken product — talk in the browser, hear the persona, interrupt it, with audio persisted. English only.
 
-**Status: not started.** Tauqueer names one part at a time. Implementation-level plan: [PHASE_2_PLAN.md](PHASE_2_PLAN.md). Do not start a part until he names it.
+**Status: 2.1–2.9 built; every PRD §7 criterion demonstrated end to end.** Latency work was folded in on Tauqueer's instruction. Implementation record, measured numbers, the acceptance evidence, and what still needs Tauqueer personally: [PHASE_2_PLAN.md](PHASE_2_PLAN.md) §7–§9.
 
 ### Part 2.1 — BYO-LLM shim endpoint
 - Goal: expose the worker brain as the LLM Deepgram calls.

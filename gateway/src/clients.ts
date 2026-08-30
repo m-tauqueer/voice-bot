@@ -28,8 +28,10 @@ export function createBlobService(config: GatewayConfig) {
     config.AZURE_STORAGE_ACCOUNT,
     config.AZURE_STORAGE_KEY,
   );
-  return new BlobServiceClient(
-    `https://${config.AZURE_STORAGE_ACCOUNT}.blob.core.windows.net`,
-    credential,
-  );
+  // AZURE_BLOB_ENDPOINT covers sovereign clouds, custom domains and the local
+  // storage emulator, whose URL puts the account in the path.
+  const endpoint =
+    config.AZURE_BLOB_ENDPOINT ??
+    `https://${config.AZURE_STORAGE_ACCOUNT}.blob.core.windows.net`;
+  return new BlobServiceClient(endpoint, credential);
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 
 from fastapi.testclient import TestClient
 
@@ -120,6 +121,90 @@ def _assert_completion(body: object, settings) -> None:
     content = message.get("content")
     if not isinstance(content, str):
         raise AssertionError("content must be a string")
+
+
+def _stream_turn(client, path, headers, settings, content: str) -> dict[str, object]:
+    """Run one streaming turn and report when the first spoken text arrived."""
+    started = time.perf_counter()
+    first_content_ms: float | None = None
+    pieces: list[str] = []
+    roles: list[str] = []
+    finish_reasons: list[str] = []
+    saw_done = False
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={
+            "model": settings.openai_model,
+            "stream": True,
+            "messages": [{"role": settings.byo_llm_user_role, "content": content}],
+        },
+    ) as response:
+        status = response.status_code
+        media = response.headers.get("content-type", "")
+        for line in response.iter_lines():
+            if not line.startswith("data: "):
+                continue
+            body = line[len("data: ") :].strip()
+            if body == settings.byo_llm_sse_done:
+                saw_done = True
+                continue
+            payload = json.loads(body)
+            for choice in payload.get("choices", []):
+                delta = choice.get("delta", {})
+                role = delta.get("role")
+                if isinstance(role, str):
+                    roles.append(role)
+                piece = delta.get("content")
+                if isinstance(piece, str) and piece:
+                    if first_content_ms is None:
+                        first_content_ms = (time.perf_counter() - started) * 1000
+                    pieces.append(piece)
+                reason = choice.get("finish_reason")
+                if isinstance(reason, str):
+                    finish_reasons.append(reason)
+    return {
+        "status": status,
+        "media": media,
+        "roles": roles,
+        "chunks": len(pieces),
+        "text": "".join(pieces).strip(),
+        "first_content_ms": first_content_ms,
+        "total_ms": (time.perf_counter() - started) * 1000,
+        "finish_reasons": finish_reasons,
+        "done": saw_done,
+    }
+
+
+def _check_stream_turn(result: dict[str, object], settings) -> int:
+    failed = 0
+    if result["status"] != 200:
+        print(f"stream status={result['status']} FAIL", file=sys.stderr)
+        return failed + 1
+    if settings.byo_llm_sse_media_type not in str(result["media"]):
+        print(f"stream media={result['media']} FAIL", file=sys.stderr)
+        failed += 1
+    if result["roles"] != [settings.byo_llm_assistant_role]:
+        print(f"stream roles={result['roles']} FAIL", file=sys.stderr)
+        failed += 1
+    if result["finish_reasons"] != [settings.byo_llm_finish_reason]:
+        print(f"stream finish={result['finish_reasons']} FAIL", file=sys.stderr)
+        failed += 1
+    if not result["done"]:
+        print("stream done=FAIL", file=sys.stderr)
+        failed += 1
+    if not result["text"]:
+        print("stream text=FAIL (empty)", file=sys.stderr)
+        failed += 1
+    if int(result["chunks"] or 0) < 2:
+        print(
+            f"stream chunks={result['chunks']} FAIL "
+            "(reply arrived as one block, not token by token)",
+            file=sys.stderr,
+        )
+        failed += 1
+    return failed
 
 
 def main() -> int:
@@ -247,6 +332,95 @@ def main() -> int:
         print("FAIL: live reply was empty", file=sys.stderr)
         failed += 1
 
+    # A session belongs to one user. Another user's identity must not reach it.
+    with connect(settings) as iso_conn:
+        with iso_conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, engram_user_id
+                FROM users
+                WHERE id <> %s
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                (str(user["id"]),),
+            )
+            other = cur.fetchone()
+    if other is None:
+        print("isolation=SKIP (only one app user)")
+    else:
+        stolen = client.post(
+            path,
+            headers={
+                **secret,
+                settings.byo_llm_app_user_header: str(other["id"]),
+                settings.byo_llm_engram_user_header: other["engram_user_id"],
+                settings.byo_llm_persona_header: str(persona["id"]),
+                settings.byo_llm_session_header: str(session_id),
+            },
+            json={
+                "messages": [
+                    {"role": settings.byo_llm_user_role, "content": "whose session"}
+                ]
+            },
+        )
+        if stolen.status_code != 403:
+            print(
+                f"isolation_other_user status={stolen.status_code} FAIL",
+                file=sys.stderr,
+            )
+            failed += 1
+        else:
+            print("isolation_other_user=403 ok")
+
+        forged = client.post(
+            path,
+            headers={**headers, settings.byo_llm_engram_user_header: "not-the-owner"},
+            json={
+                "messages": [
+                    {"role": settings.byo_llm_user_role, "content": "forged identity"}
+                ]
+            },
+        )
+        if forged.status_code != 403:
+            print(
+                f"isolation_forged_engram_id status={forged.status_code} FAIL",
+                file=sys.stderr,
+            )
+            failed += 1
+        else:
+            print("isolation_forged_engram_id=403 ok")
+
+    stream_one = _stream_turn(
+        client,
+        path,
+        headers,
+        settings,
+        "Say one short sentence about what you are working on.",
+    )
+    failed += _check_stream_turn(stream_one, settings)
+    print(
+        f"stream_1 chunks={stream_one['chunks']} "
+        f"first_content_ms={stream_one['first_content_ms']} "
+        f"total_ms={stream_one['total_ms']:.0f}"
+    )
+    print(f"stream_1 text={stream_one['text']!r}")
+
+    stream_two = _stream_turn(
+        client,
+        path,
+        headers,
+        settings,
+        "And one more short sentence, please.",
+    )
+    failed += _check_stream_turn(stream_two, settings)
+    print(
+        f"stream_2 chunks={stream_two['chunks']} "
+        f"first_content_ms={stream_two['first_content_ms']} "
+        f"total_ms={stream_two['total_ms']:.0f}"
+    )
+    print(f"stream_2 text={stream_two['text']!r}")
+
     conn = connect(settings)
     try:
         with conn.cursor() as cur:
@@ -274,6 +448,34 @@ def main() -> int:
             f"action={row['controller_action']} text={row['text']!r}"
         )
     print(f"stored_engram_session_id={stored['engram_session_id'] if stored else None}")
+
+    conn = connect(settings)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT t.ordinal, ls.brain_ms, ls.reframe_ms,
+                       ls.reframe_first_token_ms, ls.total_ms
+                FROM latency_spans ls
+                INNER JOIN turns t ON t.id = ls.turn_id
+                WHERE t.session_id = %s
+                ORDER BY t.ordinal
+                """,
+                (str(session_id),),
+            )
+            spans = list(cur.fetchall())
+    finally:
+        conn.close()
+    for span in spans:
+        print(
+            f"span ordinal={span['ordinal']} brain_ms={span['brain_ms']} "
+            f"reframe_ms={span['reframe_ms']} "
+            f"reframe_first_token_ms={span['reframe_first_token_ms']} "
+            f"total_ms={span['total_ms']}"
+        )
+    if not spans:
+        print("FAIL: no latency spans recorded", file=sys.stderr)
+        failed += 1
     if len(turns) < 2:
         print("FAIL: expected persisted user and persona turns", file=sys.stderr)
         failed += 1

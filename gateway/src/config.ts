@@ -138,6 +138,7 @@ const envFileSchema = z.object({
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
   AZURE_STORAGE_KEY: optionalNonEmpty,
   AZURE_BLOB_CONTAINER: optionalNonEmpty,
+  AZURE_BLOB_ENDPOINT: optionalUrl,
   DEEPGRAM_API_KEY: optionalNonEmpty,
   DEEPGRAM_API_BASE_URL: optionalUrl,
   DEEPGRAM_STT_MODEL: optionalNonEmpty,
@@ -225,6 +226,14 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("InjectUserMessage"),
   ),
+  DEEPGRAM_MSG_CONVERSATION_TEXT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ConversationText"),
+  ),
+  VOICE_TRANSCRIPT_USER_ROLE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("user"),
+  ),
   DEEPGRAM_MSG_USER_STARTED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("UserStartedSpeaking"),
@@ -236,6 +245,22 @@ const envFileSchema = z.object({
   DEEPGRAM_MSG_AGENT_AUDIO_DONE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("AgentAudioDone"),
+  ),
+  DEEPGRAM_MSG_LATENCY_REPORT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("LatencyReport"),
+  ),
+  DEEPGRAM_LATENCY_STT_FIELD: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("stt_latency"),
+  ),
+  DEEPGRAM_LATENCY_TTS_FIELD: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("tts_latency"),
+  ),
+  VOICE_LATENCY_TO_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().positive().default(1000),
   ),
   DEEPGRAM_MSG_KEEP_ALIVE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -294,6 +319,34 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(3600),
   ),
+  VOICE_PENDING_LATENCY_MAX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(8),
+  ),
+  VOICE_AUDIO_PERSIST_ENABLED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  VOICE_AUDIO_FORMAT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("wav"),
+  ),
+  VOICE_AUDIO_CONTENT_TYPE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("audio/wav"),
+  ),
+  VOICE_AUDIO_BITS_PER_SAMPLE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(16),
+  ),
+  VOICE_AUDIO_MAX_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(16777216),
+  ),
+  AZURE_BLOB_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice/"),
+  ),
   VOICE_CLIENT_READY_TYPE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("voice.ready"),
@@ -302,6 +355,9 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("voice.error"),
   ),
+  // No preprocess: undefined takes the default, an explicit empty value means
+  // suppress nothing.
+  VOICE_SUPPRESSED_WARNING_CODES: z.string().default("SLOW_THINK_REQUEST"),
   VOICE_CLIENT_WARNING_TYPE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("voice.warning"),
@@ -309,6 +365,41 @@ const envFileSchema = z.object({
   VOICE_CLIENT_AGENT_EVENT_TYPE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("voice.agent"),
+  ),
+  DEEPGRAM_SPEAK_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/v1/speak"),
+  ),
+  VOICE_CALL_PROBE_FIRST_TEXT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Hello. What are you working on at the moment?"),
+  ),
+  VOICE_CALL_PROBE_INTERRUPT_TEXT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("Sorry to cut in. Could you tell me that again more briefly?"),
+  ),
+  VOICE_CALL_PROBE_INTERRUPT_DELAY_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(1500),
+  ),
+  VOICE_CALL_PROBE_SILENCE_WINDOW_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(1500),
+  ),
+  VOICE_CALL_PROBE_RESUME_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(16000),
+  ),
+  VOICE_PROBE_FRAME_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(20),
+  ),
+  VOICE_PROBE_SETTLE_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(5000),
   ),
   VOICE_INJECT_TIMEOUT_MS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -491,4 +582,32 @@ export function voiceTunnelCommand(config: GatewayConfig): string {
 
 export function deepgramAuthHeaderValue(config: GatewayConfig): string {
   return `${config.DEEPGRAM_AGENT_AUTH_SCHEME} ${config.DEEPGRAM_API_KEY}`;
+}
+
+export function voiceAudioPersistEnabled(config: GatewayConfig): boolean {
+  return config.VOICE_AUDIO_PERSIST_ENABLED === "true";
+}
+
+export function voiceAudioReady(config: GatewayConfig): string | null {
+  if (!voiceAudioPersistEnabled(config)) {
+    return null;
+  }
+  if (!config.AZURE_STORAGE_ACCOUNT) {
+    return "AZURE_STORAGE_ACCOUNT is not set";
+  }
+  if (!config.AZURE_STORAGE_KEY) {
+    return "AZURE_STORAGE_KEY is not set";
+  }
+  if (!config.AZURE_BLOB_CONTAINER) {
+    return "AZURE_BLOB_CONTAINER is not set";
+  }
+  return null;
+}
+
+export function suppressedWarningCodes(config: GatewayConfig): Set<string> {
+  return new Set(
+    config.VOICE_SUPPRESSED_WARNING_CODES.split(/[,\s]+/)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
 }

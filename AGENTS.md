@@ -85,7 +85,12 @@ npm run controller   # controller speak/silence probe
 npm run reframe      # reframe probe
 npm run chat         # two-turn live typed-loop probe
 npm run byo          # Chat Completions shim probe (needs Engram + OpenAI)
+npm run brains       # Same questions through both BRAIN_MODE paths, side by side
 npm run voice        # Voice Agent handshake + inject probe (needs Deepgram + public worker URL)
+npm run call         # Full spoken call: synthesised speech in, STT, reply, interruption
+npm run audio        # WAV container, capture boundaries, turn binding, blob read-back
+npm run bargein      # Barge-in state machine (no services needed)
+npm run isolation    # Two signed-in users cannot reach each other's conversation
 npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)
@@ -106,7 +111,7 @@ npm run infra:reset
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
 - `frontend/` — React 18 + Vite + Tailwind UI. Copied from the component library (`Desktop/component-library`). Design notes: `frontend/COMPONENT_LIBRARY.md`. Typed chat is `/chat`; signed-in voice is `/voice`; `/admin` is owner-only.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
-- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`. Phase 2 adds the OpenAI-compatible BYO-LLM endpoint Deepgram calls.
+- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/TRD.md) §1.2.
 - `infra/` — Docker Compose, migrations, scripts.
 - `docs/` — PRD, TRD, phase plans.
 

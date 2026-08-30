@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import Any
-from uuid import UUID
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, NoReturn
+from uuid import UUID, uuid4
 
+import structlog
+
+from worker.clients import create_openai
 from worker.config import WorkerSettings
 from worker.controller.controller import Controller
 from worker.controller.decision import Action, Decision, TurnSignals
-from worker.engram.engram_brain import EngramBrain
 from worker.engram.errors import (
     BrainError,
     ConflictError,
@@ -22,7 +26,8 @@ from worker.engram.errors import (
     ValidationError,
 )
 from worker.engram.interface import ChatOutcome
-from worker.persistence.db import connect
+from worker.engram.registry import BrainRegistry
+from worker.persistence.db import borrow
 from worker.persistence.personas import get_persona
 from worker.persistence.sessions import (
     get_session,
@@ -36,10 +41,14 @@ from worker.persistence.turns import (
     next_ordinal,
     recent_history,
 )
-from worker.reframe.errors import ReframeError
+from worker.reframe.answerer import Answerer
+from worker.reframe.errors import ReframeError, ReframeUnavailableError
 from worker.reframe.reframer import Reframer
+from worker.reframe.types import HistoryTurn
 from worker.schema import TURN_SPEAKER_PERSONA, TURN_SPEAKER_USER
 from worker.turn.errors import TurnError
+
+log = structlog.get_logger(__name__)
 
 _BRAIN_HTTP: list[tuple[type[BrainError], int]] = [
     (NotSubscribedError, 403),
@@ -77,10 +86,80 @@ class TurnResult:
     reasons: list[str]
 
 
+@dataclass
+class TurnPlan:
+    """Everything a turn needs after the brain has answered.
+
+    Held between `begin` and `finish` so no database connection and no session
+    lock is held across the Engram call or the reframe.
+    """
+
+    session_id: UUID
+    text: str
+    started: float
+    decision: Decision
+    prior_sid: str | None
+    voice_config: dict[str, Any]
+    history: list[HistoryTurn]
+    mode: str = "chat"
+    memories: list[str] = field(default_factory=list)
+    engram_user_id: str | None = None
+    engram_persona_id: str | None = None
+    outcome: ChatOutcome | None = None
+    reframe_ms: int | None = None
+    reframe_first_token_ms: int | None = None
+    spoken: str | None = None
+    speaks: bool = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.speaks = self.decision.action is Action.SPEAK
+
+    @property
+    def brain_ms(self) -> int | None:
+        return self.outcome.brain_ms if self.outcome is not None else None
+
+    @property
+    def engram_session_id(self) -> str | None:
+        if self.outcome is not None and self.outcome.session_id:
+            return self.outcome.session_id
+        return self.prior_sid
+
+    def total_ms(self) -> int:
+        return int((time.perf_counter() - self.started) * 1000)
+
+
 class TurnRunner:
     def __init__(self, settings: WorkerSettings) -> None:
         self._settings = settings
         self._controller = Controller()
+        self._brains = BrainRegistry(settings)
+        # The write-back must not hold the reply's connection open, so it runs
+        # on its own small pool once the words are already out.
+        self._writers = ThreadPoolExecutor(
+            max_workers=settings.engram_writeback_workers,
+            thread_name_prefix="engram-writeback",
+        )
+        self._openai: Any | None = None
+        self._reframer: Reframer | None = None
+        self._answerer: Answerer | None = None
+
+    def _llm(self) -> Any:
+        if self._openai is None:
+            try:
+                self._openai = create_openai(self._settings)
+            except RuntimeError as exc:
+                raise ReframeUnavailableError(str(exc)) from exc
+        return self._openai
+
+    def _reframe_client(self) -> Reframer:
+        if self._reframer is None:
+            self._reframer = Reframer(self._settings, self._llm())
+        return self._reframer
+
+    def _answer_client(self) -> Answerer:
+        if self._answerer is None:
+            self._answerer = Answerer(self._settings, self._llm())
+        return self._answerer
 
     def run(
         self,
@@ -91,10 +170,32 @@ class TurnRunner:
         session_id: UUID,
         text: str,
     ) -> TurnResult:
+        plan = self.begin(
+            app_user_id=app_user_id,
+            engram_user_id=engram_user_id,
+            persona_id=persona_id,
+            session_id=session_id,
+            text=text,
+        )
+        if plan.speaks:
+            self.speak(plan)
+        return self.finish(plan)
+
+    def begin(
+        self,
+        *,
+        app_user_id: UUID,
+        engram_user_id: str,
+        persona_id: UUID,
+        session_id: UUID,
+        text: str,
+    ) -> TurnPlan:
+        """Validate, ask the brain, and decide. Raises `TurnError` before any
+        reply byte is produced, so the caller can still choose a status code."""
         started = time.perf_counter()
-        conn = connect(self._settings)
-        brain: EngramBrain | None = None
-        try:
+        with borrow(self._settings) as conn:
+            # Locked only for these local reads: it makes two turns that start
+            # at once share one Engram thread instead of minting one each.
             session = get_session(conn, session_id, for_update=True)
             if session is None:
                 raise TurnError(
@@ -123,139 +224,267 @@ class TurnRunner:
             if not isinstance(engram_persona_id, str) or not engram_persona_id:
                 raise TurnError("persona is missing Engram id", status=500)
 
-            signals = TurnSignals(has_inbound_text=bool(text.strip()))
-            halted = self._controller.pre(signals)
-            if halted is not None:
-                turn_ids = self._persist(
-                    conn,
-                    session_id=session_id,
-                    user_text=text,
-                    decision=halted,
-                    spoken=None,
-                    outcome=None,
-                    engram_session_id=session["engram_session_id"],
-                    brain_ms=None,
-                    reframe_ms=None,
-                    total_ms=int((time.perf_counter() - started) * 1000),
-                )
-                conn.commit()
-                return TurnResult(
-                    action=halted.action.value,
-                    reply_text=None,
-                    session_id=session_id,
-                    engram_session_id=session["engram_session_id"],
-                    turn_ids=turn_ids,
-                    reasons=[reason.value for reason in halted.reasons],
-                )
-
             prior_sid = session["engram_session_id"]
             if prior_sid is not None and not isinstance(prior_sid, str):
                 prior_sid = None
-
-            brain = EngramBrain(self._settings, engram_user_id)
-            try:
-                outcome: ChatOutcome | BrainError
-                outcome = brain.chat(engram_persona_id, text, session_id=prior_sid)
-            except BrainError as exc:
-                outcome = exc
-
-            decision = self._controller.decide(outcome, signals)
-            if isinstance(outcome, BrainError):
-                turn_ids = self._persist(
-                    conn,
-                    session_id=session_id,
-                    user_text=text,
-                    decision=decision,
-                    spoken=None,
-                    outcome=None,
-                    engram_session_id=prior_sid,
-                    brain_ms=None,
-                    reframe_ms=None,
-                    total_ms=int((time.perf_counter() - started) * 1000),
-                )
+            if not prior_sid:
+                # Engram treats the conversation id as an opaque caller-chosen
+                # key. Claiming it here keeps one thread per app session.
+                prior_sid = uuid4().hex
+                set_engram_session_id(conn, session_id, prior_sid)
                 conn.commit()
-                raise TurnError(
-                    str(outcome),
-                    status=_brain_status(outcome),
-                    reason=(
-                        decision.reasons[0].value
-                        if decision.reasons
-                        else "brain_error"
-                    ),
-                )
+            voice_config = _voice_config(persona["voice_config"])
+            history = recent_history(
+                conn,
+                session_id,
+                self._settings.reframe_history_turns,
+            )
 
-            spoken: str | None = None
-            reframe_ms: int | None = None
-            if decision.action is Action.SPEAK:
-                history = recent_history(
-                    conn,
-                    session_id,
-                    self._settings.reframe_history_turns,
-                )
-                reframe_started = time.perf_counter()
-                try:
-                    spoken = Reframer(self._settings).reframe(
-                        outcome.messages,
-                        history,
-                        _voice_config(persona["voice_config"]),
-                    )
-                except ReframeError as exc:
-                    turn_ids = self._persist(
-                        conn,
-                        session_id=session_id,
-                        user_text=text,
-                        decision=decision,
-                        spoken=None,
-                        outcome=outcome,
-                        engram_session_id=outcome.session_id or prior_sid,
-                        brain_ms=outcome.brain_ms,
-                        reframe_ms=None,
-                        total_ms=int((time.perf_counter() - started) * 1000),
-                    )
-                    conn.commit()
-                    raise TurnError(
-                        str(exc),
-                        status=exc.status or 502,
-                        reason="reframe_failed",
-                    ) from exc
-                reframe_ms = int((time.perf_counter() - reframe_started) * 1000)
+        signals = TurnSignals(has_inbound_text=bool(text.strip()))
+        halted = self._controller.pre(signals)
+        if halted is not None:
+            return TurnPlan(
+                session_id=session_id,
+                text=text,
+                started=started,
+                decision=halted,
+                prior_sid=prior_sid,
+                voice_config=voice_config,
+                history=history,
+                mode=self._settings.brain_mode,
+            )
 
-            next_sid = outcome.session_id or prior_sid
-            if isinstance(next_sid, str) and next_sid:
-                set_engram_session_id(conn, session_id, next_sid)
+        brain = self._brains.get(engram_user_id)
+        mode = self._settings.brain_mode
+        memories: list[str] = []
+        outcome: ChatOutcome | BrainError
+        try:
+            if mode == "retrieve":
+                # Read memory and compose here. The controller still gates on
+                # whether anything grounded came back.
+                started_read = time.perf_counter()
+                found = brain.retrieve(
+                    engram_persona_id,
+                    text,
+                    top_k=self._settings.engram_retrieve_top_k,
+                )
+                memories = [
+                    hit.text.strip()
+                    for hit in found.results
+                    if isinstance(hit.text, str) and hit.text.strip()
+                ]
+                outcome = ChatOutcome(
+                    messages=memories,
+                    text=self._settings.engram_message_join.join(memories),
+                    memories_used=[hit.raw for hit in found.results],
+                    session_id=prior_sid,
+                    raw=found.raw,
+                    brain_ms=int((time.perf_counter() - started_read) * 1000),
+                )
             else:
-                next_sid = prior_sid
+                outcome = brain.chat(engram_persona_id, text, session_id=prior_sid)
+        except BrainError as exc:
+            outcome = exc
 
+        decision = self._controller.decide(outcome, signals)
+        if isinstance(outcome, BrainError):
+            plan = TurnPlan(
+                session_id=session_id,
+                text=text,
+                started=started,
+                decision=decision,
+                prior_sid=prior_sid,
+                voice_config=voice_config,
+                history=history,
+                mode=mode,
+            )
+            self.finish(plan)
+            raise TurnError(
+                str(outcome),
+                status=_brain_status(outcome),
+                reason=(
+                    decision.reasons[0].value if decision.reasons else "brain_error"
+                ),
+            )
+
+        return TurnPlan(
+            session_id=session_id,
+            text=text,
+            started=started,
+            decision=decision,
+            prior_sid=prior_sid,
+            voice_config=voice_config,
+            history=history,
+            mode=mode,
+            memories=memories,
+            outcome=outcome,
+            engram_user_id=engram_user_id,
+            engram_persona_id=engram_persona_id,
+        )
+
+    def speak(self, plan: TurnPlan) -> str:
+        """Reframe in one shot. Used where nothing is waiting on first token."""
+        if not plan.speaks or plan.outcome is None:
+            raise TurnError("turn does not speak", status=500, reason="not_speaking")
+        started = time.perf_counter()
+        try:
+            if plan.mode == "retrieve":
+                spoken = self._answer_client().answer(
+                    plan.memories,
+                    plan.history,
+                    plan.text,
+                    plan.voice_config,
+                )
+            else:
+                spoken = self._reframe_client().reframe(
+                    plan.outcome.messages,
+                    plan.history,
+                    plan.voice_config,
+                )
+        except ReframeError as exc:
+            self._fail_reframe(plan, exc)
+        plan.reframe_ms = int((time.perf_counter() - started) * 1000)
+        plan.reframe_first_token_ms = plan.reframe_ms
+        plan.spoken = spoken
+        return spoken
+
+    def stream_speak(self, plan: TurnPlan) -> Iterator[str]:
+        """Reframe token by token so the listener hears the first words sooner.
+
+        The caller must drain this fully and then call `finish`.
+        """
+        if not plan.speaks or plan.outcome is None:
+            raise TurnError("turn does not speak", status=500, reason="not_speaking")
+        started = time.perf_counter()
+        pieces: list[str] = []
+        pieces_source = (
+            self._answer_client().stream(
+                plan.memories,
+                plan.history,
+                plan.text,
+                plan.voice_config,
+            )
+            if plan.mode == "retrieve"
+            else self._reframe_client().stream(
+                plan.outcome.messages,
+                plan.history,
+                plan.voice_config,
+            )
+        )
+        try:
+            for piece in pieces_source:
+                if plan.reframe_first_token_ms is None:
+                    plan.reframe_first_token_ms = int(
+                        (time.perf_counter() - started) * 1000
+                    )
+                pieces.append(piece)
+                yield piece
+        finally:
+            # Keep whatever was actually spoken, even if the stream broke.
+            plan.reframe_ms = int((time.perf_counter() - started) * 1000)
+            spoken = "".join(pieces).strip()
+            plan.spoken = spoken or None
+
+    def _fail_reframe(self, plan: TurnPlan, exc: ReframeError) -> NoReturn:
+        plan.spoken = None
+        self.finish(plan)
+        raise TurnError(
+            str(exc),
+            status=exc.status or 502,
+            reason="reframe_failed",
+        ) from exc
+
+    def finish(self, plan: TurnPlan) -> TurnResult:
+        """Write the canonical record. Runs after the reply has been delivered."""
+        total_ms = plan.total_ms()
+        outcome = plan.outcome
+        spoken = plan.spoken
+        with borrow(self._settings) as conn:
+            # Lock only for the ordinal + insert window, never across the brain.
+            get_session(conn, plan.session_id, for_update=True)
+            next_sid = plan.engram_session_id
+            if outcome is not None and isinstance(next_sid, str) and next_sid:
+                set_engram_session_id(conn, plan.session_id, next_sid)
             turn_ids = self._persist(
                 conn,
-                session_id=session_id,
-                user_text=text,
-                decision=decision,
+                session_id=plan.session_id,
+                user_text=plan.text,
+                decision=plan.decision,
                 spoken=spoken,
                 outcome=outcome,
                 engram_session_id=next_sid,
-                brain_ms=outcome.brain_ms,
-                reframe_ms=reframe_ms,
-                total_ms=int((time.perf_counter() - started) * 1000),
+                brain_ms=plan.brain_ms,
+                reframe_ms=plan.reframe_ms,
+                reframe_first_token_ms=plan.reframe_first_token_ms,
+                total_ms=total_ms,
+                mode=plan.mode,
             )
             conn.commit()
-            return TurnResult(
-                action=decision.action.value,
-                reply_text=spoken,
-                session_id=session_id,
-                engram_session_id=next_sid if isinstance(next_sid, str) else None,
-                turn_ids=turn_ids,
-                reasons=[reason.value for reason in decision.reasons],
+        if self._should_write_back(plan):
+            self._writers.submit(self._write_back, plan)
+        return TurnResult(
+            action=plan.decision.action.value,
+            reply_text=spoken,
+            session_id=plan.session_id,
+            engram_session_id=next_sid if isinstance(next_sid, str) else None,
+            turn_ids=turn_ids,
+            reasons=[reason.value for reason in plan.decision.reasons],
+        )
+
+    def _should_write_back(self, plan: TurnPlan) -> bool:
+        # chat writes the caller's private pool itself; only retrieve owes one.
+        if plan.mode != "retrieve":
+            return False
+        if not self._settings.engram_converse_writeback:
+            return False
+        return bool(plan.engram_user_id and plan.engram_persona_id)
+
+    def _write_back(self, plan: TurnPlan) -> None:
+        """Record the exchange in Engram after the reply has been delivered.
+
+        Runs off the reply path, so a slow or failing write costs the
+        conversation nothing. Writes are never retried (TRD §3).
+        """
+        if not plan.engram_user_id or not plan.engram_persona_id:
+            return
+        sid = plan.engram_session_id
+        entries: list[tuple[str, str]] = [
+            (plan.text, self._settings.engram_converse_user_speaker),
+        ]
+        if plan.spoken:
+            entries.append(
+                (plan.spoken, self._settings.engram_converse_persona_speaker),
             )
-        except TurnError:
-            raise
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            if brain is not None:
-                brain.close()
-            conn.close()
+        brain = self._brains.get(plan.engram_user_id)
+        for body, speaker in entries:
+            if not body.strip():
+                continue
+            try:
+                brain.converse(
+                    plan.engram_persona_id,
+                    body,
+                    session_id=sid,
+                    speaker=speaker,
+                )
+            except BrainError as exc:
+                log.warning(
+                    "engram write-back failed",
+                    session_id=str(plan.session_id),
+                    speaker=speaker,
+                    error=str(exc),
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 - a writer thread must not die
+                log.warning(
+                    "engram write-back raised",
+                    session_id=str(plan.session_id),
+                    error=str(exc),
+                )
+                return
+
+    def close(self) -> None:
+        self._writers.shutdown(wait=True)
+        self._brains.close()
 
     def _persist(
         self,
@@ -269,7 +498,9 @@ class TurnRunner:
         engram_session_id: str | None,
         brain_ms: int | None,
         reframe_ms: int | None,
+        reframe_first_token_ms: int | None,
         total_ms: int,
+        mode: str,
     ) -> list[UUID]:
         reasons = [reason.value for reason in decision.reasons]
         user_ordinal = next_ordinal(conn, session_id)
@@ -281,6 +512,7 @@ class TurnRunner:
             text=user_text,
             controller_action=decision.action.value,
             controller_reasons=reasons,
+            brain_mode=mode,
         )
         ids = [user_turn_id]
         span_turn = user_turn_id
@@ -294,6 +526,7 @@ class TurnRunner:
                 messages=outcome.messages,
                 controller_action=decision.action.value,
                 controller_reasons=reasons,
+                brain_mode=mode,
             )
             ids.append(persona_turn_id)
             span_turn = persona_turn_id
@@ -309,6 +542,7 @@ class TurnRunner:
             turn_id=span_turn,
             brain_ms=brain_ms,
             reframe_ms=reframe_ms,
+            reframe_first_token_ms=reframe_first_token_ms,
             total_ms=total_ms,
         )
         return ids

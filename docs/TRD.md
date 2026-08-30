@@ -20,10 +20,15 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 ### 1.2 Brain & memory (Engram)
 
-- **Engram `personas.chat` is the brain.** One `chat` call per user turn; it retrieves shared + caller-private, grounds, and returns the reply. The controller gates speak/silence on its result. We do **not** make a separate `retrieve` call per turn.
-- **Reframe LLM** (config-pluggable, default `gpt-4o-mini`) always runs. It sees the **Engram reply + last N turns** plus persona voice rules. It is **paraphrase/fact-locked**: it may not introduce facts beyond Engram's reply (minor connective phrasing only).
+- **Engram is the brain and the memory.** Which Engram call answers a turn is now config (`BRAIN_MODE`), and both paths keep memory in Engram:
+  - **`chat`.** One `personas.chat` per turn; it retrieves shared + caller-private, grounds, and returns the reply, and writes the caller's private pool itself. Measured ~11s of Engram-side generation per turn.
+  - **`retrieve` (default).** One `personas.retrieve` per turn (~0.7-1.5s); the answer model composes the reply from those memories under the same fact lock, and `personas.converse` writes both sides of the turn back to the caller's private pool off the reply path. Measured ~2.5s to first word, ~4s on a live spoken call.
+  The controller gates speak/silence on whichever result comes back. `retrieve` became the default after a side-by-side run (`npm run brains`) showed it equal or better on memory recall, private recall, conversational continuity and refusing to invent when memory does not cover the question — at a quarter of the latency. `chat` remains available as a switch.
+- **The speaking LLM** (config-pluggable, default `gpt-4o-mini`) always runs, streamed so speech starts on the first token. It sees the last N turns plus persona voice rules, and is **fact-locked** in both modes: it may not introduce facts beyond what Engram returned (minor connective phrasing only).
+  - Under `chat` it is the **reframer**: it paraphrases Engram's composed reply.
+  - Under `retrieve` it is the **answerer**: it composes the reply from the retrieved memories, which are then its only permitted source of facts.
 - Persona identity = **Engram shared pool** (`teach` / `answer` / document ingest) **+** app voice rules in the reframe prompt.
-- Pools: **shared + per-user private** (Engram default). **One Engram `session_id` per voice session**, threaded. Rely on `chat` auto-writing the caller's private pool; selective salient-fact ingest is deferred.
+- Pools: **shared + per-user private** (Engram default). **One Engram `session_id` per voice session**, threaded. The caller's private pool is written by `chat` automatically, or by `converse` on the `retrieve` path; selective salient-fact ingest is deferred.
 - **Text-only into Engram** (audio is never sent to Engram).
 - **Engram down = product down** for the first build.
 
@@ -202,7 +207,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 ## 7. Non-functional requirements
 
 - **Isolation:** a user can never read another user's private pool; enforced structurally by Engram and by never forging tenants. Mandatory.
-- **Latency:** ~2-2.5s/turn target for the first build; capture per-stage spans; a thinking cue masks brain latency.
+- **Latency:** ~2-2.5s/turn target for the first build; capture per-stage spans; a thinking cue masks brain latency. Measured to first spoken word: **~2.5-4s on the default `retrieve` brain**, against ~12.5s on `chat` (of which ~11s is Engram-side generation we do not control).
 - **Reliability:** Engram down = product down (honest messaging). Deepgram down = session ends + reconnect. Handle Engram error taxonomy; never blind-retry writes.
 - **Security:** secrets server-side only; OAuth-gated; audit-friendly canonical store.
 - **Observability:** structured logs + turn-level durations from day one of Phase 2.
