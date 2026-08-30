@@ -104,7 +104,7 @@ npm run infra:reset
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
 
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
-- `frontend/` — React 18 + Vite + Tailwind UI. Copied from the component library (`Desktop/component-library`). Design notes: `frontend/COMPONENT_LIBRARY.md`. Typed chat is `/chat`; `/admin` is owner-only.
+- `frontend/` — React 18 + Vite + Tailwind UI. Copied from the component library (`Desktop/component-library`). Design notes: `frontend/COMPONENT_LIBRARY.md`. Typed chat is `/chat`; signed-in voice is `/voice`; `/admin` is owner-only.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
 - `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`. Phase 2 adds the OpenAI-compatible BYO-LLM endpoint Deepgram calls.
 - `infra/` — Docker Compose, migrations, scripts.

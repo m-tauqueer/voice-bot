@@ -254,6 +254,9 @@ export function ChatPage() {
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Button type="button" onClick={() => navigate(ROUTES.voice)}>
+              Voice
+            </Button>
             {me?.owner && (
               <Button type="button" onClick={() => navigate(ROUTES.admin)}>
                 Admin

@@ -3,6 +3,19 @@
 interface ImportMetaEnv {
   readonly VITE_GATEWAY_URL: string;
   readonly VITE_CHAT_SESSION_STORAGE_KEY: string;
+  readonly VITE_VOICE_WS_PATH: string;
+  readonly VITE_DEEPGRAM_AUDIO_INPUT_ENCODING: string;
+  readonly VITE_DEEPGRAM_AUDIO_INPUT_SAMPLE_RATE: string;
+  readonly VITE_DEEPGRAM_AUDIO_OUTPUT_ENCODING: string;
+  readonly VITE_DEEPGRAM_AUDIO_OUTPUT_SAMPLE_RATE: string;
+  readonly VITE_VOICE_CHANNEL_COUNT: string;
+  readonly VITE_VOICE_CAPTURE_FRAME_SAMPLES: string;
+  readonly VITE_VOICE_ECHO_CANCELLATION: string;
+  readonly VITE_VOICE_WORKLET_NAME: string;
+  readonly VITE_VOICE_CLIENT_READY_TYPE: string;
+  readonly VITE_VOICE_CLIENT_ERROR_TYPE: string;
+  readonly VITE_VOICE_CLIENT_WARNING_TYPE: string;
+  readonly VITE_VOICE_CLIENT_AGENT_EVENT_TYPE: string;
 }
 
 interface ImportMeta {
