@@ -248,7 +248,9 @@ Stop if any of these is still unset when the named part needs it:
 
 **Manual test.** Talk over a mid-reply; playback stops; the new turn is heard.
 
-**Done when.** Barge-in is reliable on a live call.
+**Live test.** Not run. Tauqueer was in a noisy environment, so interrupt was not confirmed on a real call. Needs a quiet-room pass: talk over a mid-reply, playback cuts, the new turn is heard.
+
+**Done when.** The flush/drop path is in and driven only by `UserStartedSpeaking` / `AgentAudioDone`. Live reliability is still unverified.
 
 ---
 

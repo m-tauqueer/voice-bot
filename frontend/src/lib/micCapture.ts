@@ -1,4 +1,4 @@
-import { floatToInt16Le, resampleLinear, SampleAccumulator } from "./pcm";
+import { floatToInt16Le, resampleLinear, rmsLevel, SampleAccumulator } from "./pcm";
 import type { VoiceClientConfig } from "./voiceConfig";
 
 export type MicCapture = {
@@ -29,7 +29,10 @@ function micDenied(error: unknown): boolean {
 
 export async function startMicCapture(
   config: VoiceClientConfig,
-  onFrame: (frame: ArrayBuffer) => void,
+  handlers: {
+    onFrame: (frame: ArrayBuffer) => void;
+    onLevel?: (level: number) => void;
+  },
 ): Promise<MicCapture> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("This browser cannot capture a microphone");
@@ -73,13 +76,14 @@ export async function startMicCapture(
       if (!(raw instanceof Float32Array) || raw.length === 0) {
         return;
       }
+      handlers.onLevel?.(rmsLevel(raw));
       const resampled = resampleLinear(
         raw,
         context.sampleRate,
         config.inputSampleRate,
       );
       for (const frame of frames.push(resampled)) {
-        onFrame(floatToInt16Le(frame));
+        handlers.onFrame(floatToInt16Le(frame));
       }
     };
     source.connect(node);

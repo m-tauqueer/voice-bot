@@ -16,6 +16,13 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_CLIENT_ERROR_TYPE: string;
   readonly VITE_VOICE_CLIENT_WARNING_TYPE: string;
   readonly VITE_VOICE_CLIENT_AGENT_EVENT_TYPE: string;
+  readonly VITE_DEEPGRAM_MSG_CONVERSATION_TEXT: string;
+  readonly VITE_DEEPGRAM_MSG_USER_STARTED: string;
+  readonly VITE_DEEPGRAM_MSG_AGENT_THINKING: string;
+  readonly VITE_DEEPGRAM_MSG_AGENT_AUDIO_DONE: string;
+  readonly VITE_VOICE_TRANSCRIPT_USER_ROLE: string;
+  readonly VITE_VOICE_TRANSCRIPT_ASSISTANT_ROLE: string;
+  readonly VITE_VOICE_VU_BAR_COUNT: string;
 }
 
 interface ImportMeta {

@@ -229,6 +229,14 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("UserStartedSpeaking"),
   ),
+  DEEPGRAM_MSG_AGENT_THINKING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("AgentThinking"),
+  ),
+  DEEPGRAM_MSG_AGENT_AUDIO_DONE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("AgentAudioDone"),
+  ),
   DEEPGRAM_MSG_KEEP_ALIVE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("KeepAlive"),

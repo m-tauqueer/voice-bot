@@ -1,3 +1,15 @@
+export function rmsLevel(samples: Float32Array): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  let sum = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index] ?? 0;
+    sum += sample * sample;
+  }
+  return Math.min(1, Math.sqrt(sum / samples.length));
+}
+
 export function resampleLinear(
   input: Float32Array,
   fromRate: number,

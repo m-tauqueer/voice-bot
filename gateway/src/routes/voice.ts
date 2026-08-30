@@ -13,6 +13,7 @@ import {
 } from "../deepgram/agent.js";
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
 import { resolveActivePersona } from "../personas.js";
+import { createVoiceBargeIn } from "../voice/bargeIn.js";
 import {
   clearVoiceCallState,
   setVoiceBargeIn,
@@ -130,6 +131,8 @@ export async function registerVoiceRoutes(
             request_id: opened.requestId,
           });
 
+          const bargeIn = createVoiceBargeIn();
+
           const offJson = agent.onJson((event) => {
             const eventType =
               typeof event.type === "string" ? event.type : null;
@@ -150,7 +153,14 @@ export async function registerVoiceRoutes(
               return;
             }
             if (eventType === config.DEEPGRAM_MSG_USER_STARTED) {
-              void setVoiceBargeIn(redis, config, session.id, true);
+              if (bargeIn.onUserStarted()) {
+                void setVoiceBargeIn(redis, config, session.id, true);
+                request.log.info({ sessionId: session.id }, "voice barge-in");
+              }
+            }
+            if (eventType === config.DEEPGRAM_MSG_AGENT_AUDIO_DONE) {
+              bargeIn.onAgentAudioDone();
+              void setVoiceBargeIn(redis, config, session.id, false);
             }
             sendJson(socket, {
               type: config.VOICE_CLIENT_AGENT_EVENT_TYPE,
@@ -158,6 +168,9 @@ export async function registerVoiceRoutes(
             });
           });
           const offBinary = agent.onBinary((chunk) => {
+            if (!bargeIn.acceptBinary()) {
+              return;
+            }
             if (socket.readyState === WebSocket.OPEN) {
               socket.send(chunk);
             }

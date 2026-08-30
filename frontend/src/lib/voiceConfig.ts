@@ -40,6 +40,13 @@ export type VoiceClientConfig = {
   errorType: string;
   warningType: string;
   agentEventType: string;
+  conversationTextType: string;
+  userStartedType: string;
+  thinkingType: string;
+  audioDoneType: string;
+  transcriptUserRole: string;
+  transcriptAssistantRole: string;
+  vuBarCount: number;
 };
 
 export function loadVoiceClientConfig(): VoiceClientConfig {
@@ -103,6 +110,34 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     agentEventType: requiredString(
       "VITE_VOICE_CLIENT_AGENT_EVENT_TYPE",
       import.meta.env.VITE_VOICE_CLIENT_AGENT_EVENT_TYPE,
+    ),
+    conversationTextType: requiredString(
+      "VITE_DEEPGRAM_MSG_CONVERSATION_TEXT",
+      import.meta.env.VITE_DEEPGRAM_MSG_CONVERSATION_TEXT,
+    ),
+    userStartedType: requiredString(
+      "VITE_DEEPGRAM_MSG_USER_STARTED",
+      import.meta.env.VITE_DEEPGRAM_MSG_USER_STARTED,
+    ),
+    thinkingType: requiredString(
+      "VITE_DEEPGRAM_MSG_AGENT_THINKING",
+      import.meta.env.VITE_DEEPGRAM_MSG_AGENT_THINKING,
+    ),
+    audioDoneType: requiredString(
+      "VITE_DEEPGRAM_MSG_AGENT_AUDIO_DONE",
+      import.meta.env.VITE_DEEPGRAM_MSG_AGENT_AUDIO_DONE,
+    ),
+    transcriptUserRole: requiredString(
+      "VITE_VOICE_TRANSCRIPT_USER_ROLE",
+      import.meta.env.VITE_VOICE_TRANSCRIPT_USER_ROLE,
+    ),
+    transcriptAssistantRole: requiredString(
+      "VITE_VOICE_TRANSCRIPT_ASSISTANT_ROLE",
+      import.meta.env.VITE_VOICE_TRANSCRIPT_ASSISTANT_ROLE,
+    ),
+    vuBarCount: requiredPositiveInt(
+      "VITE_VOICE_VU_BAR_COUNT",
+      import.meta.env.VITE_VOICE_VU_BAR_COUNT,
     ),
   };
 }

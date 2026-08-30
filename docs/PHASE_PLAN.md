@@ -215,7 +215,7 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 - Goal: the user can interrupt the bot.
 - Tasks:
   - Handle `UserStartedSpeaking`: stop playback + flush buffered audio immediately.
-- Manual test: talk over the bot mid-reply; playback stops and the new turn is heard.
+- Manual test: talk over the bot mid-reply; playback stops and the new turn is heard. Not run live — Tauqueer was in a noisy environment; still needs a quiet-room confirmation.
 - Commit gate: on Tauqueer's word.
 
 ### Part 2.6 — Thinking cue & latency capture

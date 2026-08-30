@@ -22,6 +22,7 @@ export function openVoiceSocket(
   handlers: {
     onReady: (ready: VoiceReady) => void;
     onBinary: (bytes: ArrayBuffer) => void;
+    onAgentEvent?: (event: Record<string, unknown>) => void;
     onError: (message: string) => void;
     onClose: () => void;
   },
@@ -85,6 +86,13 @@ export function openVoiceSocket(
           ? message.error
           : "voice session failed";
       fail(error);
+      return;
+    }
+    if (message.type === config.agentEventType) {
+      const event = asRecord(message.event);
+      if (event) {
+        handlers.onAgentEvent?.(event);
+      }
     }
   });
 

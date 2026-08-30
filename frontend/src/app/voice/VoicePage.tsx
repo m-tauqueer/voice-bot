@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Badge } from "../../components/ui/Badge";
+import { Badge, type BadgeTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { BarMeter } from "../../components/ui/Meter";
 import Grainient from "../../components/Grainient";
 import { ApiError, api, googleSignInUrl, logoutUrl } from "../../lib/gateway";
+import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { navigate } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
-import { loadVoiceClientConfig } from "../../lib/voiceConfig";
+import { loadVoiceClientConfig, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
 
 type Me = {
@@ -28,7 +30,18 @@ type ChatGetResponse = {
   persona: Persona;
 };
 
-type CallStatus = "idle" | "starting" | "live";
+type CallPhase =
+  | "idle"
+  | "starting"
+  | "listening"
+  | "thinking"
+  | "speaking"
+  | "error";
+
+type TranscriptLine = {
+  role: string;
+  content: string;
+};
 
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
@@ -54,6 +67,16 @@ const headStyle: CSSProperties = {
   gap: 16,
 };
 
+const bubbleStyle = (fromUser: boolean): CSSProperties => ({
+  justifySelf: fromUser ? "end" : "start",
+  maxWidth: "85%",
+  padding: "12px 14px",
+  borderRadius: 14,
+  background: fromUser ? "var(--surface-2)" : "var(--surface-1)",
+  color: "var(--text-hi)",
+  whiteSpace: "pre-wrap",
+});
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.message;
@@ -64,19 +87,89 @@ function errorMessage(error: unknown): string {
   return "request failed";
 }
 
+function phaseLabel(phase: CallPhase): string {
+  if (phase === "starting") {
+    return "Connecting";
+  }
+  if (phase === "listening") {
+    return "Listening";
+  }
+  if (phase === "thinking") {
+    return "Thinking";
+  }
+  if (phase === "speaking") {
+    return "Speaking";
+  }
+  if (phase === "error") {
+    return "Error";
+  }
+  return "Idle";
+}
+
+function phaseTone(phase: CallPhase): BadgeTone {
+  if (phase === "listening") {
+    return "positive";
+  }
+  if (phase === "thinking" || phase === "speaking") {
+    return "accent";
+  }
+  if (phase === "error") {
+    return "negative";
+  }
+  return "neutral";
+}
+
+function eventRole(event: Record<string, unknown>): string | null {
+  if (typeof event.role === "string" && event.role.length > 0) {
+    return event.role;
+  }
+  if (typeof event.speaker === "string" && event.speaker.length > 0) {
+    return event.speaker;
+  }
+  return null;
+}
+
+function eventContent(event: Record<string, unknown>): string | null {
+  if (typeof event.content === "string") {
+    return event.content;
+  }
+  if (typeof event.text === "string") {
+    return event.text;
+  }
+  return null;
+}
+
 export function VoicePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [boot, setBoot] = useState<"loading" | "signed_out" | "ready">("loading");
   const [status, setStatus] = useState<string | null>(null);
-  const [call, setCall] = useState<CallStatus>("idle");
+  const [phase, setPhase] = useState<CallPhase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [turns, setTurns] = useState<TranscriptLine[]>([]);
+  const [vu, setVu] = useState(0);
+  const [levels, setLevels] = useState<number[]>([]);
+  const [clientConfig, setClientConfig] = useState<VoiceClientConfig | null>(
+    null,
+  );
   const session = useRef<{
     socket: VoiceSocket | null;
     mic: MicCapture | null;
     playback: PcmPlayback | null;
+    bargeIn: VoiceBargeIn | null;
     closedByUs: boolean;
-  }>({ socket: null, mic: null, playback: null, closedByUs: false });
+    levelRaf: number | null;
+    pendingLevel: number;
+  }>({
+    socket: null,
+    mic: null,
+    playback: null,
+    bargeIn: null,
+    closedByUs: false,
+    levelRaf: null,
+    pendingLevel: 0,
+  });
+  const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,56 +208,148 @@ export function VoicePage() {
     };
   }, []);
 
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [turns, phase]);
+
+  function publishLevel(level: number) {
+    session.current.pendingLevel = level;
+    if (session.current.levelRaf !== null) {
+      return;
+    }
+    session.current.levelRaf = window.requestAnimationFrame(() => {
+      session.current.levelRaf = null;
+      const next = session.current.pendingLevel;
+      setVu(Math.round(next * 100));
+      setLevels((current) => {
+        if (current.length === 0) {
+          return current;
+        }
+        return [...current.slice(1), next];
+      });
+    });
+  }
+
   async function endCall() {
     const current = session.current;
     current.closedByUs = true;
+    current.bargeIn?.dispose();
+    if (current.levelRaf !== null) {
+      window.cancelAnimationFrame(current.levelRaf);
+    }
     session.current = {
       socket: null,
       mic: null,
       playback: null,
+      bargeIn: null,
       closedByUs: true,
+      levelRaf: null,
+      pendingLevel: 0,
     };
     current.socket?.close();
     await current.mic?.stop();
     await current.playback?.stop();
-    setCall("idle");
+    setVu(0);
+    setLevels([]);
+    setPhase("idle");
+  }
+
+  function applyAgentEvent(
+    config: VoiceClientConfig,
+    event: Record<string, unknown>,
+  ) {
+    const type = typeof event.type === "string" ? event.type : null;
+    if (!type) {
+      return;
+    }
+    if (type === config.userStartedType) {
+      session.current.bargeIn?.onUserStarted(() => {
+        session.current.playback?.flush();
+      });
+      setPhase("listening");
+      return;
+    }
+    if (type === config.thinkingType) {
+      setPhase("thinking");
+      return;
+    }
+    if (type === config.audioDoneType) {
+      session.current.bargeIn?.onAgentAudioDone();
+      setPhase("listening");
+      return;
+    }
+    if (type !== config.conversationTextType) {
+      return;
+    }
+    const role = eventRole(event);
+    const content = eventContent(event);
+    if (!role || content === null) {
+      return;
+    }
+    const interim = event.final === false;
+    setTurns((current) => {
+      if (interim && current.length > 0) {
+        const last = current[current.length - 1];
+        if (last && last.role === role) {
+          return [...current.slice(0, -1), { role, content }];
+        }
+      }
+      return [...current, { role, content }];
+    });
   }
 
   async function startCall() {
-    if (call !== "idle") {
+    if (phase !== "idle" && phase !== "error") {
       return;
     }
-    setCall("starting");
+    setPhase("starting");
     setStatus(null);
     setSessionId(null);
+    setTurns([]);
     try {
       const config = loadVoiceClientConfig();
+      setClientConfig(config);
+      setLevels(Array.from({ length: config.vuBarCount }, () => 0));
       session.current.closedByUs = false;
       const playback = createPcmPlayback(config);
       session.current.playback = playback;
+      const bargeIn = createVoiceBargeIn();
+      session.current.bargeIn = bargeIn;
       const live = { current: false };
-      const mic = await startMicCapture(config, (frame) => {
-        if (live.current) {
-          session.current.socket?.sendBinary(frame);
-        }
+      const mic = await startMicCapture(config, {
+        onFrame: (frame) => {
+          if (live.current) {
+            session.current.socket?.sendBinary(frame);
+          }
+        },
+        onLevel: publishLevel,
       });
       session.current.mic = mic;
       const socket = openVoiceSocket(config, {
         onReady: (ready) => {
           live.current = true;
           setSessionId(ready.sessionId);
-          setCall("live");
+          setPhase("listening");
         },
         onBinary: (bytes) => {
+          if (!bargeIn.acceptBinary()) {
+            return;
+          }
+          setPhase("speaking");
           playback.enqueue(bytes);
+        },
+        onAgentEvent: (event) => {
+          applyAgentEvent(config, event);
         },
         onError: (message) => {
           setStatus(message);
+          setPhase("error");
           void endCall();
         },
         onClose: () => {
           if (!session.current.closedByUs) {
             setStatus("The voice connection dropped");
+            setPhase("error");
           }
           void endCall();
         },
@@ -172,6 +357,7 @@ export function VoicePage() {
       session.current.socket = socket;
     } catch (error) {
       setStatus(errorMessage(error));
+      setPhase("error");
       await endCall();
     }
   }
@@ -214,8 +400,9 @@ export function VoicePage() {
     );
   }
 
-  const live = call === "live";
-  const busy = call === "starting";
+  const inCall =
+    phase === "listening" || phase === "thinking" || phase === "speaking";
+  const starting = phase === "starting";
 
   return (
     <div style={pageStyle}>
@@ -258,11 +445,8 @@ export function VoicePage() {
 
         <Card>
           <div style={{ display: "grid", gap: 14 }}>
-            <p style={{ color: "var(--text-mid)" }}>
-              Speak after the call is live. The same persona and memory as typed chat.
-            </p>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              {live ? (
+              {inCall ? (
                 <Button type="button" variant="danger" onClick={() => void endCall()}>
                   End call
                 </Button>
@@ -270,17 +454,70 @@ export function VoicePage() {
                 <Button
                   type="button"
                   variant="solid"
-                  disabled={busy}
+                  disabled={starting}
                   onClick={() => void startCall()}
                 >
-                  {call === "starting" ? "Starting…" : "Start call"}
+                  {starting ? "Starting…" : "Start call"}
                 </Button>
               )}
-              <Badge>
-                {live ? "Live" : call === "starting" ? "Connecting" : "Idle"}
-              </Badge>
+              <Badge tone={phaseTone(phase)}>{phaseLabel(phase)}</Badge>
               {sessionId && <Badge>Session saved</Badge>}
             </div>
+            {(inCall || starting) && (
+              <>
+                <BarMeter value={vu} label="Mic" accent={phase === "listening"} />
+                {levels.length > 0 && (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-end",
+                      gap: 3,
+                      height: 48,
+                    }}
+                  >
+                    {levels.map((level, index) => (
+                      <span
+                        key={index}
+                        style={{
+                          flex: 1,
+                          height: `${Math.max(8, Math.round(level * 100))}%`,
+                          background: "var(--text-hi)",
+                          opacity: 0.28 + level * 0.72,
+                          borderRadius: 2,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{ display: "grid", gap: 10, minHeight: 280 }}>
+            {turns.length === 0 && (
+              <p style={{ color: "var(--text-mid)" }}>
+                {inCall
+                  ? "Speak when the badge says Listening."
+                  : "Start a call to see the live transcript."}
+              </p>
+            )}
+            {turns.map((turn, index) => (
+              <div
+                key={`${turn.role}-${index}`}
+                style={bubbleStyle(
+                  turn.role === (clientConfig?.transcriptUserRole ?? ""),
+                )}
+              >
+                {turn.content}
+              </div>
+            ))}
+            {phase === "thinking" && (
+              <p style={{ color: "var(--text-mid)" }}>Thinking…</p>
+            )}
+            <div ref={bottom} />
           </div>
         </Card>
       </div>

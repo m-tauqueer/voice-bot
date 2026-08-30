@@ -3,14 +3,40 @@ import type { VoiceClientConfig } from "./voiceConfig";
 
 export type PcmPlayback = {
   enqueue: (bytes: ArrayBuffer) => void;
+  flush: () => boolean;
   stop: () => Promise<void>;
+};
+
+type ScheduledSource = {
+  source: AudioBufferSourceNode;
+  startAt: number;
 };
 
 export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
   const context = new AudioContext({ sampleRate: config.outputSampleRate });
-  const sources = new Set<AudioBufferSourceNode>();
+  const output = context.createGain();
+  output.connect(context.destination);
+  const sources = new Set<ScheduledSource>();
   let nextTime = 0;
   let stopped = false;
+
+  function silenceAndDrop(): boolean {
+    const now = context.currentTime;
+    const hadAudio = sources.size > 0 || nextTime > now;
+    output.gain.cancelScheduledValues(now);
+    output.gain.setValueAtTime(0, now);
+    for (const item of sources) {
+      try {
+        item.source.stop(item.startAt > now ? item.startAt : now);
+      } catch {
+        // already stopped
+      }
+      item.source.disconnect();
+    }
+    sources.clear();
+    nextTime = now;
+    return hadAudio;
+  }
 
   return {
     enqueue(bytes: ArrayBuffer) {
@@ -21,6 +47,12 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
       if (samples.length === 0) {
         return;
       }
+      if (context.state === "suspended") {
+        void context.resume();
+      }
+      const now = context.currentTime;
+      output.gain.cancelScheduledValues(now);
+      output.gain.setValueAtTime(1, now);
       const buffer = context.createBuffer(
         config.channelCount,
         samples.length,
@@ -31,30 +63,25 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
       }
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(context.destination);
-      source.onended = () => {
-        sources.delete(source);
-      };
-      if (context.state === "suspended") {
-        void context.resume();
-      }
-      const startAt = Math.max(nextTime, context.currentTime);
+      source.connect(output);
+      const startAt = Math.max(nextTime, now);
       source.start(startAt);
+      const item: ScheduledSource = { source, startAt };
+      sources.add(item);
+      source.onended = () => {
+        sources.delete(item);
+      };
       nextTime = startAt + buffer.duration;
-      sources.add(source);
+    },
+    flush() {
+      if (stopped) {
+        return false;
+      }
+      return silenceAndDrop();
     },
     async stop() {
       stopped = true;
-      for (const source of sources) {
-        try {
-          source.stop();
-        } catch {
-          // already stopped
-        }
-        source.disconnect();
-      }
-      sources.clear();
-      nextTime = 0;
+      silenceAndDrop();
       if (context.state !== "closed") {
         await context.close();
       }
