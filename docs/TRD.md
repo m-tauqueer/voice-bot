@@ -173,7 +173,7 @@ Only non-language-understanding thresholds (endpointing ms, timeouts) are config
 
 ## 5. Data model (Postgres, canonical)
 
-Indicative tables (finalized in Phase 1). All ids/keys configurable; no hardcoded values.
+Tables exist (Phase 1 migrations). All ids/keys configurable; no hardcoded values. `audio_assets` and voice `latency_spans` columns are written in Phase 2.
 
 - `users` — app user id, Google subject, email, mapped Engram `user_id`, timestamps.
 - `personas` — local reference to the Engram persona (Engram `persona_id`, handle, display name, voice config).
@@ -212,7 +212,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 ## 8. Risks & mitigations
 
 - **Engram alpha latency vs Voice Agent LLM wait window** — session-open early + thinking cue; fallback to custom pipeline; brain behind an interface.
-- **BYO-LLM public reachability in local dev** — dev tunnel; documented in Phase 2.
+- **BYO-LLM public reachability in local dev** — `BYO_LLM_PUBLIC_URL` is a tunnel (or public worker URL) Deepgram can call; see [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 - **Engram alpha API churn** — client wrapped behind an interface; pin SDK; watch changelog.
 - **Barge-in correctness** — rely on Voice Agent `UserStartedSpeaking`; in fallback, pair `Clear` with playback flush (doing only one causes stalls).
 - **Persona voice drift / hallucination** — reframe is fact-locked to Engram output; persona identity seeded in the shared pool.

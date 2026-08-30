@@ -139,6 +139,7 @@ const envFileSchema = z.object({
   AZURE_STORAGE_KEY: optionalNonEmpty,
   AZURE_BLOB_CONTAINER: optionalNonEmpty,
   DEEPGRAM_API_KEY: optionalNonEmpty,
+  DEEPGRAM_API_BASE_URL: optionalUrl,
   DEEPGRAM_STT_MODEL: optionalNonEmpty,
   DEEPGRAM_STT_LANGUAGE: optionalNonEmpty,
   DEEPGRAM_TTS_VOICE: optionalNonEmpty,

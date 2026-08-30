@@ -883,6 +883,7 @@ source = { editable = "." }
 dependencies = [
     { name = "engram-ai-sdk" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "openai" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
@@ -901,6 +902,7 @@ dev = [
 requires-dist = [
     { name = "engram-ai-sdk" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "openai" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pydantic-settings" },

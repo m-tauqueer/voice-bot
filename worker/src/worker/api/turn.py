@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from worker.api.http import raise_turn
 from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
 from worker.turn.errors import TurnError
@@ -29,13 +29,6 @@ class TurnOut(BaseModel):
     reasons: list[str]
 
 
-def _raise_turn(exc: TurnError) -> NoReturn:
-    raise HTTPException(
-        status_code=exc.status,
-        detail={"error": str(exc), "reason": exc.reason},
-    ) from exc
-
-
 def build_turn_router(settings: WorkerSettings) -> APIRouter:
     guard = require_internal_secret(settings)
     router = APIRouter(dependencies=[Depends(guard)])
@@ -52,7 +45,7 @@ def build_turn_router(settings: WorkerSettings) -> APIRouter:
                 text=body.text,
             )
         except TurnError as exc:
-            _raise_turn(exc)
+            raise_turn(exc)
         return TurnOut(
             action=result.action,
             reply_text=result.reply_text,

@@ -1,6 +1,8 @@
-# Phase 1 build plan — Brain first (typed chat, no voice)
+# Phase 1 build plan — Brain first (typed chat, no voice) — ✅ COMPLETE
 
 Detailed, implementation-level plan for Phase 1. Owner: Tauqueer. Read [AGENTS.md](../AGENTS.md), [PRD.md](PRD.md), and [TRD.md](TRD.md) first. This document expands [PHASE_PLAN.md](PHASE_PLAN.md) parts 1.1–1.8 into exact logic so an implementer (human or model) does not have to guess or invent APIs.
+
+**Status: complete.** Voice work is [PHASE_2_PLAN.md](PHASE_2_PLAN.md). Trust the code for current behavior.
 
 > Phase 1 goal: a signed-in user holds a **typed** conversation with the single seeded persona. Every reply is grounded in Engram (`personas.chat`), reframed into natural spoken-style text, gated by the controller, and persisted to Postgres. Memory must survive a process restart. **No audio, no Deepgram, no browser mic in Phase 1** — those are Phase 2.
 
@@ -357,6 +359,8 @@ Add FK indexes and the uniqueness constraints above. Keep the enum-like columns 
 ---
 
 ## 5. Cross-cutting definition of done for Phase 1
+
+**Met.** Phase 1 is complete. Next work is [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 
 - No hardcoded product values; no keyword/intent heuristics anywhere (controller, reframe, auth). Verified by reading the code.
 - Engram SDK imported only inside the Part 1.2 wrapper; everything else uses the interface.

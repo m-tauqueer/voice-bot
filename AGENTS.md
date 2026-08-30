@@ -56,7 +56,8 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 - [`docs/PRD.md`](docs/PRD.md) — Product Requirements. What we're building and for whom, scope in/out, success criteria.
 - [`docs/TRD.md`](docs/TRD.md) — Technical Requirements & Design. **The locked decisions, architecture, data model, external services, risks, and future improvements.** This is the source of truth for how things are built.
 - [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — The build plan: Phase 0 (setup) plus 3 phases, each split into parts, each part with defined tasks, manual-test gates, and commit gates.
-- [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8): exact logic, the verified Engram SDK surface, data model DDL, and per-part manual tests. Phase 0 is complete.
+- [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8). **Phase 1 is complete.**
+- [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Implementation-level plan for Phase 2 (parts 2.1–2.9): BYO-LLM shim, Voice Agent bridge, browser audio, voice UI, barge-in, thinking cue, Azure audio, and voice acceptance.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -64,7 +65,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phase 0 is complete** (repo layout, toolchains, config, Compose, frontend base, smoke). Product work starts at Phase 1 when Tauqueer names a part.
+**Phase 0 and Phase 1 are complete.** Typed chat works at `/chat` (Google sign-in, Engram memory, reframe, controller, Postgres). Voice work starts at Phase 2 when Tauqueer names a part from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) / [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md).
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -80,6 +81,11 @@ uv run ruff check src
 uv run python -m worker.engram.probe   # live Engram wrapper check (needs Engram keys)
 uv run python -m worker.reframe.probe # live reframe check (needs OpenAI keys)
 cd ..
+npm run controller   # controller speak/silence probe
+npm run reframe      # reframe probe
+npm run chat         # two-turn live typed-loop probe
+npm run byo          # Chat Completions shim probe (needs Engram + OpenAI)
+npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)
 npm run infra:up       # Postgres + Redis (or: make infra-up)
@@ -97,13 +103,13 @@ npm run infra:reset
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
 
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
-- `frontend/` — React 18 + Vite + Tailwind UI. Copied from the component library (`Desktop/component-library`). Design notes: `frontend/COMPONENT_LIBRARY.md`.
-- `gateway/` — TypeScript service: web/auth + WebSocket bridge to Deepgram.
-- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram SDK + reframe LLM (the BYO-LLM brain).
+- `frontend/` — React 18 + Vite + Tailwind UI. Copied from the component library (`Desktop/component-library`). Design notes: `frontend/COMPONENT_LIBRARY.md`. Typed chat is `/chat`; `/admin` is owner-only.
+- `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
+- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`. Phase 2 adds the OpenAI-compatible BYO-LLM endpoint Deepgram calls.
 - `infra/` — Docker Compose, migrations, scripts.
-- `docs/` — PRD, TRD, phase plan.
+- `docs/` — PRD, TRD, phase plans.
 
-External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure, Deepgram, Engram, and OpenAI are optional until the parts that use them; `npm run smoke` reports `SKIP` for those until the keys are set.
+External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until the Phase 2 parts that use them; `npm run smoke` reports `SKIP` for those until the keys are set. Engram and OpenAI are required for the live brain (typed chat and voice).
 
 ---
 

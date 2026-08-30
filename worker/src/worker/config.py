@@ -53,6 +53,35 @@ class WorkerSettings(BaseSettings):
     reframe_max_tokens: int = Field(default=256, gt=0)
     reframe_timeout_seconds: float = Field(default=30, gt=0)
     reframe_system_prompt: str | None = None
+    byo_llm_chat_completions_path: str = Field(
+        default="/v1/chat/completions",
+        min_length=1,
+    )
+    byo_llm_app_user_header: str = Field(default="x-app-user-id", min_length=1)
+    byo_llm_engram_user_header: str = Field(
+        default="x-engram-user-id",
+        min_length=1,
+    )
+    byo_llm_persona_header: str = Field(default="x-persona-id", min_length=1)
+    byo_llm_session_header: str = Field(default="x-session-id", min_length=1)
+    byo_llm_user_role: str = Field(default="user", min_length=1)
+    byo_llm_assistant_role: str = Field(default="assistant", min_length=1)
+    byo_llm_text_part_type: str = Field(default="text", min_length=1)
+    byo_llm_completion_object: str = Field(
+        default="chat.completion",
+        min_length=1,
+    )
+    byo_llm_chunk_object: str = Field(
+        default="chat.completion.chunk",
+        min_length=1,
+    )
+    byo_llm_finish_reason: str = Field(default="stop", min_length=1)
+    byo_llm_completion_id_prefix: str = Field(default="chatcmpl-", min_length=1)
+    byo_llm_sse_done: str = Field(default="[DONE]", min_length=1)
+    byo_llm_sse_media_type: str = Field(
+        default="text/event-stream",
+        min_length=1,
+    )
 
     @field_validator("internal_secret_header", mode="before")
     @classmethod
@@ -100,6 +129,13 @@ class WorkerSettings(BaseSettings):
             return "gpt-4o-mini"
         if isinstance(value, str) and value.strip() == "":
             return "gpt-4o-mini"
+        return value
+
+    @field_validator("byo_llm_chat_completions_path")
+    @classmethod
+    def completions_path_absolute(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
 
 

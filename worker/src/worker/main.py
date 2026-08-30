@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from worker.api.admin import build_admin_router
+from worker.api.chat_completions import build_chat_completions_router
 from worker.api.subscribe import build_subscribe_router
 from worker.api.turn import build_turn_router
 from worker.config import WorkerSettings, load_settings
@@ -39,6 +40,7 @@ app = FastAPI(title="voice-bot-worker")
 app.include_router(build_subscribe_router(settings))
 app.include_router(build_admin_router(settings))
 app.include_router(build_turn_router(settings))
+app.include_router(build_chat_completions_router(settings))
 
 
 @app.get("/health")

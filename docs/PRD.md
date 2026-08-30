@@ -80,9 +80,9 @@ The build is successful when, in the browser:
 
 See [Phase Plan](PHASE_PLAN.md) for the task-level breakdown.
 
-- **Phase 0 — Setup (complete):** repo, dependencies, Docker services, environment, external-account smoke checks. No product behavior yet.
-- **Phase 1 — Brain first (text):** persona seeding + Engram wrapper + auth + reframe + controller + a typed chat loop end-to-end. Proves memory before real-time voice.
-- **Phase 2 — Voice loop:** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product.
+- **Phase 0 — Setup (complete):** repo, dependencies, Docker services, environment, external-account smoke checks.
+- **Phase 1 — Brain first (complete):** persona record + Engram wrapper + auth + reframe + controller + typed chat at `/chat`. Memory lives in Engram + Postgres and survives a process restart.
+- **Phase 2 — Voice loop (current):** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product. Plan: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 - **Phase 3 — Hardening:** failure handling, latency tuning, observability, multilingual, voice-clone groundwork, security review, Azure deployment.
 
 ---

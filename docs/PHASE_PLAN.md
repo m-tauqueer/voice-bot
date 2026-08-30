@@ -18,7 +18,7 @@ The build plan. Owner: Tauqueer. Read [AGENTS.md](../AGENTS.md), [PRD](PRD.md), 
 
 Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for all three services locally, with every external dependency reachable. No product behavior yet.
 
-**Status: complete.** All parts 0.1–0.6 are implemented and their manual tests pass. `npm run infra:up && npm run smoke` reports `OK` for postgres, redis, the empty baseline migration, and Google (OIDC discovery + dummy token exchange); `SKIP` for Azure/Deepgram/OpenAI/Engram until those keys are set. Detailed Phase 1 build plan: [PHASE_1_PLAN.md](PHASE_1_PLAN.md).
+**Status: complete.** All parts 0.1–0.6 are implemented and their manual tests pass. `npm run infra:up && npm run smoke` reports `OK` for postgres, redis, migrations, and Google; optional vendors `SKIP` until those keys are set. Phase 1 record: [PHASE_1_PLAN.md](PHASE_1_PLAN.md). Phase 2 build plan: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 
 ### Part 0.1 — Repo layout & conventions
 - Goal: initialize the repository and its skeleton.
@@ -101,9 +101,11 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
 
 ---
 
-## Phase 1 — Brain first (text, no voice)
+## Phase 1 — Brain first (text, no voice) — ✅ COMPLETE
 
 Goal: a signed-in user holds a **typed** conversation with the persona, grounded in Engram memory, with the canonical record persisted. Proves the brain before adding real-time voice.
+
+**Status: complete.** Parts 1.1–1.8 shipped. A signed-in user talks at `/chat`; the worker runs controller → Engram `personas.chat` → reframe; turns and an Engram `session_id` persist in Postgres; memory survives a worker restart. Isolation is enforced on the session row (`sessions.user_id`). Implementation record: [PHASE_1_PLAN.md](PHASE_1_PLAN.md).
 
 ### Part 1.1 — Postgres schema & migrations
 - Goal: the canonical data model exists.
@@ -175,6 +177,8 @@ Goal: a signed-in user holds a **typed** conversation with the persona, grounded
 ## Phase 2 — Voice loop (Deepgram Voice Agent API)
 
 Goal: the end-to-end spoken product — talk in the browser, hear the persona, interrupt it, with audio persisted. English only.
+
+**Status: not started.** Tauqueer names one part at a time. Implementation-level plan: [PHASE_2_PLAN.md](PHASE_2_PLAN.md). Do not start a part until he names it.
 
 ### Part 2.1 — BYO-LLM shim endpoint
 - Goal: expose the worker brain as the LLM Deepgram calls.
