@@ -253,7 +253,7 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1 complete.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
+**Status: 3.1–3.2 complete.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
 
 The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
@@ -265,7 +265,7 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 ### Part 3.2 — Read API for the canonical record
 - Goal: serve everything the dashboard needs, correctly scoped.
 - Tasks: personal endpoints (`/api/me/*`) scoped to `sessions.user_id`; owner endpoints (`/api/admin/*`) behind the owner guard; percentiles in SQL; cursor paging.
-- Manual test: the isolation probe covers the admin surface; overview numbers match `psql`.
+- Manual test: `npm run isolation` covers the admin surface; overview numbers match the SQL. **Done.**
 
 ### Part 3.3 — App shell & navigation
 - Goal: one navigation frame around every screen.

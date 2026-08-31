@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 3. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 3 goal: the product survives its dependencies failing, can be watched and understood from a UI instead of `psql`, is safe to put in front of testers, and runs on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1 complete (`npm run failures` is the accepted gate).** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
+**Status: 3.1–3.2 complete.** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
 
 ---
 
@@ -195,7 +195,7 @@ Rules:
 
 **Errors.** 401 unauthenticated, 403 on admin endpoints for a non-owner, 404 for a session that is not yours, 400 for an invalid range or cursor.
 
-**Manual test.** Extend `npm run isolation`: a non-owner gets 403 on every `/api/admin/*` endpoint, sees only their own sessions on `/api/me/*`, and gets 404 for another user's session id. Numbers from `/api/admin/overview` match the same query run in `psql`.
+**Manual test.** `npm run isolation`: a non-owner gets 403 on every `/api/admin/*` endpoint, sees only their own sessions on `/api/me/*`, and gets 404 for another user's session id. Numbers from `/api/admin/overview` match the SQL. **Done.**
 
 **Done when.** Every number the dashboard will show can be fetched from an endpoint, and the isolation probe covers the admin surface.
 

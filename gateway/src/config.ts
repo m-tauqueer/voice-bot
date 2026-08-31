@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
+import { validateInsightsConfig } from "./insights/parse.js";
 
 const requiredPort = z.preprocess(
   (val) => (val === undefined || val === "" ? undefined : val),
@@ -133,6 +134,101 @@ const envFileSchema = z.object({
   ADMIN_INGEST_MAX_BYTES: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(8388608),
+  ),
+  INSIGHTS_PAGE_SIZE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(50),
+  ),
+  INSIGHTS_MAX_PAGE_SIZE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(200),
+  ),
+  INSIGHTS_RANGES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("today,7d,30d"),
+  ),
+  INSIGHTS_DEFAULT_RANGE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("7d"),
+  ),
+  INSIGHTS_RANGE_WINDOWS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("today:calendar,7d:7,30d:30"),
+  ),
+  INSIGHTS_CALENDAR_WINDOW_SPEC: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("calendar"),
+  ),
+  INSIGHTS_TIMEZONE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("UTC"),
+  ),
+  INSIGHTS_ACTIVITY_BUCKETS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("hour,day"),
+  ),
+  INSIGHTS_DEFAULT_BUCKET: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("day"),
+  ),
+  INSIGHTS_ERROR_REASONS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("server_error,retryable_read,brain_error"),
+  ),
+  INSIGHTS_BRAIN_MODE_UNRECORDED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("unrecorded"),
+  ),
+  INSIGHTS_BRAIN_MODE_MIXED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("mixed"),
+  ),
+  INSIGHTS_FIRST_WORD_COLUMNS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("brain_ms,reframe_first_token_ms"),
+  ),
+  INSIGHTS_FIRST_WORD_REQUIRED_COLUMN: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("reframe_first_token_ms"),
+  ),
+  INSIGHTS_LATENCY_STAGES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("stt_ms,brain_ms,reframe_first_token_ms,tts_first_byte_ms"),
+  ),
+  LATENCY_BUDGET_FIRST_WORD_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(4000),
+  ),
+  INSIGHTS_ERROR_INVALID_RANGE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid range"),
+  ),
+  INSIGHTS_ERROR_INVALID_CURSOR: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid cursor"),
+  ),
+  INSIGHTS_ERROR_INVALID_BUCKET: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid bucket"),
+  ),
+  INSIGHTS_ERROR_INVALID_CHANNEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid channel"),
+  ),
+  INSIGHTS_ERROR_INVALID_USER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid user_id"),
+  ),
+  INSIGHTS_ERROR_INVALID_LIMIT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid limit"),
+  ),
+  INSIGHTS_ERROR_NOT_FOUND: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("session not found"),
   ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
@@ -599,6 +695,13 @@ export function loadGatewayConfig(
   if (callback.origin !== publicUrl.origin) {
     throw new Error(
       "Invalid gateway environment: GOOGLE_CALLBACK_URL origin must match GATEWAY_PUBLIC_URL",
+    );
+  }
+  try {
+    validateInsightsConfig(parsed.data);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : "Invalid insights environment",
     );
   }
   return parsed.data;
