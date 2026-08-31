@@ -57,7 +57,8 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 - [`docs/TRD.md`](docs/TRD.md) — Technical Requirements & Design. **The locked decisions, architecture, data model, external services, risks, and future improvements.** This is the source of truth for how things are built.
 - [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — The build plan: Phase 0 (setup) plus 3 phases, each split into parts, each part with defined tasks, manual-test gates, and commit gates.
 - [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8). **Phase 1 is complete.**
-- [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Implementation-level plan for Phase 2 (parts 2.1–2.9): BYO-LLM shim, Voice Agent bridge, browser audio, voice UI, barge-in, thinking cue, Azure audio, and voice acceptance.
+- [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Implementation-level plan for Phase 2 (parts 2.1–2.9): BYO-LLM shim, Voice Agent bridge, browser audio, voice UI, barge-in, thinking cue, latency, Azure audio, and voice acceptance. **Phase 2 is complete**; §7–§9 hold the measured numbers and the open items.
+- [`docs/PHASE_3_PLAN.md`](docs/PHASE_3_PLAN.md) — Implementation-level plan for Phase 3 (parts 3.1–3.12): failure handling, the read API, the app shell, the owner and personal dashboards, observability, the security review, Azure, multilingual, and voice-clone groundwork.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 

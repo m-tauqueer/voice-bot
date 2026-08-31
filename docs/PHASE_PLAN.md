@@ -249,64 +249,68 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 ---
 
-## Phase 3 — Hardening & productionization
+## Phase 3 — Hardening, dashboard & productionization
 
-Goal: make it robust, observable, and ready to run on Azure; enable deferred capabilities.
+Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
+
+**Status: not started.** Implementation-level plan, with the logic, files, config and manual test for every part: [PHASE_3_PLAN.md](PHASE_3_PLAN.md). Do not start a part until Tauqueer names it.
+
+The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
 ### Part 3.1 — Failure handling
-- Goal: honest, safe behavior when dependencies fail.
-- Tasks:
-  - Engram down = product down (clear messaging, no fabricated replies).
-  - Deepgram down = session ends + reconnect attempt; handle reframe-LLM and Azure failures.
-  - Apply the Engram error taxonomy; never blind-retry writes.
-- Manual test: simulate each outage; behavior matches the rules.
-- Commit gate: on Tauqueer's word.
+- Goal: honest, safe behaviour when any dependency fails.
+- Tasks: Engram down = product down; Deepgram down = session ends + one reconnect; speaking-LLM, Postgres, Redis and Blob failures each behave as [TRD](TRD.md) §7 says. Never blind-retry writes, never fabricate a reply.
+- Manual test: fail each dependency deliberately; behaviour matches the table in the plan.
 
-### Part 3.2 — Latency tuning
-- Goal: hit and hold a per-turn latency budget.
-- Tasks:
-  - Tune endpointing and the thinking cue; set a p90 turn-latency budget; alert on regressions.
-- Manual test: measured p90 meets the agreed budget over a test set of turns.
-- Commit gate: on Tauqueer's word.
+### Part 3.2 — Read API for the canonical record
+- Goal: serve everything the dashboard needs, correctly scoped.
+- Tasks: personal endpoints (`/api/me/*`) scoped to `sessions.user_id`; owner endpoints (`/api/admin/*`) behind the owner guard; percentiles in SQL; cursor paging.
+- Manual test: the isolation probe covers the admin surface; overview numbers match `psql`.
 
-### Part 3.3 — Observability
-- Goal: see what the system is doing per turn.
-- Tasks:
-  - Structured logs + turn traces; a simple latency/health view; review Engram `insights.logs` for denials/errors.
-- Manual test: a conversation is fully reconstructable from traces.
-- Commit gate: on Tauqueer's word.
+### Part 3.3 — App shell & navigation
+- Goal: one navigation frame around every screen.
+- Tasks: adopt the library's `AppShell`/`Sidebar`/`TopBar`; role-filtered nav; `/admin` folds into the dashboard as the Persona tab and its route redirects.
+- Manual test: owner and tester each see the right navigation; everything on the old admin screen still works.
 
-### Part 3.4 — Multilingual (code-switch)
-- Goal: enable `language=multi`.
-- Tasks:
-  - Switch STT config to `multi` with tuned endpointing; verify code-switching; keep it config-driven.
+### Part 3.4 — Owner dashboard: health & latency
+- Goal: answer "is it healthy and fast" without SQL.
+- Tasks: KPIs, activity over a range, per-stage p50/p90 split by brain mode, p50 against the configured budget. Delete the mock data file.
+- Manual test: numbers match `psql` and `npm run brains`.
+
+### Part 3.5 — Owner dashboard: conversations & people
+- Goal: find any conversation and read what happened in it.
+- Tasks: filterable session list; full transcript with controller reasons, timings, memory refs and audio when present; users with activity.
+- Manual test: a call reconstructs in the UI as completely as it does in SQL.
+
+### Part 3.6 — Personal view for testers
+- Goal: a signed-in tester sees their own history and what the persona remembers about them.
+- Tasks: their calls and transcripts; their own private memory only; no system metrics.
+- Manual test: two accounts side by side, neither can reach the other by editing a URL.
+
+### Part 3.7 — Observability & latency budgets
+- Goal: trace a turn end to end and notice a regression without watching.
+- Tasks: one correlation id across gateway, worker and the stored row; structured logs; p50/p90 budgets per brain mode; review Engram `insights.logs`.
+- Manual test: a turn is traceable from log line to database row; the budget check passes, then fails when tightened.
+
+### Part 3.8 — Security & isolation review
+- Goal: confirm the safety posture before outside testers.
+- Tasks: isolation end to end including the admin surface and URL tampering; decide what to do about Engram not gating on subscription; cookie, CORS and secret audit; verify the public BYO-LLM endpoint refuses forged identity.
+- Manual test: cross-user access attempted from a second real Google account and a crafted request; both refused and logged.
+
+### Part 3.9 — Azure deployment
+- Goal: off the laptop, tunnel retired, audio stored.
+- Tasks: Container Apps for gateway, worker and frontend; managed Postgres and Redis; Blob provisioned and audio archiving switched on; migrations as a deploy step; CI/CD.
+- Manual test: staging serves a full voice conversation with audio in Blob; `npm run smoke` reports Azure `OK`.
+
+### Part 3.10 — Multilingual (code-switch)
+- Goal: `language=multi`, config-driven.
 - Manual test: a code-switched utterance is transcribed and answered correctly.
-- Commit gate: on Tauqueer's word.
 
-### Part 3.5 — Voice-clone groundwork
-- Goal: prepare per-persona / cloned voices.
-- Tasks:
-  - Per-persona voice config; integration path for a cloned voice (no full clone yet).
-- Manual test: switching the configured voice changes the spoken output.
-- Commit gate: on Tauqueer's word.
+### Part 3.11 — Voice-clone groundwork
+- Goal: voice becomes a property of the persona, with a documented clone seam.
+- Manual test: changing a persona's configured voice changes the spoken output.
 
-### Part 3.6 — Security & isolation review
-- Goal: confirm the safety posture.
-- Tasks:
-  - Verify per-user isolation end-to-end; secrets never reach the browser; review auth and audit trail.
-- Manual test: attempt cross-user access; it is refused and logged.
-- Commit gate: on Tauqueer's word.
-
-### Part 3.7 — Azure deployment path
-- Goal: run on Azure.
-- Tasks:
-  - Containerize for Azure (Container Apps/AKS); managed Postgres/Redis; Azure Blob prod; public worker (BYO-LLM) endpoint; CI/CD.
-- Manual test: a staging deployment serves a full voice conversation.
-- Commit gate: on Tauqueer's word.
-
-### Part 3.8 — Productionization polish
+### Part 3.12 — Productionization polish
 - Goal: final robustness pass.
-- Tasks:
-  - Rate limits, idempotency for writes, retry policy per Engram guidance, final doc sync.
-- Manual test: load/robustness spot checks pass. **Phase 3 done.**
-- Commit gate: on Tauqueer's word.
+- Tasks: rate limits, write idempotency, retry policy, dependency pinning, documentation sync.
+- Manual test: load and robustness spot checks pass. **Phase 3 done.**
