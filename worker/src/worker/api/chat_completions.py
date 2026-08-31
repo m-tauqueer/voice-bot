@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from worker.api.http import raise_turn
 from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
-from worker.reframe.errors import ReframeError
+from worker.notices import publish_notice
 from worker.turn.errors import TurnError
 from worker.turn.openai_completion import (
     chunk_line,
@@ -94,14 +94,14 @@ def build_chat_completions_router(
     path = settings.byo_llm_chat_completions_path
 
     def _finish(plan: TurnPlan, *, streamed: bool) -> None:
-        try:
-            result = runner.finish(plan)
-        except Exception:
-            log.exception(
-                "voice turn was not recorded",
-                session_id=str(plan.session_id),
+        result = runner.finish(plan)
+        if not result.recorded:
+            publish_notice(
+                settings,
+                plan.session_id,
+                settings.failure_code_record,
+                settings.failure_message_record,
             )
-            return
         _log_turn(plan, result, streamed=streamed)
 
     @router.post(path, response_model=None)
@@ -161,6 +161,13 @@ def build_chat_completions_router(
             except TurnError as exc:
                 raise_turn(exc)
         result = runner.finish(plan)
+        if not result.recorded:
+            publish_notice(
+                settings,
+                plan.session_id,
+                settings.failure_code_record,
+                settings.failure_message_record,
+            )
         _log_turn(plan, result, streamed=False)
         return completion_payload(
             settings,
@@ -191,14 +198,20 @@ def build_chat_completions_router(
             try:
                 for piece in runner.stream_speak(plan):
                     yield chunk_line(settings, **frame, delta={"content": piece})
-            except ReframeError as exc:
+            except Exception as exc:
                 # The listener hears only what was actually produced. Nothing
                 # is invented to cover the gap.
                 log.error(
-                    "reframe failed mid-stream",
+                    "speaking llm failed mid-stream",
                     session_id=str(plan.session_id),
                     error=str(exc),
                     spoke=plan.spoken is not None,
+                )
+                publish_notice(
+                    settings,
+                    plan.session_id,
+                    settings.failure_code_speaking_llm,
+                    settings.failure_message_speaking_llm,
                 )
         yield chunk_line(
             settings,

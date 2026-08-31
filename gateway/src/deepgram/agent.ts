@@ -105,7 +105,11 @@ export class DeepgramVoiceAgent {
       });
       socket.once("error", (error) => {
         clearTimeout(timer);
-        reject(error);
+        reject(
+          new DeepgramAgentError(
+            error instanceof Error ? error.message : "Deepgram connect failed",
+          ),
+        );
       });
     });
   }
@@ -280,6 +284,16 @@ export class DeepgramVoiceAgent {
   }
 }
 
+export function reconnectBackoffMs(config: GatewayConfig): number {
+  return config.DEEPGRAM_RECONNECT_BACKOFF_MS;
+}
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export async function openVoiceAgentSession(
   config: GatewayConfig,
   log: FastifyBaseLogger,
@@ -301,5 +315,42 @@ export async function openVoiceAgentSession(
   } catch (error) {
     agent.close();
     throw error;
+  }
+}
+
+export async function reconnectVoiceAgentSession(
+  config: GatewayConfig,
+  log: FastifyBaseLogger,
+  settings: Record<string, unknown>,
+): Promise<{ agent: DeepgramVoiceAgent; requestId: string | null }> {
+  const delay = reconnectBackoffMs(config);
+  if (delay > 0) {
+    await sleep(delay);
+  }
+  return openVoiceAgentSession(config, log, settings);
+}
+
+export async function openVoiceAgentSessionWithRetry(
+  config: GatewayConfig,
+  log: FastifyBaseLogger,
+  settings: Record<string, unknown>,
+): Promise<{ agent: DeepgramVoiceAgent; requestId: string | null }> {
+  try {
+    return await openVoiceAgentSession(config, log, settings);
+  } catch (first) {
+    let last = first;
+    for (
+      let attempt = 1;
+      attempt <= config.DEEPGRAM_RECONNECT_ATTEMPTS;
+      attempt += 1
+    ) {
+      log.warn({ attempt, err: last }, "deepgram connect retry");
+      try {
+        return await reconnectVoiceAgentSession(config, log, settings);
+      } catch (error) {
+        last = error;
+      }
+    }
+    throw last;
   }
 }

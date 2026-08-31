@@ -14,11 +14,12 @@ import {
 import {
   DeepgramAgentError,
   type DeepgramVoiceAgent,
-  openVoiceAgentSession,
+  openVoiceAgentSessionWithRetry,
+  reconnectVoiceAgentSession,
   socketDataToBuffer,
 } from "../deepgram/agent.js";
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
-import { resolveActivePersona } from "../personas.js";
+import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
 import {
   type Utterance,
   VoiceAudioCapture,
@@ -32,7 +33,14 @@ import {
   setVoiceBargeIn,
   writeVoiceCallState,
 } from "../voice/callState.js";
+import {
+  deepgramRecoveryAction,
+  failureMessage,
+  isFatalFailure,
+  voiceFailurePayload,
+} from "../voice/failures.js";
 import { applyVoiceLatency, readVoiceLatency } from "../voice/latency.js";
+import { createVoiceNoticeHub } from "../voice/notices.js";
 import {
   endVoiceSession,
   recordSttMeta,
@@ -40,6 +48,7 @@ import {
   sttMeta,
   ttsMeta,
 } from "../voice/record.js";
+import { redisQuiet } from "../voice/redisSafe.js";
 import { pcmDurationMs } from "../voice/wav.js";
 
 type Sql = ReturnType<typeof postgres>;
@@ -86,6 +95,10 @@ export async function registerVoiceRoutes(
   const { config, sql, redis } = deps;
   const requireAppUser = createRequireAppUser(deps);
   const suppressed = suppressedWarningCodes(config);
+  const notices = createVoiceNoticeHub(redis, config, app.log);
+  app.addHook("onClose", async () => {
+    await notices.close();
+  });
 
   app.get(
     config.VOICE_WS_PATH,
@@ -126,11 +139,19 @@ export async function registerVoiceRoutes(
           let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
           try {
             persona = await resolveActivePersona(sql, config);
-          } catch {
-            sendJson(socket, {
-              type: config.VOICE_CLIENT_ERROR_TYPE,
-              error: "multiple personas",
-            });
+          } catch (error) {
+            if (error instanceof MultiplePersonasError) {
+              sendJson(socket, {
+                type: config.VOICE_CLIENT_ERROR_TYPE,
+                error: "multiple personas",
+              });
+            } else {
+              request.log.error({ err: error }, "voice persona lookup failed");
+              sendJson(
+                socket,
+                voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
+              );
+            }
             closeClient(socket);
             return;
           }
@@ -143,7 +164,18 @@ export async function registerVoiceRoutes(
             return;
           }
 
-          const session = await createVoiceSession(sql, user.id, persona.id);
+          let session: Awaited<ReturnType<typeof createVoiceSession>>;
+          try {
+            session = await createVoiceSession(sql, user.id, persona.id);
+          } catch (error) {
+            request.log.error({ err: error }, "voice session create failed");
+            sendJson(
+              socket,
+              voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
+            );
+            closeClient(socket);
+            return;
+          }
           sessionId = session.id;
           const settings = buildVoiceAgentSettings(config, {
             appUserId: user.id,
@@ -151,25 +183,87 @@ export async function registerVoiceRoutes(
             personaId: persona.id,
             sessionId: session.id,
           });
-          const opened = await openVoiceAgentSession(
-            config,
-            request.log,
-            settings,
-          );
+          let opened: Awaited<
+            ReturnType<typeof openVoiceAgentSessionWithRetry>
+          >;
+          try {
+            opened = await openVoiceAgentSessionWithRetry(
+              config,
+              request.log,
+              settings,
+            );
+          } catch (error) {
+            request.log.error({ err: error }, "deepgram connect failed");
+            sendJson(
+              socket,
+              voiceFailurePayload(config, config.FAILURE_CODE_DEEPGRAM),
+            );
+            closeClient(socket);
+            await endVoiceSession(sql, session.id).catch(
+              (endError: unknown) => {
+                request.log.error(
+                  { err: endError, sessionId: session.id },
+                  "voice session not closed",
+                );
+              },
+            );
+            return;
+          }
           agent = opened.agent;
           if (clientGone || socket.readyState !== WebSocket.OPEN) {
             agent.close();
-            await clearVoiceCallState(redis, config, session.id);
-            await endVoiceSession(sql, session.id);
+            await redisQuiet(
+              request.log,
+              config,
+              "clearVoiceCallState",
+              session.id,
+              () => clearVoiceCallState(redis, config, session.id),
+            );
+            await endVoiceSession(sql, session.id).catch((error: unknown) => {
+              request.log.error(
+                { err: error, sessionId: session.id },
+                "voice session not closed",
+              );
+            });
             return;
           }
-          await writeVoiceCallState(redis, config, {
-            request_id: opened.requestId,
-            session_id: session.id,
-            barge_in: false,
-            pending_latency: [],
-          });
+          const redisOk = await redisQuiet(
+            request.log,
+            config,
+            "writeVoiceCallState",
+            session.id,
+            () =>
+              writeVoiceCallState(redis, config, {
+                request_id: opened.requestId,
+                session_id: session.id,
+                barge_in: false,
+                pending_latency: [],
+              }),
+          );
           settingsApplied = true;
+
+          const sendFailure = (code: string) => {
+            sendJson(socket, voiceFailurePayload(config, code));
+          };
+          let redisWarned = false;
+          const noteRedisFail = () => {
+            if (redisWarned) {
+              return;
+            }
+            redisWarned = true;
+            sendFailure(config.FAILURE_CODE_REDIS);
+          };
+          if (redisOk === null) {
+            noteRedisFail();
+          }
+          let recordWarned = false;
+          const noteRecordLost = () => {
+            if (recordWarned) {
+              return;
+            }
+            recordWarned = true;
+            sendFailure(config.FAILURE_CODE_RECORD);
+          };
 
           // Audio persistence is optional to boot but never silently skipped.
           let audioStore: VoiceAudioStore | null = null;
@@ -180,8 +274,7 @@ export async function registerVoiceRoutes(
               "voice audio will not be stored",
             );
             sendJson(socket, {
-              type: config.VOICE_CLIENT_WARNING_TYPE,
-              warning: "audio not stored",
+              ...voiceFailurePayload(config, config.FAILURE_CODE_BLOB),
               reason: audioError,
             });
           } else if (voiceAudioPersistEnabled(config)) {
@@ -197,8 +290,7 @@ export async function registerVoiceRoutes(
                 "voice audio store unavailable",
               );
               sendJson(socket, {
-                type: config.VOICE_CLIENT_WARNING_TYPE,
-                warning: "audio not stored",
+                ...voiceFailurePayload(config, config.FAILURE_CODE_BLOB),
                 reason:
                   error instanceof Error ? error.message : "blob store failed",
               });
@@ -221,6 +313,16 @@ export async function registerVoiceRoutes(
           // The transport sends one latency field per message, so a turn's
           // numbers are merged and written once the turn is over.
           let turnLatency: PendingLatency | null = null;
+
+          const live = {
+            agent: opened.agent,
+            requestId: opened.requestId,
+            unbind: () => {},
+            closedByUs: false,
+            recovering: false,
+            ignoreAgentClose: false,
+          };
+          agent = live.agent;
 
           const storeUtterance = async (utterance: Utterance) => {
             if (!audioStore) {
@@ -246,6 +348,7 @@ export async function registerVoiceRoutes(
                 { err: error, sessionId: session.id },
                 "voice audio upload failed",
               );
+              sendFailure(config.FAILURE_CODE_BLOB);
             }
           };
 
@@ -264,12 +367,13 @@ export async function registerVoiceRoutes(
                 const turnId = await recordSttMeta(
                   sql,
                   session.id,
-                  sttMeta(config, transcript, opened.requestId),
+                  sttMeta(config, transcript, live.requestId),
                 ).catch((error: unknown) => {
                   request.log.error(
                     { err: error, sessionId: session.id },
                     "stt metadata not recorded",
                   );
+                  noteRecordLost();
                   return null;
                 });
                 if (turnId) {
@@ -308,13 +412,14 @@ export async function registerVoiceRoutes(
                     durationMs,
                     interrupted: wasInterrupted,
                   },
-                  opened.requestId,
+                  live.requestId,
                 ),
               ).catch((error: unknown) => {
                 request.log.error(
                   { err: error, sessionId: session.id },
                   "tts metadata not recorded",
                 );
+                noteRecordLost();
                 return null;
               });
               if (turnId) {
@@ -366,6 +471,7 @@ export async function registerVoiceRoutes(
                   { err: error, sessionId: session.id },
                   "voice latency not recorded",
                 );
+                noteRecordLost();
                 return null;
               });
               if (turnId) {
@@ -383,99 +489,297 @@ export async function registerVoiceRoutes(
               }
             }
             pending = [...unmatched, ...pending];
-            await setPendingLatency(redis, config, session.id, pending);
+            const saved = await redisQuiet(
+              request.log,
+              config,
+              "setPendingLatency",
+              session.id,
+              () => setPendingLatency(redis, config, session.id, pending),
+            );
+            if (saved === null) {
+              noteRedisFail();
+            }
           };
 
-          const offJson = agent.onJson((event) => {
-            const eventType =
-              typeof event.type === "string" ? event.type : null;
-            if (eventType === config.DEEPGRAM_MSG_ERROR) {
+          const rememberBargeIn = (value: boolean) => {
+            void redisQuiet(
+              request.log,
+              config,
+              "setVoiceBargeIn",
+              session.id,
+              () => setVoiceBargeIn(redis, config, session.id, value),
+            ).then((saved) => {
+              if (saved === null) {
+                noteRedisFail();
+              }
+            });
+          };
+
+          let cleaned = false;
+          const cleanup = () => {
+            if (cleaned) {
+              return;
+            }
+            cleaned = true;
+            live.closedByUs = true;
+            live.unbind();
+            live.ignoreAgentClose = true;
+            live.agent.close();
+            closeLatencyTurn();
+            const trailing = capture.drain();
+            void (async () => {
+              for (const utterance of trailing) {
+                await storeUtterance(utterance);
+              }
+              await drainLatency();
+              if (sessionId) {
+                const id = sessionId;
+                const cleared = await redisQuiet(
+                  request.log,
+                  config,
+                  "clearVoiceCallState",
+                  id,
+                  () => clearVoiceCallState(redis, config, id),
+                );
+                if (cleared === null) {
+                  noteRedisFail();
+                }
+                const ended = await endVoiceSession(sql, sessionId).catch(
+                  (error: unknown) => {
+                    request.log.error(
+                      { err: error, sessionId },
+                      "voice session not closed",
+                    );
+                    noteRecordLost();
+                    return false;
+                  },
+                );
+                request.log.info({ sessionId, ended }, "voice call ended");
+              }
+            })();
+          };
+
+          const endCall = (code: string) => {
+            sendFailure(code);
+            cleanup();
+            closeClient(socket);
+          };
+
+          let bindAgent: (next: DeepgramVoiceAgent) => void = () => {};
+
+          const recoverAgent = async (deepgramCode: string | null) => {
+            if (
+              live.closedByUs ||
+              live.recovering ||
+              clientGone ||
+              socket.readyState !== WebSocket.OPEN
+            ) {
+              return;
+            }
+            const recovery = deepgramRecoveryAction(config, deepgramCode);
+            if (recovery === "think") {
+              endCall(config.FAILURE_CODE_THINK);
+              return;
+            }
+            if (recovery !== "reconnect") {
+              endCall(config.FAILURE_CODE_DEEPGRAM);
+              return;
+            }
+            live.recovering = true;
+            settingsApplied = false;
+            live.unbind();
+            live.ignoreAgentClose = true;
+            live.agent.close();
+            live.ignoreAgentClose = false;
+            sendFailure(config.FAILURE_CODE_RECONNECTING);
+            let lastError: unknown = null;
+            for (
+              let attempt = 1;
+              attempt <= config.DEEPGRAM_RECONNECT_ATTEMPTS;
+              attempt += 1
+            ) {
+              if (live.closedByUs || clientGone) {
+                live.recovering = false;
+                return;
+              }
+              request.log.warn(
+                { sessionId: session.id, attempt, deepgramCode },
+                "deepgram reconnect",
+              );
+              try {
+                const next = await reconnectVoiceAgentSession(
+                  config,
+                  request.log,
+                  settings,
+                );
+                if (live.closedByUs || clientGone) {
+                  next.agent.close();
+                  live.recovering = false;
+                  return;
+                }
+                live.agent = next.agent;
+                live.requestId = next.requestId;
+                agent = next.agent;
+                bindAgent(next.agent);
+                settingsApplied = true;
+                sendFailure(config.FAILURE_CODE_RECONNECTED);
+                live.recovering = false;
+                request.log.info(
+                  { sessionId: session.id, requestId: next.requestId },
+                  "deepgram reconnected",
+                );
+                return;
+              } catch (error) {
+                lastError = error;
+              }
+            }
+            request.log.error(
+              { err: lastError, sessionId: session.id },
+              "deepgram reconnect exhausted",
+            );
+            live.recovering = false;
+            if (!live.closedByUs) {
+              endCall(config.FAILURE_CODE_DEEPGRAM);
+            }
+          };
+
+          bindAgent = (next: DeepgramVoiceAgent) => {
+            live.unbind();
+            const offJson = next.onJson((event) => {
+              const eventType =
+                typeof event.type === "string" ? event.type : null;
+              if (eventType === config.DEEPGRAM_MSG_ERROR) {
+                const code =
+                  typeof event.code === "string" && event.code.length > 0
+                    ? event.code
+                    : null;
+                request.log.error(
+                  { sessionId: session.id, event },
+                  "deepgram error",
+                );
+                void recoverAgent(code);
+                return;
+              }
+              if (eventType === config.DEEPGRAM_MSG_WARNING) {
+                // Routine transport chatter (it tells us every few seconds that
+                // the brain is slow) is logged by the client, not shown to it.
+                const code = typeof event.code === "string" ? event.code : "";
+                if (!suppressed.has(code)) {
+                  const description =
+                    typeof event.description === "string" &&
+                    event.description.length > 0
+                      ? event.description
+                      : config.FAILURE_MESSAGE_UNKNOWN;
+                  sendJson(socket, {
+                    type: config.VOICE_CLIENT_WARNING_TYPE,
+                    ...(code ? { code } : {}),
+                    warning: description,
+                    event,
+                  });
+                }
+                return;
+              }
+              if (eventType === config.DEEPGRAM_MSG_CONVERSATION_TEXT) {
+                const role = eventRole(event);
+                const text = eventText(event);
+                if (role === config.VOICE_TRANSCRIPT_USER_ROLE && text) {
+                  userTranscript.push(text);
+                }
+              }
+              if (eventType === config.DEEPGRAM_MSG_USER_STARTED) {
+                if (bargeIn.onUserStarted()) {
+                  interrupted = true;
+                  rememberBargeIn(true);
+                  request.log.info({ sessionId: session.id }, "voice barge-in");
+                  flushAgent();
+                  agentSpeaking = false;
+                }
+              }
+              if (eventType === config.DEEPGRAM_MSG_AGENT_THINKING) {
+                bargeIn.onAgentThinking();
+                rememberBargeIn(false);
+                closeUserTurn();
+              }
+              if (eventType === config.DEEPGRAM_MSG_AGENT_AUDIO_DONE) {
+                bargeIn.onAgentAudioDone();
+                rememberBargeIn(false);
+                // Some turns never announce thinking, so close the user side here
+                // too. Both paths are safe to run twice.
+                closeUserTurn();
+                flushAgent();
+                agentSpeaking = false;
+                closeLatencyTurn();
+                void drainLatency();
+              }
+              if (eventType === config.DEEPGRAM_MSG_LATENCY_REPORT) {
+                collectLatency(event);
+              }
               sendJson(socket, {
-                type: config.VOICE_CLIENT_ERROR_TYPE,
+                type: config.VOICE_CLIENT_AGENT_EVENT_TYPE,
                 event,
               });
-              agent?.close();
+            });
+            const offBinary = next.onBinary((chunk) => {
+              if (!bargeIn.acceptBinary()) {
+                return;
+              }
+              if (!agentSpeaking) {
+                // First audio of a reply: whatever the caller said is now over.
+                agentSpeaking = true;
+                closeUserTurn();
+              }
+              capture.pushAgent(chunk);
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send(chunk);
+              }
+            });
+            const offAgentClose = next.onClose(() => {
+              if (live.ignoreAgentClose || live.closedByUs || live.recovering) {
+                return;
+              }
+              void recoverAgent(null);
+            });
+            live.unbind = () => {
+              offJson();
+              offBinary();
+              offAgentClose();
+              live.unbind = () => {};
+            };
+          };
+
+          bindAgent(live.agent);
+
+          const unwatch = notices.watch(session.id, (notice) => {
+            request.log.error(
+              { sessionId: session.id, code: notice.code },
+              "voice notice",
+            );
+            if (isFatalFailure(config, notice.code)) {
+              live.closedByUs = true;
+              sendJson(socket, {
+                type: config.VOICE_CLIENT_ERROR_TYPE,
+                code: notice.code,
+                error: notice.message,
+              });
+              cleanup();
               closeClient(socket);
               return;
             }
-            if (eventType === config.DEEPGRAM_MSG_WARNING) {
-              // Routine transport chatter (it tells us every few seconds that
-              // the brain is slow) is logged by the client, not shown to it.
-              const code = typeof event.code === "string" ? event.code : "";
-              if (!suppressed.has(code)) {
-                sendJson(socket, {
-                  type: config.VOICE_CLIENT_WARNING_TYPE,
-                  event,
-                });
-              }
-              return;
-            }
-            if (eventType === config.DEEPGRAM_MSG_CONVERSATION_TEXT) {
-              const role = eventRole(event);
-              const text = eventText(event);
-              if (role === config.VOICE_TRANSCRIPT_USER_ROLE && text) {
-                userTranscript.push(text);
-              }
-            }
-            if (eventType === config.DEEPGRAM_MSG_USER_STARTED) {
-              if (bargeIn.onUserStarted()) {
-                interrupted = true;
-                void setVoiceBargeIn(redis, config, session.id, true);
-                request.log.info({ sessionId: session.id }, "voice barge-in");
-                flushAgent();
-                agentSpeaking = false;
-              }
-            }
-            if (eventType === config.DEEPGRAM_MSG_AGENT_THINKING) {
-              bargeIn.onAgentThinking();
-              void setVoiceBargeIn(redis, config, session.id, false);
-              closeUserTurn();
-            }
-            if (eventType === config.DEEPGRAM_MSG_AGENT_AUDIO_DONE) {
-              bargeIn.onAgentAudioDone();
-              void setVoiceBargeIn(redis, config, session.id, false);
-              // Some turns never announce thinking, so close the user side here
-              // too. Both paths are safe to run twice.
-              closeUserTurn();
-              flushAgent();
-              agentSpeaking = false;
-              closeLatencyTurn();
-              void drainLatency();
-            }
-            if (eventType === config.DEEPGRAM_MSG_LATENCY_REPORT) {
-              collectLatency(event);
-            }
             sendJson(socket, {
-              type: config.VOICE_CLIENT_AGENT_EVENT_TYPE,
-              event,
+              type: config.VOICE_CLIENT_WARNING_TYPE,
+              code: notice.code,
+              warning: notice.message,
             });
-          });
-          const offBinary = agent.onBinary((chunk) => {
-            if (!bargeIn.acceptBinary()) {
-              return;
-            }
-            if (!agentSpeaking) {
-              // First audio of a reply: whatever the caller said is now over.
-              agentSpeaking = true;
-              closeUserTurn();
-            }
-            capture.pushAgent(chunk);
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(chunk);
-            }
-          });
-          const offAgentClose = agent.onClose(() => {
-            closeClient(socket);
           });
 
           socket.on("message", (data, isBinary) => {
-            if (!settingsApplied || !agent?.ready) {
+            if (!settingsApplied || !live.agent.ready) {
               return;
             }
             if (isBinary) {
               const frame = socketDataToBuffer(data);
               capture.pushUser(frame);
-              agent.sendBinary(frame);
+              live.agent.sendBinary(frame);
               return;
             }
             let parsed: unknown;
@@ -500,65 +804,54 @@ export async function registerVoiceRoutes(
             if (typeof body.content !== "string") {
               return;
             }
-            agent.sendJson({
+            live.agent.sendJson({
               type: config.DEEPGRAM_MSG_INJECT_USER,
               content: body.content,
             });
           });
 
-          let cleaned = false;
-          const cleanup = () => {
-            if (cleaned) {
-              return;
-            }
-            cleaned = true;
-            offJson();
-            offBinary();
-            offAgentClose();
-            agent?.close();
-            closeLatencyTurn();
-            const trailing = capture.drain();
-            void (async () => {
-              for (const utterance of trailing) {
-                await storeUtterance(utterance);
-              }
-              await drainLatency();
-              if (sessionId) {
-                await clearVoiceCallState(redis, config, sessionId);
-                const ended = await endVoiceSession(sql, sessionId).catch(
-                  (error: unknown) => {
-                    request.log.error(
-                      { err: error, sessionId },
-                      "voice session not closed",
-                    );
-                    return false;
-                  },
-                );
-                request.log.info({ sessionId, ended }, "voice call ended");
-              }
-            })();
+          const finishClient = () => {
+            unwatch();
+            cleanup();
           };
           socket.off("close", markClientGone);
           socket.off("error", markClientGone);
-          socket.on("close", cleanup);
-          socket.on("error", cleanup);
+          socket.on("close", finishClient);
+          socket.on("error", finishClient);
         } catch (error) {
-          const message =
-            error instanceof DeepgramAgentError
+          const deepgramFailed = error instanceof DeepgramAgentError;
+          const message = deepgramFailed
+            ? failureMessage(config, config.FAILURE_CODE_DEEPGRAM)
+            : error instanceof Error
               ? error.message
-              : error instanceof Error
-                ? error.message
-                : "voice session failed";
+              : "voice session failed";
           request.log.error({ err: error }, "voice session failed");
-          sendJson(socket, {
-            type: config.VOICE_CLIENT_ERROR_TYPE,
-            error: message,
-          });
+          sendJson(
+            socket,
+            deepgramFailed
+              ? voiceFailurePayload(config, config.FAILURE_CODE_DEEPGRAM)
+              : {
+                  type: config.VOICE_CLIENT_ERROR_TYPE,
+                  error: message,
+                },
+          );
           agent?.close();
           closeClient(socket);
           if (sessionId) {
-            await clearVoiceCallState(redis, config, sessionId);
-            await endVoiceSession(sql, sessionId);
+            const id = sessionId;
+            await redisQuiet(
+              request.log,
+              config,
+              "clearVoiceCallState",
+              id,
+              () => clearVoiceCallState(redis, config, id),
+            );
+            await endVoiceSession(sql, id).catch((error: unknown) => {
+              request.log.error(
+                { err: error, sessionId: id },
+                "voice session not closed",
+              );
+            });
           }
         }
       })();

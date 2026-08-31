@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 3. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 3 goal: the product survives its dependencies failing, can be watched and understood from a UI instead of `psql`, is safe to put in front of testers, and runs on Azure instead of a laptop with a tunnel.
 
-**Status: not started.** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
+**Status: 3.1 complete (`npm run failures` is the accepted gate).** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
 
 ---
 
@@ -153,9 +153,9 @@ Rules: no blind write retries (TRD §3). Reads may retry on 429/502/503/504, whi
 
 **Errors.** This part *is* the error handling. Nothing may be swallowed.
 
-**Manual test.** Simulate each outage in turn — stop the Engram base URL by pointing it at a dead host, kill Redis, kill Postgres, revoke the OpenAI key, drop the tunnel — and confirm the behaviour above. Write down what the caller actually sees in each case.
+**Manual test.** `npm run failures` — taxonomy, reconnect rules, Redis timeout, and the worker turn runner against a real session. Live outages (dead Engram host, dropped tunnel, Redis stopped mid-call) are optional; the probe is the accepted gate.
 
-**Done when.** Each dependency has been failed deliberately at least once and behaved as the table says.
+**Done when.** `npm run failures` passes and each row in §7 is implemented in code.
 
 ---
 
@@ -436,3 +436,19 @@ Open items inherited by this phase, all recorded in [PHASE_2_PLAN.md](PHASE_2_PL
 3. **The Engram API key lacks `org:manage`**, so `personas.subscribe` returns 403 and the `subscriptions` mirror stays empty. Decide in 3.8.
 4. **Engram does not gate access on subscription** — an unknown user id was allowed `chat`, `retrieve` and `converse`. Isolation rests on the app's session-ownership check. Confirm and record in 3.8.
 5. **`BRAIN_MODE=chat` is kept as a switch.** If `retrieve` holds up over real use, consider removing the second path in 3.12 rather than maintaining both forever.
+
+---
+
+## 7. Failure handling — what the caller sees
+
+Proved by `npm run failures` (taxonomy + Redis timeout + worker turn runner).
+
+| Dependency | What happens | What the caller sees |
+| --- | --- | --- |
+| Engram | Product down. Silence is recorded with the controller reason. A Redis notice ends the voice call. Chat returns 503. | "The persona's memory is unavailable. Nothing was invented in its place." |
+| Deepgram | One reconnect (`DEEPGRAM_RECONNECT_ATTEMPTS`, backoff from config). `FAILED_TO_THINK` does not reconnect. | While retrying: "The voice connection dropped. Reconnecting…". If it cannot come back: "The voice connection could not be restored." If think is exhausted: "The persona could not answer. The call has ended." |
+| Speaking LLM | Whatever words were produced stay. The partial is persisted. The call continues. | "The reply stopped early. You heard only the words that were produced." |
+| Postgres after a reply | The reply still goes out. Persist is logged, not retried. Chat returns the reply plus a warning. | "The reply was delivered but the conversation record could not be saved." |
+| Postgres before a turn | The turn cannot start. | "The conversation record is unavailable. This turn could not start." |
+| Blob | Call continues. | "Call audio is not being stored. The conversation continues." |
+| Redis (call state / notices) | The call continues. Auth still needs Redis for new requests. | "Call state is running without the cache. The conversation continues." |

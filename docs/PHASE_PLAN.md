@@ -253,14 +253,14 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
 
-**Status: not started.** Implementation-level plan, with the logic, files, config and manual test for every part: [PHASE_3_PLAN.md](PHASE_3_PLAN.md). Do not start a part until Tauqueer names it.
+**Status: 3.1 complete.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
 
 The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
 ### Part 3.1 — Failure handling
 - Goal: honest, safe behaviour when any dependency fails.
 - Tasks: Engram down = product down; Deepgram down = session ends + one reconnect; speaking-LLM, Postgres, Redis and Blob failures each behave as [TRD](TRD.md) §7 says. Never blind-retry writes, never fabricate a reply.
-- Manual test: fail each dependency deliberately; behaviour matches the table in the plan.
+- Manual test: `npm run failures`. **Done.**
 
 ### Part 3.2 — Read API for the canonical record
 - Goal: serve everything the dashboard needs, correctly scoped.

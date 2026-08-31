@@ -27,6 +27,7 @@ from worker.engram.errors import (
 )
 from worker.engram.interface import ChatOutcome
 from worker.engram.registry import BrainRegistry
+from worker.notices import publish_notice
 from worker.persistence.db import borrow
 from worker.persistence.personas import get_persona
 from worker.persistence.sessions import (
@@ -84,6 +85,9 @@ class TurnResult:
     engram_session_id: str | None
     turn_ids: list[UUID]
     reasons: list[str]
+    recorded: bool = True
+    warning: str | None = None
+    warning_code: str | None = None
 
 
 @dataclass
@@ -193,52 +197,79 @@ class TurnRunner:
         """Validate, ask the brain, and decide. Raises `TurnError` before any
         reply byte is produced, so the caller can still choose a status code."""
         started = time.perf_counter()
-        with borrow(self._settings) as conn:
-            # Locked only for these local reads: it makes two turns that start
-            # at once share one Engram thread instead of minting one each.
-            session = get_session(conn, session_id, for_update=True)
-            if session is None:
-                raise TurnError(
-                    "session not found",
-                    status=404,
-                    reason="session_not_found",
-                )
-            if session["ended_at"] is not None:
-                raise TurnError("session has ended", status=409, reason="session_ended")
-            if UUID(str(session["user_id"])) != app_user_id:
-                raise TurnError("forbidden", status=403, reason="session_mismatch")
-            if UUID(str(session["persona_id"])) != persona_id:
-                raise TurnError("forbidden", status=403, reason="persona_mismatch")
-            stored_engram = user_engram_id(conn, app_user_id)
-            if stored_engram is None or stored_engram != engram_user_id:
-                raise TurnError("forbidden", status=403, reason="identity_mismatch")
+        try:
+            with borrow(self._settings) as conn:
+                # Locked only for these local reads: it makes two turns that start
+                # at once share one Engram thread instead of minting one each.
+                session = get_session(conn, session_id, for_update=True)
+                if session is None:
+                    raise TurnError(
+                        "session not found",
+                        status=404,
+                        reason="session_not_found",
+                    )
+                if session["ended_at"] is not None:
+                    raise TurnError(
+                        "session has ended",
+                        status=409,
+                        reason="session_ended",
+                    )
+                if UUID(str(session["user_id"])) != app_user_id:
+                    raise TurnError(
+                        "forbidden",
+                        status=403,
+                        reason="session_mismatch",
+                    )
+                if UUID(str(session["persona_id"])) != persona_id:
+                    raise TurnError(
+                        "forbidden",
+                        status=403,
+                        reason="persona_mismatch",
+                    )
+                stored_engram = user_engram_id(conn, app_user_id)
+                if stored_engram is None or stored_engram != engram_user_id:
+                    raise TurnError(
+                        "forbidden",
+                        status=403,
+                        reason="identity_mismatch",
+                    )
 
-            persona = get_persona(conn, persona_id)
-            if persona is None:
-                raise TurnError(
-                    "persona not found",
-                    status=404,
-                    reason="persona_not_found",
-                )
-            engram_persona_id = persona["engram_persona_id"]
-            if not isinstance(engram_persona_id, str) or not engram_persona_id:
-                raise TurnError("persona is missing Engram id", status=500)
+                persona = get_persona(conn, persona_id)
+                if persona is None:
+                    raise TurnError(
+                        "persona not found",
+                        status=404,
+                        reason="persona_not_found",
+                    )
+                engram_persona_id = persona["engram_persona_id"]
+                if not isinstance(engram_persona_id, str) or not engram_persona_id:
+                    raise TurnError("persona is missing Engram id", status=500)
 
-            prior_sid = session["engram_session_id"]
-            if prior_sid is not None and not isinstance(prior_sid, str):
-                prior_sid = None
-            if not prior_sid:
-                # Engram treats the conversation id as an opaque caller-chosen
-                # key. Claiming it here keeps one thread per app session.
-                prior_sid = uuid4().hex
-                set_engram_session_id(conn, session_id, prior_sid)
-                conn.commit()
-            voice_config = _voice_config(persona["voice_config"])
-            history = recent_history(
-                conn,
-                session_id,
-                self._settings.reframe_history_turns,
-            )
+                prior_sid = session["engram_session_id"]
+                if prior_sid is not None and not isinstance(prior_sid, str):
+                    prior_sid = None
+                if not prior_sid:
+                    # Engram treats the conversation id as an opaque caller-chosen
+                    # key. Claiming it here keeps one thread per app session.
+                    prior_sid = uuid4().hex
+                    set_engram_session_id(conn, session_id, prior_sid)
+                    conn.commit()
+                voice_config = _voice_config(persona["voice_config"])
+                history = recent_history(
+                    conn,
+                    session_id,
+                    self._settings.reframe_history_turns,
+                )
+        except TurnError:
+            raise
+        except Exception as exc:
+            log.exception("turn could not start", session_id=str(session_id))
+            raise TurnError(
+                self._settings.failure_message_database,
+                status=503,
+                reason="database_unavailable",
+                code=self._settings.failure_code_database,
+            ) from exc
 
         signals = TurnSignals(has_inbound_text=bool(text.strip()))
         halted = self._controller.pre(signals)
@@ -298,14 +329,32 @@ class TurnRunner:
                 history=history,
                 mode=mode,
             )
-            self.finish(plan)
+            log.error(
+                "engram failed",
+                session_id=str(session_id),
+                error=str(outcome),
+                status=_brain_status(outcome),
+            )
+            recorded = self.finish(plan)
+            if not recorded.recorded:
+                log.error(
+                    "silence turn was not recorded after brain failure",
+                    session_id=str(session_id),
+                )
+            publish_notice(
+                self._settings,
+                session_id,
+                self._settings.failure_code_engram,
+                self._settings.failure_message_engram,
+            )
             raise TurnError(
-                str(outcome),
+                self._settings.failure_message_engram,
                 status=_brain_status(outcome),
                 reason=(
                     decision.reasons[0].value if decision.reasons else "brain_error"
                 ),
-            )
+                code=self._settings.failure_code_engram,
+            ) from outcome
 
         return TurnPlan(
             session_id=session_id,
@@ -386,40 +435,69 @@ class TurnRunner:
             plan.spoken = spoken or None
 
     def _fail_reframe(self, plan: TurnPlan, exc: ReframeError) -> NoReturn:
+        log.error(
+            "speaking llm failed",
+            session_id=str(plan.session_id),
+            error=str(exc),
+        )
         plan.spoken = None
         self.finish(plan)
+        publish_notice(
+            self._settings,
+            plan.session_id,
+            self._settings.failure_code_speaking_llm,
+            self._settings.failure_message_speaking_llm,
+        )
         raise TurnError(
-            str(exc),
+            self._settings.failure_message_speaking_llm,
             status=exc.status or 502,
             reason="reframe_failed",
+            code=self._settings.failure_code_speaking_llm,
         ) from exc
 
     def finish(self, plan: TurnPlan) -> TurnResult:
-        """Write the canonical record. Runs after the reply has been delivered."""
+        """Write the canonical record. Runs after the reply has been delivered.
+
+        A persist failure is logged and returned, never raised: the reply has
+        already gone out.
+        """
         total_ms = plan.total_ms()
         outcome = plan.outcome
         spoken = plan.spoken
-        with borrow(self._settings) as conn:
-            # Lock only for the ordinal + insert window, never across the brain.
-            get_session(conn, plan.session_id, for_update=True)
-            next_sid = plan.engram_session_id
-            if outcome is not None and isinstance(next_sid, str) and next_sid:
-                set_engram_session_id(conn, plan.session_id, next_sid)
-            turn_ids = self._persist(
-                conn,
-                session_id=plan.session_id,
-                user_text=plan.text,
-                decision=plan.decision,
-                spoken=spoken,
-                outcome=outcome,
-                engram_session_id=next_sid,
-                brain_ms=plan.brain_ms,
-                reframe_ms=plan.reframe_ms,
-                reframe_first_token_ms=plan.reframe_first_token_ms,
-                total_ms=total_ms,
-                mode=plan.mode,
+        next_sid = plan.engram_session_id
+        turn_ids: list[UUID] = []
+        recorded = True
+        warning: str | None = None
+        warning_code: str | None = None
+        try:
+            with borrow(self._settings) as conn:
+                # Lock only for the ordinal + insert window, never across the brain.
+                get_session(conn, plan.session_id, for_update=True)
+                if outcome is not None and isinstance(next_sid, str) and next_sid:
+                    set_engram_session_id(conn, plan.session_id, next_sid)
+                turn_ids = self._persist(
+                    conn,
+                    session_id=plan.session_id,
+                    user_text=plan.text,
+                    decision=plan.decision,
+                    spoken=spoken,
+                    outcome=outcome,
+                    engram_session_id=next_sid,
+                    brain_ms=plan.brain_ms,
+                    reframe_ms=plan.reframe_ms,
+                    reframe_first_token_ms=plan.reframe_first_token_ms,
+                    total_ms=total_ms,
+                    mode=plan.mode,
+                )
+                conn.commit()
+        except Exception:
+            recorded = False
+            warning = self._settings.failure_message_record
+            warning_code = self._settings.failure_code_record
+            log.exception(
+                "turn was not recorded",
+                session_id=str(plan.session_id),
             )
-            conn.commit()
         if self._should_write_back(plan):
             self._writers.submit(self._write_back, plan)
         return TurnResult(
@@ -429,6 +507,9 @@ class TurnRunner:
             engram_session_id=next_sid if isinstance(next_sid, str) else None,
             turn_ids=turn_ids,
             reasons=[reason.value for reason in plan.decision.reasons],
+            recorded=recorded,
+            warning=warning,
+            warning_code=warning_code,
         )
 
     def _should_write_back(self, plan: TurnPlan) -> bool:

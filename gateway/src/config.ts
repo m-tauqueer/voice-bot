@@ -274,6 +274,159 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(20000),
   ),
+  DEEPGRAM_RECONNECT_ATTEMPTS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(1),
+  ),
+  DEEPGRAM_RECONNECT_BACKOFF_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(750),
+  ),
+  DEEPGRAM_RECONNECT_ON_CODES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "INTERNAL_SERVER_ERROR,CLIENT_MESSAGE_TIMEOUT,FAILED_TO_START_LISTENING,ASR_CONNECTION_CLOSED,ASR_DRIVER_TIMEOUT,SERVER_GOING_AWAY",
+      ),
+  ),
+  DEEPGRAM_THINK_FATAL_CODES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("FAILED_TO_THINK"),
+  ),
+  REDIS_COMMAND_TIMEOUT_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(500),
+  ),
+  VOICE_NOTICE_REDIS_CHANNEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice-notice"),
+  ),
+  FAILURE_CODE_ENGRAM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("engram_unavailable"),
+  ),
+  FAILURE_CODE_SPEAKING_LLM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("speaking_llm_failed"),
+  ),
+  FAILURE_CODE_RECORD: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("record_lost"),
+  ),
+  FAILURE_CODE_DEEPGRAM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("deepgram_unavailable"),
+  ),
+  FAILURE_CODE_BLOB: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("audio_not_stored"),
+  ),
+  FAILURE_CODE_REDIS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("call_state_degraded"),
+  ),
+  FAILURE_CODE_RECONNECTING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice_reconnecting"),
+  ),
+  FAILURE_CODE_RECONNECTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice_reconnected"),
+  ),
+  FAILURE_CODE_DATABASE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("database_unavailable"),
+  ),
+  FAILURE_CODE_THINK: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("think_failed"),
+  ),
+  FAILURE_MESSAGE_ENGRAM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "The persona's memory is unavailable. Nothing was invented in its place.",
+      ),
+  ),
+  FAILURE_MESSAGE_SPEAKING_LLM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "The reply stopped early. You heard only the words that were produced.",
+      ),
+  ),
+  FAILURE_MESSAGE_RECORD: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "The reply was delivered but the conversation record could not be saved.",
+      ),
+  ),
+  FAILURE_MESSAGE_DEEPGRAM: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("The voice connection could not be restored."),
+  ),
+  FAILURE_MESSAGE_BLOB: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("Call audio is not being stored. The conversation continues."),
+  ),
+  FAILURE_MESSAGE_REDIS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "Call state is running without the cache. The conversation continues.",
+      ),
+  ),
+  FAILURE_MESSAGE_RECONNECTING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("The voice connection dropped. Reconnecting…"),
+  ),
+  FAILURE_MESSAGE_RECONNECTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Voice connection restored."),
+  ),
+  FAILURE_MESSAGE_DATABASE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "The conversation record is unavailable. This turn could not start.",
+      ),
+  ),
+  FAILURE_MESSAGE_THINK: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("The persona could not answer. The call has ended."),
+  ),
+  FAILURE_MESSAGE_UNKNOWN: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Something went wrong."),
+  ),
+  FAILURE_FATAL_CODES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable",
+      ),
+  ),
   BYO_LLM_CHAT_COMPLETIONS_PATH: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("/v1/chat/completions"),

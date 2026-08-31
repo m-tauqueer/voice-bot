@@ -23,7 +23,8 @@ export function openVoiceSocket(
     onReady: (ready: VoiceReady) => void;
     onBinary: (bytes: ArrayBuffer) => void;
     onAgentEvent?: (event: Record<string, unknown>) => void;
-    onError: (message: string) => void;
+    onError: (message: string, code: string | null) => void;
+    onWarning?: (message: string, code: string | null) => void;
     onClose: () => void;
   },
 ): VoiceSocket {
@@ -31,8 +32,14 @@ export function openVoiceSocket(
   socket.binaryType = "arraybuffer";
   let opened = false;
 
-  const fail = (message: string) => {
-    handlers.onError(message);
+  const messageCode = (message: Record<string, unknown>): string | null => {
+    return typeof message.code === "string" && message.code.length > 0
+      ? message.code
+      : null;
+  };
+
+  const fail = (message: string, code: string | null) => {
+    handlers.onError(message, code);
     if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.close();
     }
@@ -70,7 +77,7 @@ export function openVoiceSocket(
       const sessionId =
         typeof message.session_id === "string" ? message.session_id : null;
       if (!sessionId) {
-        fail("voice ready missing session_id");
+        fail("voice ready missing session_id", null);
         return;
       }
       handlers.onReady({
@@ -85,7 +92,15 @@ export function openVoiceSocket(
         typeof message.error === "string"
           ? message.error
           : "voice session failed";
-      fail(error);
+      fail(error, messageCode(message));
+      return;
+    }
+    if (message.type === config.warningType) {
+      const warning =
+        typeof message.warning === "string" ? message.warning : null;
+      if (warning) {
+        handlers.onWarning?.(warning, messageCode(message));
+      }
       return;
     }
     if (message.type === config.agentEventType) {
@@ -98,7 +113,7 @@ export function openVoiceSocket(
 
   socket.addEventListener("error", () => {
     if (!opened) {
-      fail("voice socket failed to connect");
+      fail("voice socket failed to connect", null);
     }
   });
 

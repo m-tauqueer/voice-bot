@@ -18,7 +18,8 @@
     "audio": "tsx src/voice/audioProbe.ts",
     "bargein": "tsx src/voice/bargeInProbe.ts",
     "call": "tsx src/voice/callProbe.ts",
-    "isolation": "tsx src/voice/isolationProbe.ts"
+    "isolation": "tsx src/voice/isolationProbe.ts",
+    "failures": "tsx src/voice/failureProbe.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.32.0",

@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings",
     "python-dotenv",
     "python-multipart",
+    "redis",
     "structlog",
     "uvicorn[standard]",
 ]

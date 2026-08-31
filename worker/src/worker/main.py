@@ -13,6 +13,7 @@ from worker.api.chat_completions import build_chat_completions_router
 from worker.api.subscribe import build_subscribe_router
 from worker.api.turn import build_turn_router
 from worker.config import WorkerSettings, load_settings
+from worker.notices import close_notices
 from worker.persistence.db import close_pool, pool
 from worker.turn.service import TurnRunner
 
@@ -52,6 +53,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         runner.close()
+        close_notices()
         close_pool()
 
 

@@ -10,5 +10,9 @@ from worker.turn.errors import TurnError
 def raise_turn(exc: TurnError) -> NoReturn:
     raise HTTPException(
         status_code=exc.status,
-        detail={"error": str(exc), "reason": exc.reason},
+        detail={
+            "error": str(exc),
+            "reason": exc.reason,
+            "code": exc.code,
+        },
     ) from exc

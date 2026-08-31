@@ -37,7 +37,13 @@ type CallPhase =
   | "listening"
   | "thinking"
   | "speaking"
+  | "reconnecting"
   | "error";
+
+type Banner = {
+  tone: "error" | "warning";
+  text: string;
+};
 
 type TranscriptLine = {
   role: string;
@@ -101,6 +107,9 @@ function phaseLabel(phase: CallPhase): string {
   if (phase === "speaking") {
     return "Speaking";
   }
+  if (phase === "reconnecting") {
+    return "Reconnecting";
+  }
   if (phase === "error") {
     return "Error";
   }
@@ -111,7 +120,7 @@ function phaseTone(phase: CallPhase): BadgeTone {
   if (phase === "listening") {
     return "positive";
   }
-  if (phase === "thinking" || phase === "speaking") {
+  if (phase === "thinking" || phase === "speaking" || phase === "reconnecting") {
     return "accent";
   }
   if (phase === "error") {
@@ -144,7 +153,7 @@ export function VoicePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [boot, setBoot] = useState<"loading" | "signed_out" | "ready">("loading");
-  const [status, setStatus] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptLine[]>([]);
@@ -187,7 +196,7 @@ export function VoicePage() {
           setPersona(context.persona);
         } catch (error) {
           if (cancelled) return;
-          setStatus(errorMessage(error));
+          setBanner({ tone: "error", text: errorMessage(error) });
         }
         setBoot("ready");
       } catch (error) {
@@ -196,7 +205,7 @@ export function VoicePage() {
           setBoot("signed_out");
           return;
         }
-        setStatus(errorMessage(error));
+        setBanner({ tone: "error", text: errorMessage(error) });
         setBoot("signed_out");
       }
     })();
@@ -321,7 +330,7 @@ export function VoicePage() {
       return;
     }
     setPhase("starting");
-    setStatus(null);
+    setBanner(null);
     setSessionId(null);
     setTurns([]);
     try {
@@ -363,13 +372,23 @@ export function VoicePage() {
           applyAgentEvent(config, event);
         },
         onError: (message) => {
-          setStatus(message);
+          setBanner({ tone: "error", text: message });
           setPhase("error");
           void endCall();
         },
+        onWarning: (message, code) => {
+          setBanner({ tone: "warning", text: message });
+          if (code === config.reconnectingCode) {
+            setPhase("reconnecting");
+            return;
+          }
+          if (code === config.reconnectedCode) {
+            setPhase("listening");
+          }
+        },
         onClose: () => {
           if (!session.current.closedByUs) {
-            setStatus("The voice connection dropped");
+            setBanner({ tone: "error", text: config.connectionDropped });
             setPhase("error");
           }
           void endCall();
@@ -377,7 +396,7 @@ export function VoicePage() {
       });
       session.current.socket = socket;
     } catch (error) {
-      setStatus(errorMessage(error));
+      setBanner({ tone: "error", text: errorMessage(error) });
       setPhase("error");
       await endCall();
     }
@@ -406,7 +425,18 @@ export function VoicePage() {
             <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>
               Sign in with Google to talk to the persona.
             </p>
-            {status && <p className="ui-field__error">{status}</p>}
+            {banner && (
+              <p
+                className="ui-field__error"
+                style={
+                  banner.tone === "warning"
+                    ? { color: "var(--text-mid)" }
+                    : undefined
+                }
+              >
+                {banner.text}
+              </p>
+            )}
             <Button
               variant="solid"
               onClick={() => {
@@ -422,7 +452,10 @@ export function VoicePage() {
   }
 
   const inCall =
-    phase === "listening" || phase === "thinking" || phase === "speaking";
+    phase === "listening" ||
+    phase === "thinking" ||
+    phase === "speaking" ||
+    phase === "reconnecting";
   const starting = phase === "starting";
 
   return (
@@ -458,9 +491,18 @@ export function VoicePage() {
           </div>
         </div>
 
-        {status && (
+        {banner && (
           <Card>
-            <p className="ui-field__error">{status}</p>
+            <p
+              className="ui-field__error"
+              style={
+                banner.tone === "warning"
+                  ? { color: "var(--text-mid)" }
+                  : undefined
+              }
+            >
+              {banner.text}
+            </p>
           </Card>
         )}
 

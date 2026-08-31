@@ -7,7 +7,8 @@ import { createTextSession, getSessionForUser } from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
-import { resolveActivePersona } from "../personas.js";
+import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { redisQuiet } from "../voice/redisSafe.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -70,8 +71,15 @@ export async function registerChatRoutes(
     let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
     try {
       persona = await resolveActivePersona(sql, config);
-    } catch {
-      return reply.code(409).send({ error: "multiple personas" });
+    } catch (error) {
+      if (error instanceof MultiplePersonasError) {
+        return reply.code(409).send({ error: "multiple personas" });
+      }
+      request.log.error({ err: error }, "chat persona lookup failed");
+      return reply.code(503).send({
+        error: config.FAILURE_MESSAGE_DATABASE,
+        code: config.FAILURE_CODE_DATABASE,
+      });
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
@@ -79,7 +87,16 @@ export async function registerChatRoutes(
     if (!parsed.data.session_id) {
       return { persona: personaPayload(persona), turns: [] as const };
     }
-    const turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+    let turns: Awaited<ReturnType<typeof listTurnsForUser>>;
+    try {
+      turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+    } catch (error) {
+      request.log.error({ err: error }, "chat history lookup failed");
+      return reply.code(503).send({
+        error: config.FAILURE_MESSAGE_DATABASE,
+        code: config.FAILURE_CODE_DATABASE,
+      });
+    }
     if (turns === null) {
       return reply.code(404).send({ error: "session not found" });
     }
@@ -103,30 +120,54 @@ export async function registerChatRoutes(
     let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
     try {
       persona = await resolveActivePersona(sql, config);
-    } catch {
-      return reply.code(409).send({ error: "multiple personas" });
+    } catch (error) {
+      if (error instanceof MultiplePersonasError) {
+        return reply.code(409).send({ error: "multiple personas" });
+      }
+      request.log.error({ err: error }, "chat persona lookup failed");
+      return reply.code(503).send({
+        error: config.FAILURE_MESSAGE_DATABASE,
+        code: config.FAILURE_CODE_DATABASE,
+      });
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
     }
 
     let session: Awaited<ReturnType<typeof getSessionForUser>>;
-    if (parsed.data.session_id) {
-      session = await getSessionForUser(sql, parsed.data.session_id, user.id);
-      if (!session) {
-        return reply.code(404).send({ error: "session not found" });
+    try {
+      if (parsed.data.session_id) {
+        session = await getSessionForUser(sql, parsed.data.session_id, user.id);
+        if (!session) {
+          return reply.code(404).send({ error: "session not found" });
+        }
+        if (session.endedAt) {
+          return reply.code(409).send({ error: "session has ended" });
+        }
+        if (session.personaId !== persona.id) {
+          return reply.code(409).send({ error: "session persona mismatch" });
+        }
+      } else {
+        session = await createTextSession(sql, user.id, persona.id);
       }
-      if (session.endedAt) {
-        return reply.code(409).send({ error: "session has ended" });
-      }
-      if (session.personaId !== persona.id) {
-        return reply.code(409).send({ error: "session persona mismatch" });
-      }
-    } else {
-      session = await createTextSession(sql, user.id, persona.id);
+    } catch (error) {
+      request.log.error({ err: error }, "chat session lookup failed");
+      return reply.code(503).send({
+        error: config.FAILURE_MESSAGE_DATABASE,
+        code: config.FAILURE_CODE_DATABASE,
+      });
     }
 
-    await touchChatActivity(redis, config, session.id);
+    const activity = await redisQuiet(
+      request.log,
+      config,
+      "touchChatActivity",
+      session.id,
+      () => touchChatActivity(redis, config, session.id),
+    );
+    if (activity === null) {
+      request.log.error({ sessionId: session.id }, "chat activity not stored");
+    }
 
     const response = await callWorker(config, "/internal/turn", {
       method: "POST",

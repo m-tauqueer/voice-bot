@@ -22,6 +22,30 @@ export function logoutUrl(next?: string): string {
   return url.toString();
 }
 
+export function chatSilenceStatus(): string {
+  const value = import.meta.env.VITE_CHAT_SILENCE_STATUS;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("VITE_CHAT_SILENCE_STATUS is not set");
+  }
+  return value;
+}
+
+export function turnSpeakerUser(): string {
+  const value = import.meta.env.VITE_TURN_SPEAKER_USER;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("VITE_TURN_SPEAKER_USER is not set");
+  }
+  return value;
+}
+
+export function turnSpeakerPersona(): string {
+  const value = import.meta.env.VITE_TURN_SPEAKER_PERSONA;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("VITE_TURN_SPEAKER_PERSONA is not set");
+  }
+  return value;
+}
+
 export function chatSessionStorageKey(): string {
   const value = import.meta.env.VITE_CHAT_SESSION_STORAGE_KEY;
   if (typeof value !== "string" || value.length === 0) {

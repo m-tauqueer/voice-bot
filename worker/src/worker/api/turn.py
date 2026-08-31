@@ -27,6 +27,9 @@ class TurnOut(BaseModel):
     engram_session_id: str | None
     turn_ids: list[UUID]
     reasons: list[str]
+    recorded: bool = True
+    warning: str | None = None
+    warning_code: str | None = None
 
 
 def build_turn_router(
@@ -56,6 +59,9 @@ def build_turn_router(
             engram_session_id=result.engram_session_id,
             turn_ids=result.turn_ids,
             reasons=result.reasons,
+            recorded=result.recorded,
+            warning=result.warning,
+            warning_code=result.warning_code,
         )
 
     return router

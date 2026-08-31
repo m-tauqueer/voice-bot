@@ -53,6 +53,9 @@ export type VoiceClientConfig = {
   thinkingCueIntervalMs: number;
   thinkingCueMaxMs: number;
   thinkingCueLabel: string;
+  reconnectingCode: string;
+  reconnectedCode: string;
+  connectionDropped: string;
 };
 
 export function loadVoiceClientConfig(): VoiceClientConfig {
@@ -168,6 +171,18 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     thinkingCueLabel: requiredString(
       "VITE_VOICE_THINKING_CUE_LABEL",
       import.meta.env.VITE_VOICE_THINKING_CUE_LABEL,
+    ),
+    reconnectingCode: requiredString(
+      "VITE_FAILURE_CODE_RECONNECTING",
+      import.meta.env.VITE_FAILURE_CODE_RECONNECTING,
+    ),
+    reconnectedCode: requiredString(
+      "VITE_FAILURE_CODE_RECONNECTED",
+      import.meta.env.VITE_FAILURE_CODE_RECONNECTED,
+    ),
+    connectionDropped: requiredString(
+      "VITE_VOICE_CONNECTION_DROPPED",
+      import.meta.env.VITE_VOICE_CONNECTION_DROPPED,
     ),
   };
 }

@@ -7,10 +7,13 @@ import Grainient from "../../components/Grainient";
 import {
   ApiError,
   api,
+  chatSilenceStatus,
   clearStoredChatSessionId,
   googleSignInUrl,
   logoutUrl,
   readStoredChatSessionId,
+  turnSpeakerPersona,
+  turnSpeakerUser,
   writeStoredChatSessionId,
 } from "../../lib/gateway";
 import { navigate } from "../../lib/router";
@@ -46,6 +49,14 @@ type ChatPostResponse = {
   reply_text: string | null;
   session_id: string;
   reasons: string[];
+  recorded?: boolean;
+  warning?: string | null;
+  warning_code?: string | null;
+};
+
+type Banner = {
+  tone: "error" | "warning";
+  text: string;
 };
 
 const pageStyle: CSSProperties = {
@@ -72,12 +83,12 @@ const headStyle: CSSProperties = {
   gap: 16,
 };
 
-const bubbleStyle = (speaker: string): CSSProperties => ({
-  justifySelf: speaker === "user" ? "end" : "start",
+const bubbleStyle = (speaker: string, userSpeaker: string): CSSProperties => ({
+  justifySelf: speaker === userSpeaker ? "end" : "start",
   maxWidth: "85%",
   padding: "12px 14px",
   borderRadius: 14,
-  background: speaker === "user" ? "var(--surface-2)" : "var(--surface-1)",
+  background: speaker === userSpeaker ? "var(--surface-2)" : "var(--surface-1)",
   color: "var(--text-hi)",
   whiteSpace: "pre-wrap",
 });
@@ -96,7 +107,7 @@ export function ChatPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [boot, setBoot] = useState<"loading" | "signed_out" | "ready">("loading");
-  const [status, setStatus] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [draft, setDraft] = useState("");
@@ -132,13 +143,13 @@ export function ChatPage() {
               if (error instanceof ApiError && error.status === 404) {
                 clearStoredChatSessionId(identity.id);
               } else {
-                setStatus(errorMessage(error));
+                setBanner({ tone: "error", text: errorMessage(error) });
               }
             }
           }
         } catch (error) {
           if (cancelled) return;
-          setStatus(errorMessage(error));
+          setBanner({ tone: "error", text: errorMessage(error) });
         }
         setBoot("ready");
       } catch (error) {
@@ -147,7 +158,7 @@ export function ChatPage() {
           setBoot("signed_out");
           return;
         }
-        setStatus(errorMessage(error));
+        setBanner({ tone: "error", text: errorMessage(error) });
         setBoot("signed_out");
       }
     })();
@@ -167,7 +178,7 @@ export function ChatPage() {
       return;
     }
     setBusy(true);
-    setStatus(null);
+    setBanner(null);
     setDraft("");
     try {
       const payload: { text: string; session_id?: string } = { text };
@@ -179,16 +190,40 @@ export function ChatPage() {
         body: JSON.stringify(payload),
       });
       applySession(me.id, result.session_id);
-      const history = await api<ChatGetResponse>(
-        `/api/chat?session_id=${encodeURIComponent(result.session_id)}`,
-      );
-      setTurns(history.turns);
-      if (result.reply_text == null) {
-        setStatus("The persona stayed silent.");
+      if (result.recorded === false) {
+        const userSpeaker = turnSpeakerUser();
+        const personaSpeaker = turnSpeakerPersona();
+        setTurns((current) => {
+          const next = [...current];
+          const lastOrdinal = next.at(-1)?.ordinal ?? 0;
+          next.push({
+            ordinal: lastOrdinal + 1,
+            speaker: userSpeaker,
+            text,
+          });
+          if (result.reply_text) {
+            next.push({
+              ordinal: lastOrdinal + 2,
+              speaker: personaSpeaker,
+              text: result.reply_text,
+            });
+          }
+          return next;
+        });
+      } else {
+        const history = await api<ChatGetResponse>(
+          `/api/chat?session_id=${encodeURIComponent(result.session_id)}`,
+        );
+        setTurns(history.turns);
+      }
+      if (result.warning) {
+        setBanner({ tone: "warning", text: result.warning });
+      } else if (result.reply_text == null) {
+        setBanner({ tone: "warning", text: chatSilenceStatus() });
       }
     } catch (error) {
       setDraft(text);
-      setStatus(errorMessage(error));
+      setBanner({ tone: "error", text: errorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -199,7 +234,7 @@ export function ChatPage() {
     clearStoredChatSessionId(me.id);
     setSessionId(null);
     setTurns([]);
-    setStatus(null);
+    setBanner(null);
   }
 
   if (boot === "loading") {
@@ -225,7 +260,18 @@ export function ChatPage() {
             <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>
               Sign in with Google to talk to the persona.
             </p>
-            {status && <p className="ui-field__error">{status}</p>}
+            {banner && (
+              <p
+                className="ui-field__error"
+                style={
+                  banner.tone === "warning"
+                    ? { color: "var(--text-mid)" }
+                    : undefined
+                }
+              >
+                {banner.text}
+              </p>
+            )}
             <Button
               variant="solid"
               onClick={() => {
@@ -276,9 +322,18 @@ export function ChatPage() {
           </div>
         </div>
 
-        {status && (
+        {banner && (
           <Card>
-            <p className="ui-field__error">{status}</p>
+            <p
+              className="ui-field__error"
+              style={
+                banner.tone === "warning"
+                  ? { color: "var(--text-mid)" }
+                  : undefined
+              }
+            >
+              {banner.text}
+            </p>
           </Card>
         )}
 
@@ -290,7 +345,7 @@ export function ChatPage() {
               </p>
             )}
             {turns.map((turn) => (
-              <div key={turn.ordinal} style={bubbleStyle(turn.speaker)}>
+              <div key={turn.ordinal} style={bubbleStyle(turn.speaker, turnSpeakerUser())}>
                 {turn.text}
               </div>
             ))}

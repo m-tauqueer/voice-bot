@@ -23,6 +23,10 @@ const app = Fastify({
   },
 });
 
+redis.on("error", (error) => {
+  app.log.error({ err: error }, "redis error");
+});
+
 await app.register(cors, {
   origin: config.FRONTEND_ORIGIN,
   credentials: true,

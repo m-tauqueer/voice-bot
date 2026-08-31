@@ -34,7 +34,48 @@ class WorkerSettings(BaseSettings):
     worker_host: str
     worker_port: int = Field(gt=0)
     database_url: str = Field(min_length=1)
+    redis_url: str | None = None
+    voice_notice_redis_channel: str = Field(default="voice-notice", min_length=1)
+    redis_command_timeout_ms: int = Field(default=500, gt=0)
     internal_api_secret: str = Field(min_length=16)
+    failure_code_engram: str = Field(default="engram_unavailable", min_length=1)
+    failure_code_speaking_llm: str = Field(
+        default="speaking_llm_failed",
+        min_length=1,
+    )
+    failure_code_record: str = Field(default="record_lost", min_length=1)
+    failure_code_database: str = Field(
+        default="database_unavailable",
+        min_length=1,
+    )
+    failure_message_engram: str = Field(
+        default=(
+            "The persona's memory is unavailable. "
+            "Nothing was invented in its place."
+        ),
+        min_length=1,
+    )
+    failure_message_speaking_llm: str = Field(
+        default=(
+            "The reply stopped early. "
+            "You heard only the words that were produced."
+        ),
+        min_length=1,
+    )
+    failure_message_record: str = Field(
+        default=(
+            "The reply was delivered but the conversation record "
+            "could not be saved."
+        ),
+        min_length=1,
+    )
+    failure_message_database: str = Field(
+        default=(
+            "The conversation record is unavailable. "
+            "This turn could not start."
+        ),
+        min_length=1,
+    )
     internal_secret_header: str = Field(default="x-internal-secret")
     engram_api_key: str | None = None
     engram_org_id: str | None = None
@@ -116,6 +157,7 @@ class WorkerSettings(BaseSettings):
         "openai_api_base_url",
         "reframe_system_prompt",
         "answer_system_prompt",
+        "redis_url",
         mode="before",
     )
     @classmethod
