@@ -47,8 +47,8 @@ Tauqueer's priorities are failure handling and observability, then the security 
 | Brain | `worker/src/worker/turn/service.py` | One `TurnRunner`. `BRAIN_MODE` selects `retrieve` (default) or `chat`. Streams the reply; `converse` write-back off the reply path. |
 | Persona admin | `/admin`, `frontend/src/app/admin/AdminPage.tsx` | Owner-only: create/edit persona, teach, answer question bank, ingest documents, subscribe testers. **Part 3.3 folds this into the dashboard shell.** |
 | Canonical record | Postgres | `users`, `personas`, `subscriptions`, `sessions`, `turns`, `memory_refs`, `audio_assets`, `latency_spans`. See §3. |
-| Sample dashboard | `frontend/src/app/dashboard/` | Renders the component library's demo on **mock data** in `frontend/src/app/data.ts`. Parts 3.4–3.6 replace that data; the mock file goes away. |
-| Component library | `frontend/src/components/` | Primitives **and** viz already copied — see §4. Nothing needs importing from `Desktop/component-library` again; that stays the reference, not a dependency. |
+| Product UI | `/`, `/dashboard`, `/chat`, `/voice` | Landing and sign-in at `/`. Signed-in app in the library shell. `/admin` redirects to the Persona tab. |
+| Component library | `Desktop/component-library` | Reference only. Copy a primitive into `frontend/` when a part needs it. The gallery and unused showcase files are not in this repo. |
 | Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`. |
 
 ---
@@ -96,17 +96,13 @@ Notes that matter when querying:
 
 ---
 
-## 4. Component inventory (already copied, ready to use)
+## 4. Component inventory
 
-Reference: `Desktop/component-library`. Do not re-copy; use what is in `frontend/src`.
+Reference: `Desktop/component-library`. That project is the gallery. This repo only keeps what the voice bot renders. When a later part needs a chart or primitive that is not here, copy that file from the library into `frontend/src`.
 
-**Primitives** (`frontend/src/components/ui/`): `Badge`, `Button`, `Card`, `Chip`, `ClipButton`, `Input`, `Meter` (incl. `BarMeter`), `Segmented`, `Switch`.
+**In this repo now** (`frontend/src/components/`): `Badge`, `Button`, `Card`, `Input`, `Meter` (`BarMeter`), `Avatar`, `Grainient`, `RadialMenu`, icons, plus the wired `AppShell` / `Sidebar` / `TopBar`.
 
-**Visualisation** (`frontend/src/components/viz/`): `ActivityCalendar`, `ActivityGraph`, `MemoryComposition`, `NodeRing`, `NodeSparkline`, `RecallHeatmap`.
-
-**Shell** (`frontend/src/app/shell/`): `AppShell`, `Sidebar`, `TopBar`.
-
-**Dashboard pieces** (`frontend/src/app/dashboard/`): `DashboardPage`, `KpiStrip`, `Section`, `MemoryActivity`, `RecentActivity`, `FeaturedMemory`, `ConnectorList`, `QuickActions`, `QuickCapture`, `Composer`.
+**Copy from the library when 3.4–3.6 need them:** `KpiStrip`, `Section`, `ActivityGraph`, `ActivityCalendar`, `NodeSparkline`, `RecallHeatmap`, and any other viz the real dashboard uses.
 
 Mapping to real data (parts 3.4–3.6):
 
@@ -235,7 +231,7 @@ Rules:
 - `frontend/src/app/dashboard/DashboardPage.tsx` — becomes the role-split entry (D13).
 - `frontend/src/app/dashboard/owner/OverviewTab.tsx` (new).
 - `frontend/src/lib/insights.ts` (new) — typed fetch helpers for 3.2.
-- Delete the mock `frontend/src/app/data.ts` once nothing imports it.
+- Copy any missing viz primitives from `Desktop/component-library` into `frontend/src` when this part needs them.
 
 **Logic.**
 - `KpiStrip`: calls, turns, **median time to first word** (`reframe_first_token_ms` + `brain_ms`), error rate.

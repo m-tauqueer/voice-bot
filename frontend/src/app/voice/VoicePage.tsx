@@ -3,22 +3,15 @@ import { Badge, type BadgeTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { BarMeter } from "../../components/ui/Meter";
-import Grainient from "../../components/Grainient";
-import { ApiError, api, googleSignInUrl, logoutUrl } from "../../lib/gateway";
+import { ApiError, api } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
-import { navigate } from "../../lib/router";
-import { ROUTES } from "../../lib/routes";
+import { loadNavConfig } from "../../lib/nav";
 import { loadVoiceClientConfig, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
-
-type Me = {
-  id: string;
-  email: string;
-  owner: boolean;
-};
+import { useSession } from "../session";
 
 type Persona = {
   id: string;
@@ -50,28 +43,11 @@ type TranscriptLine = {
   content: string;
 };
 
-const pageStyle: CSSProperties = {
-  minHeight: "100vh",
-  position: "relative",
-  padding: "32px 20px 72px",
-  color: "var(--text-hi)",
-  fontFamily: "var(--font-body)",
-};
-
 const wrapStyle: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
   maxWidth: 840,
   margin: "0 auto",
   display: "grid",
   gap: 18,
-};
-
-const headStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 16,
 };
 
 const bubbleStyle = (fromUser: boolean): CSSProperties => ({
@@ -150,9 +126,13 @@ function eventContent(event: Record<string, unknown>): string | null {
 }
 
 export function VoicePage() {
-  const [me, setMe] = useState<Me | null>(null);
-  const [persona, setPersona] = useState<Persona | null>(null);
-  const [boot, setBoot] = useState<"loading" | "signed_out" | "ready">("loading");
+  const identity = useSession();
+  const { loadingLabel, appName } = loadNavConfig();
+  const me = identity.status === "ready" ? identity.me : null;
+  const [persona, setPersona] = useState<Persona | null>(
+    identity.status === "ready" ? identity.persona : null,
+  );
+  const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -184,35 +164,25 @@ export function VoicePage() {
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!me) {
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const identity = await api<Me>("/api/me");
+        const context = await api<ChatGetResponse>("/api/chat");
         if (cancelled) return;
-        setMe(identity);
-        try {
-          const context = await api<ChatGetResponse>("/api/chat");
-          if (cancelled) return;
-          setPersona(context.persona);
-        } catch (error) {
-          if (cancelled) return;
-          setBanner({ tone: "error", text: errorMessage(error) });
-        }
-        setBoot("ready");
+        setPersona(context.persona);
       } catch (error) {
         if (cancelled) return;
-        if (error instanceof ApiError && error.status === 401) {
-          setBoot("signed_out");
-          return;
-        }
         setBanner({ tone: "error", text: errorMessage(error) });
-        setBoot("signed_out");
       }
+      setBoot("ready");
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [me]);
 
   useEffect(() => {
     return () => {
@@ -402,51 +372,10 @@ export function VoicePage() {
     }
   }
 
-  if (boot === "loading") {
+  if (!me || boot === "loading") {
     return (
-      <div style={pageStyle}>
-        <Grainient color3="#202028" saturation={0.7} />
-        <div style={wrapStyle}>
-          <p>Loading…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (boot === "signed_out") {
-    return (
-      <div style={pageStyle}>
-        <Grainient color3="#202028" saturation={0.7} />
-        <div style={wrapStyle}>
-          <Card>
-            <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
-              Voice
-            </h1>
-            <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>
-              Sign in with Google to talk to the persona.
-            </p>
-            {banner && (
-              <p
-                className="ui-field__error"
-                style={
-                  banner.tone === "warning"
-                    ? { color: "var(--text-mid)" }
-                    : undefined
-                }
-              >
-                {banner.text}
-              </p>
-            )}
-            <Button
-              variant="solid"
-              onClick={() => {
-                window.location.href = googleSignInUrl(ROUTES.voice);
-              }}
-            >
-              Continue with Google
-            </Button>
-          </Card>
-        </div>
+      <div style={wrapStyle}>
+        <p>{loadingLabel}</p>
       </div>
     );
   }
@@ -459,36 +388,12 @@ export function VoicePage() {
   const starting = phase === "starting";
 
   return (
-    <div style={pageStyle}>
-      <Grainient color3="#202028" saturation={0.7} />
-      <div style={wrapStyle}>
-        <div style={headStyle}>
-          <div>
-            <h1 className="mc-pagehead__title">{persona?.display_name ?? "Persona"}</h1>
-            <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-              {persona?.handle ? `@${persona.handle}` : null}
-              {persona?.handle && me?.email ? " · " : null}
-              {me?.email}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <Button type="button" onClick={() => navigate(ROUTES.chat)}>
-              Chat
-            </Button>
-            {me?.owner && (
-              <Button type="button" onClick={() => navigate(ROUTES.admin)}>
-                Admin
-              </Button>
-            )}
-            <Button
-              type="button"
-              onClick={() => {
-                window.location.href = logoutUrl(ROUTES.voice);
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
+    <div style={wrapStyle}>
+        <div>
+          <h1 className="mc-pagehead__title">{persona?.display_name ?? appName}</h1>
+          <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
+            {persona?.handle ? `@${persona.handle}` : null}
+          </p>
         </div>
 
         {banner && (
@@ -585,7 +490,6 @@ export function VoicePage() {
             <div ref={bottom} />
           </div>
         </Card>
-      </div>
     </div>
   );
 }

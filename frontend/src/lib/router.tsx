@@ -11,6 +11,13 @@ export function navigate(to: string) {
   window.scrollTo(0, 0);
 }
 
+export function replace(to: string) {
+  if (to === window.location.pathname) return;
+  window.history.replaceState({}, "", to);
+  window.dispatchEvent(new Event(ROUTE_CHANGE));
+  window.scrollTo(0, 0);
+}
+
 export function useRoute() {
   const [path, setPath] = useState(() => window.location.pathname);
 

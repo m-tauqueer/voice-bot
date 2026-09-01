@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import Grainient from "../../components/Grainient";
 import { RadialMenu } from "../../components/RadialMenu";
+import type { NavItem } from "../../lib/nav";
 import { Sidebar } from "./Sidebar";
-import type { NavId } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
 interface AppShellProps {
-  active: NavId;
-  topLeft?: ReactNode;
-  topActions?: ReactNode;
+  active: string;
+  items: NavItem[];
+  brand: string;
+  homeTo: string;
+  personaName: string;
+  accountEmail: string;
+  signOutLabel: string;
+  onSignOut: () => void;
   flush?: boolean;
   children: ReactNode;
 }
@@ -27,7 +32,18 @@ function useDialShortcut(setOpen: Dispatch<SetStateAction<boolean>>) {
   }, [setOpen]);
 }
 
-export function AppShell({ active, topLeft, topActions, flush = false, children }: AppShellProps) {
+export function AppShell({
+  active,
+  items,
+  brand,
+  homeTo,
+  personaName,
+  accountEmail,
+  signOutLabel,
+  onSignOut,
+  flush = false,
+  children,
+}: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dialOpen, setDialOpen] = useState(false);
 
@@ -39,17 +55,34 @@ export function AppShell({ active, topLeft, topActions, flush = false, children 
 
       <Sidebar
         active={active}
+        items={items}
+        brand={brand}
+        homeTo={homeTo}
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
         onOpenDial={() => setDialOpen(true)}
       />
 
       <div className="mc-main">
-        <TopBar left={topLeft} actions={topActions} />
+        <TopBar
+          personaName={personaName}
+          accountEmail={accountEmail}
+          signOutLabel={signOutLabel}
+          onSignOut={onSignOut}
+        />
         <div className={"mc-canvas" + (flush ? " mc-canvas--flush" : "")}>{children}</div>
       </div>
 
-      <RadialMenu open={dialOpen} onClose={() => setDialOpen(false)} />
+      <RadialMenu
+        open={dialOpen}
+        onClose={() => setDialOpen(false)}
+        items={items.map((item) => ({
+          icon: item.icon,
+          name: item.label,
+          to: item.to,
+          items: [item.label],
+        }))}
+      />
     </div>
   );
 }

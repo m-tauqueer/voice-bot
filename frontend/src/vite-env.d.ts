@@ -35,6 +35,22 @@ interface ImportMetaEnv {
   readonly VITE_CHAT_SILENCE_STATUS: string;
   readonly VITE_TURN_SPEAKER_USER: string;
   readonly VITE_TURN_SPEAKER_PERSONA: string;
+  readonly VITE_APP_NAME: string;
+  readonly VITE_NAV_ROLE_OWNER: string;
+  readonly VITE_NAV_ROLE_MEMBER: string;
+  readonly VITE_NAV_ITEMS: string;
+  readonly VITE_SIGNOUT_LABEL: string;
+  readonly VITE_LOADING_LABEL: string;
+  readonly VITE_SIGNIN_CONTINUE: string;
+  readonly VITE_NOT_OWNER_MESSAGE: string;
+  readonly VITE_SIGNIN_TITLE_CHAT: string;
+  readonly VITE_SIGNIN_BODY_CHAT: string;
+  readonly VITE_SIGNIN_TITLE_VOICE: string;
+  readonly VITE_SIGNIN_BODY_VOICE: string;
+  readonly VITE_SIGNIN_TITLE_PERSONA: string;
+  readonly VITE_SIGNIN_BODY_PERSONA: string;
+  readonly VITE_SIGNIN_TITLE_APP: string;
+  readonly VITE_SIGNIN_BODY_APP: string;
 }
 
 interface ImportMeta {

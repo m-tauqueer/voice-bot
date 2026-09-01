@@ -3,15 +3,9 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input, Textarea } from "../../components/ui/Input";
-import Grainient from "../../components/Grainient";
-import { ApiError, api, googleSignInUrl, logoutUrl } from "../../lib/gateway";
-
-type Me = {
-  id: string;
-  email: string;
-  engram_user_id: string;
-  owner: boolean;
-};
+import { ApiError, api } from "../../lib/gateway";
+import { loadNavConfig } from "../../lib/nav";
+import { useSession } from "../session";
 
 type Persona = {
   id: string;
@@ -37,17 +31,7 @@ type QuestionsResponse = {
   coverage: unknown;
 };
 
-const pageStyle: CSSProperties = {
-  minHeight: "100vh",
-  position: "relative",
-  padding: "32px 20px 72px",
-  color: "var(--text-hi)",
-  fontFamily: "var(--font-body)",
-};
-
 const wrapStyle: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
   maxWidth: 840,
   margin: "0 auto",
   display: "grid",
@@ -103,8 +87,10 @@ function errorMessage(error: unknown): string {
 }
 
 export function AdminPage() {
-  const [me, setMe] = useState<Me | null>(null);
-  const [boot, setBoot] = useState<"loading" | "signed_out" | "ready">("loading");
+  const session = useSession();
+  const { loadingLabel, notOwnerMessage, signIn } = loadNavConfig();
+  const me = session.status === "ready" ? session.me : null;
+  const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -144,43 +130,35 @@ export function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (!me) {
+      return;
+    }
     let cancelled = false;
     (async () => {
-      try {
-        const identity = await api<Me>("/api/me");
-        if (cancelled) return;
-        setMe(identity);
-        if (!identity.owner) {
-          setBoot("ready");
-          return;
-        }
-        try {
-          await loadPersona();
-        } catch (error) {
-          if (!(error instanceof ApiError && error.status === 404)) {
-            setStatus(errorMessage(error));
-          }
-        }
-        try {
-          await loadQuestions();
-        } catch {
-          // questions require a recorded persona
-        }
+      if (!me.owner) {
         setBoot("ready");
+        return;
+      }
+      try {
+        await loadPersona();
       } catch (error) {
-        if (cancelled) return;
-        if (error instanceof ApiError && error.status === 401) {
-          setBoot("signed_out");
-          return;
+        if (!(error instanceof ApiError && error.status === 404)) {
+          setStatus(errorMessage(error));
         }
-        setStatus(errorMessage(error));
-        setBoot("signed_out");
+      }
+      try {
+        await loadQuestions();
+      } catch {
+        // questions require a recorded persona
+      }
+      if (!cancelled) {
+        setBoot("ready");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadPersona, loadQuestions]);
+  }, [loadPersona, loadQuestions, me]);
 
   async function run(label: string, op: () => Promise<void>) {
     setBusy(label);
@@ -202,73 +180,36 @@ export function AdminPage() {
     return parsed as Record<string, unknown>;
   }
 
-  if (boot === "loading") {
+  if (!me || boot === "loading") {
     return (
-      <div style={pageStyle}>
-        <Grainient color3="#202028" saturation={0.7} />
-        <div style={wrapStyle}>
-          <p>Loading…</p>
-        </div>
+      <div style={wrapStyle}>
+        <p>{loadingLabel}</p>
       </div>
     );
   }
 
-  if (boot === "signed_out") {
+  if (!me.owner) {
     return (
-      <div style={pageStyle}>
-        <Grainient color3="#202028" saturation={0.7} />
-        <div style={wrapStyle}>
-          <Card>
-            <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
-              Persona admin
-            </h1>
-            <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>
-              Sign in with Google to manage the persona.
-            </p>
-            {status && <p className="ui-field__error">{status}</p>}
-            <Button variant="solid" onClick={() => { window.location.href = googleSignInUrl(); }}>
-              Continue with Google
-            </Button>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  if (!me?.owner) {
-    return (
-      <div style={pageStyle}>
-        <Grainient color3="#202028" saturation={0.7} />
-        <div style={wrapStyle}>
-          <Card>
-            <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
-              Persona admin
-            </h1>
-            <p style={{ color: "var(--text-mid)" }}>
-              Signed in as {me?.email}. This account is not an owner.
-            </p>
-            <div style={{ marginTop: 16 }}>
-              <Button onClick={() => { window.location.href = logoutUrl(); }}>Sign out</Button>
-            </div>
-          </Card>
-        </div>
+      <div style={wrapStyle}>
+        <Card>
+          <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
+            {signIn.personaTitle}
+          </h1>
+          <p style={{ color: "var(--text-mid)" }}>
+            {notOwnerMessage}
+          </p>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div style={pageStyle}>
-      <Grainient color3="#202028" saturation={0.7} />
-      <div style={wrapStyle}>
+    <div style={wrapStyle}>
         <div style={headStyle}>
           <div>
-            <h1 className="mc-pagehead__title">Persona admin</h1>
-            <p style={{ color: "var(--text-mid)", marginTop: 6 }}>{me.email}</p>
+            <h1 className="mc-pagehead__title">{signIn.personaTitle}</h1>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <Badge tone="accent">Owner</Badge>
-            <Button onClick={() => { window.location.href = logoutUrl(); }}>Sign out</Button>
-          </div>
+          <Badge tone="accent">Owner</Badge>
         </div>
 
         {status && (
@@ -325,6 +266,7 @@ export function AdminPage() {
                       }),
                     });
                     await loadPersona();
+                    await session.reloadPersona();
                     setStatus("Persona saved.");
                   })
                 }
@@ -517,7 +459,6 @@ export function AdminPage() {
             </ul>
           )}
         </Card>
-      </div>
     </div>
   );
 }

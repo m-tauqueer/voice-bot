@@ -29,7 +29,7 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
   - Decide and record the monorepo tool/workspace layout in this section.
 - Locked layout:
   - **npm workspaces** at the repo root (`package.json` `workspaces`: `frontend`, `gateway`). One root lockfile after Part 0.2. Worker is Python and is **not** in the JS workspace.
-  - **frontend/** is a copy of `Desktop/component-library` (source only, no `node_modules`). Original library stays on Desktop. UI work happens in `frontend/`. Design notes: `frontend/COMPONENT_LIBRARY.md`.
+  - **frontend/** is the product UI. `Desktop/component-library` stays on Desktop as the reference; copy a primitive into `frontend/` only when the product uses it. Do not keep the gallery in this repo. Design notes: `frontend/COMPONENT_LIBRARY.md`.
   - **gateway/** is a TypeScript workspace package (`gateway/package.json`). Dependencies in Part 0.2.
   - **worker/** is a **uv** project (`worker/pyproject.toml`, `requires-python >= 3.12`, src layout `worker/src/worker/`). Dependencies in Part 0.2.
   - **infra/** holds Docker Compose, migrations, and scripts (Part 0.4).
@@ -83,7 +83,7 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
   - Confirm dev server runs and a base page renders.
 - Locked / verified:
   - CSS is imported only from [`frontend/src/main.tsx`](../frontend/src/main.tsx), in the documented order (`oc.tailwind.css` → `oc.css` → `fonts.css` → `index.css` → `surfaces.css` → `dial.css` → `ui.css` → `app-shell.css` → `dashboard.css`). No component imports CSS.
-  - `npm run dev:frontend` serves Vite at port **5188**. `/` and `/components` are the gallery; `/dashboard` is the sample shell.
+  - `npm run dev:frontend` serves Vite at port **5188**. `/` is the landing page; `/dashboard` is the signed-in app. Vite proxies `/auth`, `/api`, and `/ws` to the gateway bind port.
 - Manual test: open the local frontend; base UI renders with correct styling.
 - Commit gate: on Tauqueer's word.
 
