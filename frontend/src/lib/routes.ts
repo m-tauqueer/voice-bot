@@ -1,27 +1,43 @@
 export const ROUTES = {
   home: "/",
   dashboard: "/dashboard",
-  dashboardConversations: "/dashboard/conversations",
-  dashboardPeople: "/dashboard/people",
-  dashboardPersona: "/dashboard/persona",
-  admin: "/admin",
   chat: "/chat",
   voice: "/voice",
+  admin: "/admin",
+  adminConversations: "/admin/conversations",
+  adminPeople: "/admin/people",
+  adminPersona: "/admin/persona",
+} as const;
+
+export const PATTERNS = {
+  dashboardSession: "/dashboard/sessions/:id",
+  adminSession: "/admin/conversations/:id",
 } as const;
 
 export type Route = (typeof ROUTES)[keyof typeof ROUTES];
 export type RouteId = keyof typeof ROUTES;
 
-export const PRODUCT_ROUTE_IDS = [
-  "dashboard",
-  "dashboardConversations",
-  "dashboardPeople",
-  "dashboardPersona",
+export const PERSONAL_ROUTE_IDS = ["dashboard", "chat", "voice"] as const satisfies readonly RouteId[];
+
+export const ADMIN_NAV_ROUTE_IDS = [
   "admin",
-  "chat",
-  "voice",
+  "adminConversations",
+  "adminPeople",
+  "adminPersona",
 ] as const satisfies readonly RouteId[];
 
-export const PRODUCT_ROUTES: readonly Route[] = PRODUCT_ROUTE_IDS.map(
-  (id) => ROUTES[id],
-);
+export const OWNER_NAV_ROUTE_IDS = ["admin"] as const satisfies readonly RouteId[];
+
+export const LEGACY_DASHBOARD_REDIRECTS: ReadonlyArray<{ from: string; to: Route }> = [
+  { from: "/dashboard/persona", to: ROUTES.adminPersona },
+  { from: "/dashboard/conversations", to: ROUTES.adminConversations },
+  { from: "/dashboard/people", to: ROUTES.adminPeople },
+];
+
+export function dashboardSessionPath(id: string): string {
+  return `/dashboard/sessions/${id}`;
+}
+
+export function adminSessionPath(id: string): string {
+  return `/admin/conversations/${id}`;
+}

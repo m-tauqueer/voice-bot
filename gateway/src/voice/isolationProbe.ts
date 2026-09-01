@@ -12,7 +12,11 @@ import {
   encodeSessionCursor,
   resolveRangeId,
 } from "../insights/parse.js";
-import { ownerOverview, personalSessionDetail } from "../insights/queries.js";
+import {
+  ownerLatency,
+  ownerOverview,
+  personalSessionDetail,
+} from "../insights/queries.js";
 import { SESSION_CHANNEL } from "../schema.js";
 
 let failed = 0;
@@ -35,6 +39,18 @@ try {
   const defaultRange = resolveRangeId(config, undefined);
   check("default_range_resolves", defaultRange.ok);
   check("unknown_range_rejected", !resolveRangeId(config, "not-a-range").ok);
+  if (defaultRange.ok) {
+    try {
+      await ownerLatency(sql, config, defaultRange.id);
+      check("owner_latency_sql_ok", true);
+    } catch (error) {
+      check(
+        "owner_latency_sql_ok",
+        false,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
   const cursor = encodeSessionCursor({
     started_at: new Date("2026-01-01T00:00:00.000Z"),
     id: "11111111-1111-1111-1111-111111111111",
@@ -261,6 +277,16 @@ try {
               JSON.stringify(fromSql.brain_mode_split),
         );
       }
+
+      const latencyHttp = await get(
+        `/api/admin/latency?range=${encodeURIComponent(defaultRange.id)}`,
+        ownerCookie,
+      );
+      check(
+        "owner_latency_ok",
+        latencyHttp.statusCode === 200,
+        `${latencyHttp.statusCode}`,
+      );
 
       const badRange = await get(
         "/api/admin/overview?range=not-a-range",

@@ -66,7 +66,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`: Google sign-in, Engram memory, controller, streamed reply, barge-in, and a canonical record in Postgres. Failure handling is in; the rest of Phase 3 starts when Tauqueer names a part from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, and the owner admin app are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
@@ -95,15 +95,16 @@ npm run audio        # WAV container, capture boundaries, turn binding, blob rea
 npm run bargein      # Barge-in state machine (no services needed)
 npm run failures     # Failure taxonomy and reconnect rules (no live outages)
 npm run isolation    # Two signed-in users cannot reach each other's conversation
+npm run nav          # Personal vs admin nav lists (from frontend/)
 npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)
 npm run infra:up       # Postgres + Redis (or: make infra-up)
 npm run migrate        # apply infra/migrations (or: make migrate)
 npm run smoke          # external + local infra checks (or: make smoke)
-npm run dev:frontend    # Vite, port 5188 / FRONTEND_ORIGIN
-npm run dev:gateway
-npm run dev:worker
+npm run dev:frontend    # Vite, FRONTEND_ORIGIN (5188)
+npm run dev:gateway     # GATEWAY_PORT (4100; Vite proxies /auth /api /ws)
+npm run dev:worker      # WORKER_PORT (8000)
 
 # Stop / wipe local data volumes
 npm run infra:down
@@ -113,7 +114,7 @@ npm run infra:reset
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
 
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
-- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`; the signed-in app is `/dashboard` (chat, voice, and owner tabs share the shell). `/admin` redirects to the Persona tab. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
+- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Signed-in product is `/dashboard` (Home, Chat, Voice) for every user; `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
 - `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/TRD.md) §1.2.
 - `infra/` — Docker Compose, migrations, scripts.

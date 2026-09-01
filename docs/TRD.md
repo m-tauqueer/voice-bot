@@ -137,7 +137,7 @@ sequenceDiagram
 
 ### 2.3 Component responsibilities
 
-- **Frontend (`frontend/`):** landing and Google sign-in at `/`; signed-in app at `/dashboard` (chat, voice, persona admin). Built on component-library tokens; the gallery stays in `Desktop/component-library`, not in this repo.
+- **Frontend (`frontend/`):** landing and Google sign-in at `/`; signed-in personal app at `/dashboard` (chat, voice, own history); owner ops at `/admin`. Built on component-library tokens; the gallery stays in `Desktop/component-library`, not in this repo.
 - **Gateway (`gateway/`, TypeScript):** Google OAuth + session; the client WebSocket; the bridge to the Deepgram Voice Agent WSS (Settings, audio relay both ways, event handling incl. barge-in); writing audio to Azure Blob and Redis ephemeral state. Holds no persona logic.
 - **AI Worker (`worker/`, Python):** the **BYO-LLM endpoint** Deepgram calls. Runs the controller gate, the Engram call selected by `BRAIN_MODE`, and the speaking LLM, streaming the reply back as it is produced. Owns the Engram client wrapper and writes canonical turn records to Postgres. This is where the brain lives and where the fallback pipeline would plug in.
 

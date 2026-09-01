@@ -1,0 +1,54 @@
+import { useCallback, useEffect, useState } from "react";
+import { Card } from "../../components/ui/Card";
+import { Section } from "../../components/Section";
+import { ApiError } from "../../lib/gateway";
+import { fetchPersonalMemories, type MemoryHit } from "../../lib/insights";
+import { loadUiCopy } from "../../lib/uiCopy";
+import { EmptyNote } from "./FetchState";
+
+export function MemoryPanel() {
+  const copy = loadUiCopy();
+  const [hits, setHits] = useState<MemoryHit[] | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!copy.memoryEnabled) {
+      setHits([]);
+      return;
+    }
+    try {
+      const panel = await fetchPersonalMemories();
+      setHits(panel.memories);
+      setUnavailable(false);
+    } catch (error) {
+      setHits([]);
+      setUnavailable(!(error instanceof ApiError && error.status === 404));
+    }
+  }, [copy.memoryEnabled]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!copy.memoryEnabled) {
+    return null;
+  }
+
+  return (
+    <Section title={copy.memoryTitle}>
+      {unavailable ? <EmptyNote text={copy.memoryUnavailable} /> : null}
+      {!unavailable && hits && hits.length === 0 ? (
+        <EmptyNote text={copy.emptyMemory} />
+      ) : null}
+      {hits && hits.length > 0 ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          {hits.map((hit, index) => (
+            <Card key={`${index}:${hit.text.slice(0, 24)}`}>
+              <p style={{ whiteSpace: "pre-wrap" }}>{hit.text}</p>
+            </Card>
+          ))}
+        </div>
+      ) : null}
+    </Section>
+  );
+}

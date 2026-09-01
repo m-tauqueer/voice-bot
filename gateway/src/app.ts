@@ -10,6 +10,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerInsightRoutes } from "./routes/insights.js";
+import { registerMemoryRoutes } from "./routes/memories.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 
 type Sql = ReturnType<typeof postgres>;
@@ -49,6 +50,7 @@ export async function createGatewayApp(deps: {
   await registerAdminRoutes(app, { config });
   await registerChatRoutes(app, { config, sql, redis });
   await registerInsightRoutes(app, { config, sql });
+  await registerMemoryRoutes(app, { config, sql });
   await registerVoiceRoutes(app, { config, sql, redis });
 
   app.get("/health", async () => ({

@@ -89,6 +89,8 @@ class WorkerSettings(BaseSettings):
     # costs about ten more seconds a turn.
     brain_mode: Literal["chat", "retrieve"] = "retrieve"
     engram_retrieve_top_k: int = Field(default=25, gt=0)
+    memory_panel_query: str = Field(min_length=1)
+    memory_panel_top_k: int = Field(default=25, gt=0)
     engram_converse_writeback: bool = Field(default=True)
     engram_writeback_workers: int = Field(default=2, gt=0)
     engram_converse_user_speaker: str = Field(default="user", min_length=1)

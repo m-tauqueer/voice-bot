@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 3. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 3 goal: the product survives its dependencies failing, can be watched and understood from a UI instead of `psql`, is safe to put in front of testers, and runs on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.2 complete.** Tauqueer names one part at a time. Do not implement a later part while doing an earlier one.
+**Status: 3.1–3.6 implemented.** Click-through of owner vs tester still belongs to Tauqueer. Remaining parts start when Tauqueer names one.
 
 ---
 
@@ -24,10 +24,10 @@ Tauqueer's priorities are failure handling and observability, then the security 
 | --- | --- | --- |
 | 3.1 | Failure handling | Nothing else is trustworthy until outages behave honestly |
 | 3.2 | Read API for the canonical record | The dashboard cannot exist without it |
-| 3.3 | App shell & navigation | One frame for every screen; `/admin` folds in |
-| 3.4 | Owner dashboard — health & latency | The "is it healthy and fast" view |
-| 3.5 | Owner dashboard — conversations & people | The "what happened in that call" view |
-| 3.6 | Personal view for testers | What a signed-in tester sees |
+| 3.3 | App shell & navigation | Two frames: personal app and `/admin` |
+| 3.4 | Admin overview — health & latency | The "is it healthy and fast" view |
+| 3.5 | Admin conversations & people | The "what happened in that call" view |
+| 3.6 | Personal home | History, spoken transcript, memory panel |
 | 3.7 | Observability & latency budgets | Traces and regression alerting behind the UI |
 | 3.8 | Security & isolation review | Before anyone else uses it |
 | 3.9 | Azure deployment | Off the laptop; kills the tunnel; audio storage switches on |
@@ -45,9 +45,9 @@ Tauqueer's priorities are failure handling and observability, then the security 
 | Typed chat | `/api/chat`, `frontend/src/app/chat/ChatPage.tsx` | Working. |
 | Voice call | `/ws/voice`, `frontend/src/app/voice/VoicePage.tsx` | Working: mic capture, streamed reply, barge-in, live transcript, VU, thinking cue. |
 | Brain | `worker/src/worker/turn/service.py` | One `TurnRunner`. `BRAIN_MODE` selects `retrieve` (default) or `chat`. Streams the reply; `converse` write-back off the reply path. |
-| Persona admin | `/admin`, `frontend/src/app/admin/AdminPage.tsx` | Owner-only: create/edit persona, teach, answer question bank, ingest documents, subscribe testers. **Part 3.3 folds this into the dashboard shell.** |
+| Persona admin | `/admin/persona`, `frontend/src/app/admin/AdminPage.tsx` | Owner-only: create/edit persona, teach, answer question bank, ingest documents, subscribe testers. Lives in the admin shell. |
 | Canonical record | Postgres | `users`, `personas`, `subscriptions`, `sessions`, `turns`, `memory_refs`, `audio_assets`, `latency_spans`. See §3. |
-| Product UI | `/`, `/dashboard`, `/chat`, `/voice` | Landing and sign-in at `/`. Signed-in app in the library shell. `/admin` redirects to the Persona tab. |
+| Product UI | `/`, `/dashboard`, `/chat`, `/voice`, `/admin` | Landing and sign-in at `/`. Personal app at `/dashboard`. Admin app at `/admin`. |
 | Component library | `Desktop/component-library` | Reference only. Copy a primitive into `frontend/` when a part needs it. The gallery and unused showcase files are not in this repo. |
 | Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`. |
 
@@ -57,10 +57,10 @@ Tauqueer's priorities are failure handling and observability, then the security 
 
 Settled with Tauqueer before this plan was written. Do not silently change them.
 
-- **D13 — The dashboard is role-split, one route.** `/dashboard` renders the **owner ops view** for an email in `OWNER_EMAILS` and the **personal view** for every other signed-in user. Role comes from the server (`/api/me` already returns `owner`), never from a client guess.
-- **D14 — The dashboard absorbs admin.** One owner surface with tabs (Overview, Conversations, People, Persona). The current `/admin` becomes the Persona tab; the `/admin` route redirects into the dashboard so existing links keep working.
-- **D15 — The app shell is the library's.** `AppShell` + `Sidebar` + `TopBar` wrap dashboard, chat, voice and the persona tab. Navigation items are role-filtered.
-- **D16 — The dashboard is read-only about conversations.** It shows the canonical record; it never edits turns, and it never reaches Engram to answer a question on a user's behalf. Persona teaching stays in its own tab and keeps its existing write paths.
+- **D13 — The personal app is the same for every signed-in user.** `/dashboard`, `/chat` and `/voice` do not change with `OWNER_EMAILS`. Role comes from the server (`/api/me.owner`). An owner sees one extra personal-nav item that opens `/admin`.
+- **D14 — Admin is a separate owner-only app.** `/admin` has its own shell (Overview, Conversations, People, Persona). It does not fold into `/dashboard`. Signed-in non-owners are bounced to `/dashboard`; the server still returns 403.
+- **D15 — The app shell is the library's.** `AppShell` + `Sidebar` + `TopBar` wrap both the personal app and the admin app. Personal nav is one config list; admin nav is another; the owner Admin entry is a third config list.
+- **D16 — Conversation views are read-only.** They never edit turns and never chat as another user. Persona teaching stays on the Persona tab. The personal memory panel is a retrieve of the signed-in user's own pool, not an answer on someone else's behalf.
 - **D17 — Azure shape is Container Apps.** Three container apps (gateway, worker, frontend), Azure Database for PostgreSQL, Azure Cache for Redis, Azure Blob for audio. The worker gets a real public URL, which retires the ngrok dependency in `BYO_LLM_PUBLIC_URL`.
 - **D18 — Blob audio switches on at deployment.** `VOICE_AUDIO_PERSIST_ENABLED` stays `false` until part 3.9 provisions a storage account. The capture, WAV and turn-binding code is already built and tested against the emulator.
 - **D19 — No new brains.** Phase 3 does not add another Engram path. `BRAIN_MODE` stays as it is; the dashboard reports on both.
@@ -100,9 +100,7 @@ Notes that matter when querying:
 
 Reference: `Desktop/component-library`. That project is the gallery. This repo only keeps what the voice bot renders. When a later part needs a chart or primitive that is not here, copy that file from the library into `frontend/src`.
 
-**In this repo now** (`frontend/src/components/`): `Badge`, `Button`, `Card`, `Input`, `Meter` (`BarMeter`), `Avatar`, `Grainient`, `RadialMenu`, icons, plus the wired `AppShell` / `Sidebar` / `TopBar`.
-
-**Copy from the library when 3.4–3.6 need them:** `KpiStrip`, `Section`, `ActivityGraph`, `ActivityCalendar`, `NodeSparkline`, `RecallHeatmap`, and any other viz the real dashboard uses.
+**In this repo now** (`frontend/src/components/`): `Badge`, `Button`, `Card`, `Input`, `Meter` (`BarMeter`), `Avatar`, `Grainient`, `RadialMenu`, `Segmented`, `Section`, `KpiStrip`, `useCornerNotch`, `ActivityGraph`, `NodeSparkline`, icons, plus the wired `AppShell` / `Sidebar` / `TopBar`.
 
 Mapping to real data (parts 3.4–3.6):
 
@@ -163,7 +161,8 @@ Rules: no blind write retries (TRD §3). Reads may retry on 429/502/503/504, whi
 - `gateway/src/routes/insights.ts` (new) — the read endpoints.
 - `gateway/src/insights/queries.ts` (new) — the SQL, one function per view.
 - `gateway/src/insights/types.ts` (new) — response shapes shared with the frontend.
-- Register in `gateway/src/index.ts`.
+- `gateway/src/routes/memories.ts` — personal memory panel proxy.
+- Register in `gateway/src/app.ts`.
 
 **Logic.** Two families, two guards.
 
@@ -171,6 +170,7 @@ Rules: no blind write retries (TRD §3). Reads may retry on 429/502/503/504, whi
 - `GET /api/me/overview` — counts and last activity for **this user**.
 - `GET /api/me/sessions?range=&cursor=` — their calls and chats, newest first.
 - `GET /api/me/sessions/:id` — one session: ordered turns, per-turn timings, audio when present. 404 if it is not theirs. Never 403 with detail — do not confirm another user's session exists.
+- `GET /api/me/memories` — retrieve as this user (`gateway/src/routes/memories.ts`). Off when `MEMORY_PANEL_ENABLED` is not `true`.
 
 *Owner (`requireAppUser` + `requireOwner`):*
 - `GET /api/admin/overview?range=` — system counts, median and p90 time to first word, error rate, brain-mode split.
@@ -199,51 +199,48 @@ Rules:
 
 ## Part 3.3 — App shell & navigation
 
-**Goal.** One navigation frame around every screen, with `/admin` folded in.
+**Goal.** Two navigation frames: the personal app for everyone, and `/admin` for the owner.
 
 **Files.**
-- `frontend/src/app/shell/AppShell.tsx`, `Sidebar.tsx`, `TopBar.tsx` — already copied; wire them to real routes and identity.
-- `frontend/src/Root.tsx` — render pages inside the shell.
-- `frontend/src/lib/routes.ts` — add dashboard tab routes; keep `/admin` as a redirect.
-- `frontend/src/app/admin/AdminPage.tsx` — becomes the Persona tab's body, unchanged in behaviour.
+- `frontend/src/app/shell/AppShell.tsx`, `Sidebar.tsx`, `TopBar.tsx`, `ProductFrame.tsx`, `AdminFrame.tsx`.
+- `frontend/src/Root.tsx` — personal vs admin vs landing.
+- `frontend/src/lib/routes.ts`, `nav.ts` — two nav configs plus an owner-only Admin entry.
+- `frontend/src/app/admin/AdminPage.tsx` — Persona tab body, behaviour unchanged.
 
 **Logic.**
-- Nav items come from one config-driven list, filtered by role. A non-owner never sees an owner item — and the server refuses it anyway (3.2), so the UI filter is convenience, not security.
-- `/admin` redirects to the Persona tab. Do not break the existing link.
+- Personal sidebar is the same for every signed-in user. The owner extra item opens `/admin`.
+- `/admin` is its own shell. Testers who open it are bounced to `/dashboard`.
 - Sign-in state, persona name and account live in `TopBar`.
-- No new CSS files. `app-shell.css` and `dashboard.css` are already imported.
+- No new CSS files.
 
-**Config.** Route constants; nav labels. Nothing hardcoded in more than one place.
+**Config.** `VITE_NAV_ITEMS`, `VITE_NAV_OWNER_ITEMS`, `VITE_ADMIN_NAV_ITEMS`.
 
-**Errors.** Signed-out users get the existing sign-in card, not a broken shell.
+**Errors.** Signed-out users get the sign-in card, not a broken shell.
 
-**Manual test.** Sign in as owner: sidebar shows Overview, Conversations, People, Persona, Chat, Voice. Sign in as a tester: only the personal items. `/admin` lands on the Persona tab and everything there still works.
+**Manual test.** `npm run nav` checks the configured lists. Sign-in click-through: owner sees Home, Chat, Voice, plus Admin; `/admin` has Overview, Conversations, People, Persona. Tester sees only Home, Chat, Voice; `/admin` bounces home. Persona forms still work.
 
-**Done when.** Every screen renders inside the shell and `/admin` no longer exists as a standalone page.
+**Done when.** Every product screen is in the personal shell and `/admin` is a standalone owner app.
 
 ---
 
-## Part 3.4 — Owner dashboard: health & latency
+## Part 3.4 — Admin overview: health & latency
 
 **Goal.** Answer "is it healthy, and is it fast" without opening `psql`.
 
 **Files.**
-- `frontend/src/app/dashboard/DashboardPage.tsx` — becomes the role-split entry (D13).
-- `frontend/src/app/dashboard/owner/OverviewTab.tsx` (new).
-- `frontend/src/lib/insights.ts` (new) — typed fetch helpers for 3.2.
-- Copy any missing viz primitives from `Desktop/component-library` into `frontend/src` when this part needs them.
+- `frontend/src/app/admin/OverviewPage.tsx`.
+- `frontend/src/lib/insights.ts` — typed fetch helpers for 3.2.
 
 **Logic.**
-- `KpiStrip`: calls, turns, **median time to first word** (`reframe_first_token_ms` + `brain_ms`), error rate.
+- `KpiStrip`: calls, turns, **median time to first word**, error rate. Empty range is empty, never a fake 0%.
 - `Segmented` range switch driving every panel from one piece of state.
-- `ActivityGraph` for turns over the range; `RecallHeatmap` for activity or latency by hour.
-- Latency panel: p50/p90 per stage (STT, brain, first token, TTS), **split by `brain_mode`** so the A/B stays visible. Handle NULL `brain_mode` as "unrecorded".
+- `ActivityGraph` for turns over the range.
+- Latency panel: p50/p90 per stage, **split by `brain_mode`**. Handle unrecorded as configured.
 - `BarMeter` showing p50 against `LATENCY_BUDGET_FIRST_WORD_MS`.
-- Empty range renders an honest empty state, never a zero that looks like data.
 
-**Config.** `VITE_INSIGHTS_DEFAULT_RANGE`, `VITE_LATENCY_BUDGET_FIRST_WORD_MS` (mirror of the gateway value for the meter).
+**Config.** `VITE_INSIGHTS_DEFAULT_RANGE`, `VITE_LATENCY_BUDGET_FIRST_WORD_MS`.
 
-**Errors.** A failed fetch shows an error card and a retry, not an empty dashboard that reads as "no activity".
+**Errors.** A failed fetch shows an error card and a retry.
 
 **Manual test.** Hold two calls, one in each `BRAIN_MODE`. The overview shows both, the latency split matches `npm run brains`, and the KPI numbers match `psql`.
 
@@ -251,53 +248,53 @@ Rules:
 
 ---
 
-## Part 3.5 — Owner dashboard: conversations & people
+## Part 3.5 — Admin conversations & people
 
 **Goal.** Find any conversation and read exactly what happened in it.
 
 **Files.**
-- `frontend/src/app/dashboard/owner/ConversationsTab.tsx` (new)
-- `frontend/src/app/dashboard/owner/SessionDetail.tsx` (new)
-- `frontend/src/app/dashboard/owner/PeopleTab.tsx` (new)
-- `frontend/src/app/dashboard/owner/PersonaTab.tsx` — hosts the existing admin screen.
+- `frontend/src/app/admin/ConversationsPage.tsx`
+- `frontend/src/app/admin/PeoplePage.tsx`
+- `frontend/src/app/dashboard/Transcripts.tsx` — full reconstruct for admin.
 
 **Logic.**
-- Conversations list: user, channel badge (`text`/`voice`), start, duration, turn count, whether it ended, brain mode. Filters by range, channel and user. Cursor paging.
-- Session detail: turns in order with speaker, text, controller action and reasons, per-turn timings, `stt_meta` transcript and `tts_meta` voice, memory refs, and audio players when `audio_assets` has rows (nothing until 3.9 — render the absence honestly).
-- People: users with call counts, last seen, and their subscription state. Note in the UI that subscription is **not** an access gate today (§7) so nobody reads it as one.
-- Persona tab: the current admin screen, behaviour unchanged.
+- Conversations list: user, channel badge, start, duration, turn count, whether it ended. Filters by range, channel and user. Cursor paging.
+- Session detail: full reconstruct (turns, controller, timings, memory refs, audio when present).
+- People: users with call counts, last seen, and subscription state — labelled so subscription is not an access gate.
+- Persona: existing admin screen at `/admin/persona`.
 
-**Config.** Page sizes and filter options from 3.2's config. Channel and action labels from the existing schema constants, not new strings.
+**Config.** Page sizes and filter options from the read API. Channel and action labels from config.
 
-**Errors.** A session that vanishes mid-view shows a clear message. Long transcripts virtualise or page rather than freezing.
+**Errors.** A session that vanishes mid-view shows a clear message.
 
 **Manual test.** Pick a call from a live test, open it, and confirm the transcript matches what was actually said, the timings match `latency_spans`, and the controller reasons are shown.
 
-**Done when.** A call can be reconstructed in the UI as completely as the SQL reconstruction in Phase 2 §9.
+**Done when.** A call can be reconstructed in the UI as completely as the SQL reconstruction.
 
 ---
 
-## Part 3.6 — Personal view for testers
+## Part 3.6 — Personal home
 
-**Goal.** A signed-in tester sees their own history and what the persona knows about them.
+**Goal.** Every signed-in user sees their own history and what the persona knows about them.
 
 **Files.**
-- `frontend/src/app/dashboard/personal/PersonalDashboard.tsx` (new)
-- Reuses `SessionDetail` from 3.5 against the `/api/me/*` endpoints.
+- `frontend/src/app/dashboard/PersonalHome.tsx`
+- Spoken transcript (text/speakers/audio only) against `/api/me/*`.
+- `GET /api/me/memories` → worker `personas.retrieve` as that user.
 
 **Logic.**
-- Their calls and chats, newest first, with a way back into `/chat` or `/voice`.
-- One session's transcript, same component as the owner view, different endpoint.
-- "What it remembers about you": read the caller's **own** private pool via the existing Engram wrapper (`personas.retrieve` scoped to their `engram_user_id`) or from `memory_refs` on their turns. Never another user's pool, never a hand-built tenant (TRD §3).
-- No system metrics, no other users, no owner data.
+- Their calls and chats, newest first.
+- One session's spoken transcript — not the admin reconstruct.
+- Memory panel: retrieve as the signed-in `engram_user_id`. Never another user's pool, never a hand-built tenant.
+- No system metrics, no other users.
 
-**Config.** How many memories to show; whether the memory panel is enabled at all.
+**Config.** `MEMORY_PANEL_QUERY`, `MEMORY_PANEL_TOP_K`, `VITE_MEMORY_PANEL_ENABLED`.
 
 **Errors.** Engram unavailable degrades the memory panel only — the history still renders.
 
 **Manual test.** Two accounts, side by side: each sees only their own calls, and neither can reach the other's session id by editing the URL.
 
-**Done when.** A tester has something genuinely useful and provably cannot see anyone else.
+**Done when.** A member has something useful and cannot see anyone else.
 
 ---
 

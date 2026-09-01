@@ -1,11 +1,8 @@
 /**
- * Role-filtered nav: owner sees ops tabs; a tester never sees those items.
+ * Personal vs admin nav: everyone sees the same personal items;
+ * only the owner extra list includes Admin.
  */
-import {
-  loadNavConfig,
-  pathNeedsOwner,
-  visibleNav,
-} from "./nav";
+import { isAdminPath, loadNavConfig, personalNav } from "./nav";
 import { ROUTES } from "./routes";
 
 let failed = 0;
@@ -20,56 +17,43 @@ function check(name: string, ok: boolean, detail = ""): void {
 }
 
 const nav = loadNavConfig();
-const ownerItems = visibleNav(nav.items, true);
-const memberItems = visibleNav(nav.items, false);
+const memberItems = personalNav(false);
+const ownerPersonal = personalNav(true);
 
-console.log(`owner_nav=${ownerItems.map((item) => item.label).join(",")}`);
 console.log(`member_nav=${memberItems.map((item) => item.label).join(",")}`);
+console.log(`owner_personal_nav=${ownerPersonal.map((item) => item.label).join(",")}`);
+console.log(`admin_nav=${nav.adminItems.map((item) => item.label).join(",")}`);
 
-check("owner_nav_not_empty", ownerItems.length > 0);
 check("member_nav_not_empty", memberItems.length > 0);
-
-for (const item of ownerItems) {
-  check(
-    `owner_can_see_${item.id}`,
-    item.roles.includes(nav.ownerRole),
-  );
-}
-
-for (const item of memberItems) {
-  check(
-    `member_can_see_${item.id}`,
-    item.roles.includes(nav.memberRole),
-  );
-}
-
-const ownerOnly = nav.items.filter(
-  (item) =>
-    item.roles.includes(nav.ownerRole) &&
-    !item.roles.includes(nav.memberRole),
-);
-
-for (const item of ownerOnly) {
-  check(
-    `member_hidden_${item.id}`,
-    !memberItems.some((visible) => visible.id === item.id),
-  );
-  const sharedWithMember = nav.items.some(
-    (other) =>
-      other.to === item.to && other.roles.includes(nav.memberRole),
-  );
-  if (!sharedWithMember) {
-    check(`owner_only_path_${item.id}`, pathNeedsOwner(nav.items, item.to));
-  }
-}
-
+check("admin_nav_not_empty", nav.adminItems.length > 0);
 check(
-  "shared_dashboard_not_owner_only",
-  !pathNeedsOwner(nav.items, ROUTES.dashboard),
+  "member_matches_personal_items",
+  memberItems.length === nav.items.length &&
+    memberItems.every((item, index) => item.id === nav.items[index]?.id),
 );
 check(
-  "persona_path_is_owner_only",
-  pathNeedsOwner(nav.items, ROUTES.dashboardPersona),
+  "owner_extra_not_in_member",
+  nav.ownerItems.every(
+    (extra) => !memberItems.some((item) => item.id === extra.id),
+  ),
+);
+check(
+  "owner_sees_extra",
+  nav.ownerItems.every((extra) =>
+    ownerPersonal.some((item) => item.id === extra.id),
+  ),
+);
+check(
+  "admin_entry_is_admin_path",
+  nav.ownerItems.every((item) => isAdminPath(item.to)),
+);
+check(
+  "personal_items_are_not_admin",
+  nav.items.every((item) => !isAdminPath(item.to)),
+);
+check(
+  "admin_overview_is_admin_root",
+  nav.adminItems.some((item) => item.to === ROUTES.admin),
 );
 
 if (failed) {

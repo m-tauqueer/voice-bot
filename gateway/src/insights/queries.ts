@@ -640,6 +640,17 @@ function mapStages(
   }));
 }
 
+function joinSql(
+  sql: Sql,
+  fragments: readonly postgres.Fragment[],
+): postgres.Fragment {
+  const [first, ...rest] = fragments;
+  if (!first) {
+    throw new Error("insights select fragments must not be empty");
+  }
+  return rest.reduce((left, right) => sql`${left}, ${right}`, first);
+}
+
 export async function ownerLatency(
   sql: Sql,
   config: GatewayConfig,
@@ -649,12 +660,15 @@ export async function ownerLatency(
   const firstWord = firstWordExpr(sql, config);
   const spoke = firstWordPresent(sql, config);
   const stages = parseLatencyColumns(config.INSIGHTS_LATENCY_STAGES);
-  const stageSelect = stages.flatMap((stage) => [
-    sql`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${latencyIdent(sql, stage)})
+  const stageSelect = joinSql(
+    sql,
+    stages.flatMap((stage) => [
+      sql`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${latencyIdent(sql, stage)})
       FILTER (WHERE ${latencyIdent(sql, stage)} IS NOT NULL) AS ${sql(`${stage}_p50`)}`,
-    sql`percentile_cont(0.9) WITHIN GROUP (ORDER BY ${latencyIdent(sql, stage)})
+      sql`percentile_cont(0.9) WITHIN GROUP (ORDER BY ${latencyIdent(sql, stage)})
       FILTER (WHERE ${latencyIdent(sql, stage)} IS NOT NULL) AS ${sql(`${stage}_p90`)}`,
-  ]);
+    ]),
+  );
   const [overall] = await sql<Record<string, unknown>[]>`
     SELECT
       percentile_cont(0.5) WITHIN GROUP (ORDER BY ${firstWord})

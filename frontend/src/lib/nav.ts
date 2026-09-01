@@ -1,33 +1,25 @@
 import { MEMORY_ICONS } from "./memory-icons";
 import { requiredVite } from "./env";
-import { matchPath } from "./router";
-import { ROUTES, type RouteId } from "./routes";
+import { matchPath, matchPattern, pathWithin } from "./router";
+import {
+  ADMIN_NAV_ROUTE_IDS,
+  OWNER_NAV_ROUTE_IDS,
+  PATTERNS,
+  PERSONAL_ROUTE_IDS,
+  ROUTES,
+  type RouteId,
+} from "./routes";
 
 export type NavItem = {
   id: string;
   label: string;
   icon: string;
   to: string;
-  roles: readonly string[];
 };
 
 const ROUTE_IDS = new Set<string>(Object.keys(ROUTES));
 
-function parseRoles(raw: string, allowed: Set<string>): string[] {
-  const roles = raw
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-  if (roles.length === 0 || roles.some((role) => !allowed.has(role))) {
-    throw new Error(`Invalid nav roles: ${raw}`);
-  }
-  return roles;
-}
-
-export function parseNavItems(
-  raw: string,
-  allowedRoles: Set<string>,
-): NavItem[] {
+function parseNavItems(raw: string, allowed: ReadonlySet<string>, name: string): NavItem[] {
   const items: NavItem[] = [];
   const seen = new Set<string>();
   for (const entry of raw.split(/[;\n]+/)) {
@@ -36,21 +28,17 @@ export function parseNavItems(
       continue;
     }
     const parts = trimmed.split("|").map((part) => part.trim());
-    if (parts.length !== 5) {
-      throw new Error(`Invalid VITE_NAV_ITEMS entry: ${trimmed}`);
+    if (parts.length !== 4) {
+      throw new Error(`Invalid ${name} entry: ${trimmed}`);
     }
-    const [id, label, icon, routeId, roleRaw] = parts;
+    const [id, label, icon, routeId] = parts;
     if (!id || !label || !icon || !routeId) {
-      throw new Error(`Invalid VITE_NAV_ITEMS entry: ${trimmed}`);
+      throw new Error(`Invalid ${name} entry: ${trimmed}`);
     }
     if (seen.has(id)) {
       throw new Error(`Duplicate nav id: ${id}`);
     }
-    if (
-      !ROUTE_IDS.has(routeId) ||
-      routeId === "admin" ||
-      routeId === "home"
-    ) {
+    if (!ROUTE_IDS.has(routeId) || !allowed.has(routeId)) {
       throw new Error(`Unknown nav route: ${routeId}`);
     }
     if (!(icon in MEMORY_ICONS)) {
@@ -62,20 +50,19 @@ export function parseNavItems(
       label,
       icon,
       to: ROUTES[routeId as RouteId],
-      roles: parseRoles(roleRaw, allowedRoles),
     });
   }
   if (items.length === 0) {
-    throw new Error("VITE_NAV_ITEMS is empty");
+    throw new Error(`${name} is empty`);
   }
   return items;
 }
 
 export type NavConfig = {
   appName: string;
-  ownerRole: string;
-  memberRole: string;
   items: NavItem[];
+  ownerItems: NavItem[];
+  adminItems: NavItem[];
   signOutLabel: string;
   loadingLabel: string;
   continueLabel: string;
@@ -87,6 +74,8 @@ export type NavConfig = {
     voiceBody: string;
     personaTitle: string;
     personaBody: string;
+    adminTitle: string;
+    adminBody: string;
     appTitle: string;
     appBody: string;
   };
@@ -98,25 +87,26 @@ export function loadNavConfig(): NavConfig {
   if (cached) {
     return cached;
   }
-  const ownerRole = requiredVite("VITE_NAV_ROLE_OWNER");
-  const memberRole = requiredVite("VITE_NAV_ROLE_MEMBER");
-  if (ownerRole === memberRole) {
-    throw new Error("VITE_NAV_ROLE_OWNER and VITE_NAV_ROLE_MEMBER must differ");
-  }
   const items = parseNavItems(
     requiredVite("VITE_NAV_ITEMS"),
-    new Set([ownerRole, memberRole]),
+    new Set(PERSONAL_ROUTE_IDS),
+    "VITE_NAV_ITEMS",
   );
-  const ownerItems = items.filter((item) => item.roles.includes(ownerRole));
-  const memberItems = items.filter((item) => item.roles.includes(memberRole));
-  if (ownerItems.length === 0 || memberItems.length === 0) {
-    throw new Error("VITE_NAV_ITEMS must include items for each role");
-  }
+  const ownerItems = parseNavItems(
+    requiredVite("VITE_NAV_OWNER_ITEMS"),
+    new Set(OWNER_NAV_ROUTE_IDS),
+    "VITE_NAV_OWNER_ITEMS",
+  );
+  const adminItems = parseNavItems(
+    requiredVite("VITE_ADMIN_NAV_ITEMS"),
+    new Set(ADMIN_NAV_ROUTE_IDS),
+    "VITE_ADMIN_NAV_ITEMS",
+  );
   cached = {
     appName: requiredVite("VITE_APP_NAME"),
-    ownerRole,
-    memberRole,
     items,
+    ownerItems,
+    adminItems,
     signOutLabel: requiredVite("VITE_SIGNOUT_LABEL"),
     loadingLabel: requiredVite("VITE_LOADING_LABEL"),
     continueLabel: requiredVite("VITE_SIGNIN_CONTINUE"),
@@ -128,6 +118,8 @@ export function loadNavConfig(): NavConfig {
       voiceBody: requiredVite("VITE_SIGNIN_BODY_VOICE"),
       personaTitle: requiredVite("VITE_SIGNIN_TITLE_PERSONA"),
       personaBody: requiredVite("VITE_SIGNIN_BODY_PERSONA"),
+      adminTitle: requiredVite("VITE_SIGNIN_TITLE_ADMIN"),
+      adminBody: requiredVite("VITE_SIGNIN_BODY_ADMIN"),
       appTitle: requiredVite("VITE_SIGNIN_TITLE_APP"),
       appBody: requiredVite("VITE_SIGNIN_BODY_APP"),
     },
@@ -135,33 +127,33 @@ export function loadNavConfig(): NavConfig {
   return cached;
 }
 
-export function visibleNav(items: NavItem[], owner: boolean): NavItem[] {
-  const { ownerRole, memberRole } = loadNavConfig();
-  const role = owner ? ownerRole : memberRole;
-  return items.filter((item) => item.roles.includes(role));
+export function personalNav(owner: boolean): NavItem[] {
+  const { items, ownerItems } = loadNavConfig();
+  return owner ? [...items, ...ownerItems] : items;
 }
 
 export function navIdForPath(items: NavItem[], path: string): string {
-  return items.find((item) => matchPath(path, item.to))?.id ?? items[0]?.id ?? "";
+  const exact = items.find((item) => matchPath(path, item.to));
+  if (exact) {
+    return exact.id;
+  }
+  const nested = [...items]
+    .filter((item) => pathWithin(path, item.to))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  return nested?.id ?? items[0]?.id ?? "";
 }
 
-const OWNER_TAB_ROUTES = [
-  ROUTES.dashboardConversations,
-  ROUTES.dashboardPeople,
-  ROUTES.dashboardPersona,
-  ROUTES.admin,
-] as const;
+export function isPersonalPath(path: string): boolean {
+  return (
+    matchPath(path, ROUTES.dashboard) ||
+    matchPath(path, ROUTES.chat) ||
+    matchPath(path, ROUTES.voice) ||
+    matchPattern(path, PATTERNS.dashboardSession) !== null
+  );
+}
 
-export function pathNeedsOwner(items: NavItem[], path: string): boolean {
-  const { ownerRole, memberRole } = loadNavConfig();
-  const hits = items.filter((item) => matchPath(path, item.to));
-  if (hits.length > 0) {
-    return hits.every(
-      (item) =>
-        item.roles.includes(ownerRole) && !item.roles.includes(memberRole),
-    );
-  }
-  return OWNER_TAB_ROUTES.some((route) => matchPath(path, route));
+export function isAdminPath(path: string): boolean {
+  return pathWithin(path, ROUTES.admin);
 }
 
 export function signInCopy(path: string): { title: string; body: string } {
@@ -172,11 +164,8 @@ export function signInCopy(path: string): { title: string; body: string } {
   if (matchPath(path, ROUTES.voice)) {
     return { title: signIn.voiceTitle, body: signIn.voiceBody };
   }
-  if (
-    matchPath(path, ROUTES.dashboardPersona) ||
-    matchPath(path, ROUTES.admin)
-  ) {
-    return { title: signIn.personaTitle, body: signIn.personaBody };
+  if (isAdminPath(path)) {
+    return { title: signIn.adminTitle, body: signIn.adminBody };
   }
   return { title: signIn.appTitle, body: signIn.appBody };
 }

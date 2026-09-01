@@ -563,6 +563,25 @@ class TurnRunner:
                 )
                 return
 
+    def retrieve_memories(
+        self,
+        *,
+        engram_user_id: str,
+        engram_persona_id: str,
+    ) -> list[dict[str, str | None]]:
+        brain = self._brains.get(engram_user_id)
+        outcome = brain.retrieve(
+            engram_persona_id,
+            self._settings.memory_panel_query,
+            top_k=self._settings.memory_panel_top_k,
+        )
+        memories: list[dict[str, str | None]] = []
+        for hit in outcome.results:
+            if not hit.text:
+                continue
+            memories.append({"text": hit.text, "tenant": hit.tenant})
+        return memories
+
     def close(self) -> None:
         self._writers.shutdown(wait=True)
         self._brains.close()

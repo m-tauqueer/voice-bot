@@ -230,6 +230,18 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("session not found"),
   ),
+  MEMORY_PANEL_ENABLED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  MEMORY_PANEL_DISABLED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("memory panel is off"),
+  ),
+  MEMORY_PANEL_NO_PERSONA: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("persona not found"),
+  ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
   AZURE_STORAGE_KEY: optionalNonEmpty,

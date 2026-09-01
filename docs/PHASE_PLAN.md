@@ -83,7 +83,7 @@ Goal: after Phase 0, anyone can clone, install, and run empty scaffolding for al
   - Confirm dev server runs and a base page renders.
 - Locked / verified:
   - CSS is imported only from [`frontend/src/main.tsx`](../frontend/src/main.tsx), in the documented order (`oc.tailwind.css` → `oc.css` → `fonts.css` → `index.css` → `surfaces.css` → `dial.css` → `ui.css` → `app-shell.css` → `dashboard.css`). No component imports CSS.
-  - `npm run dev:frontend` serves Vite at port **5188**. `/` is the landing page; `/dashboard` is the signed-in app. Vite proxies `/auth`, `/api`, and `/ws` to the gateway bind port.
+  - `npm run dev:frontend` serves Vite at port **5188**. `/` is the landing page; `/dashboard` is the signed-in personal app; `/admin` is owner-only. Vite proxies `/auth`, `/api`, and `/ws` to the gateway bind port.
 - Manual test: open the local frontend; base UI renders with correct styling.
 - Commit gate: on Tauqueer's word.
 
@@ -253,7 +253,7 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.2 complete.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
+**Status: 3.1–3.6 implemented.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
 
 The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
@@ -268,23 +268,23 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 - Manual test: `npm run isolation` covers the admin surface; overview numbers match the SQL. **Done.**
 
 ### Part 3.3 — App shell & navigation
-- Goal: one navigation frame around every screen.
-- Tasks: adopt the library's `AppShell`/`Sidebar`/`TopBar`; role-filtered nav; `/admin` folds into the dashboard as the Persona tab and its route redirects.
-- Manual test: owner and tester each see the right navigation; everything on the old admin screen still works.
+- Goal: two navigation frames — personal app and `/admin`.
+- Tasks: library `AppShell`; same Home/Chat/Voice for every user; owner-only Admin sidebar item; `/admin` is its own app.
+- Manual test: `npm run nav`; owner and tester see the same personal nav in the browser; only the owner reaches `/admin`; persona forms still work.
 
-### Part 3.4 — Owner dashboard: health & latency
+### Part 3.4 — Admin overview: health & latency
 - Goal: answer "is it healthy and fast" without SQL.
-- Tasks: KPIs, activity over a range, per-stage p50/p90 split by brain mode, p50 against the configured budget. Delete the mock data file.
+- Tasks: KPIs, activity over a range, per-stage p50/p90 split by brain mode, p50 against the configured budget.
 - Manual test: numbers match `psql` and `npm run brains`.
 
-### Part 3.5 — Owner dashboard: conversations & people
+### Part 3.5 — Admin conversations & people
 - Goal: find any conversation and read what happened in it.
 - Tasks: filterable session list; full transcript with controller reasons, timings, memory refs and audio when present; users with activity.
 - Manual test: a call reconstructs in the UI as completely as it does in SQL.
 
-### Part 3.6 — Personal view for testers
-- Goal: a signed-in tester sees their own history and what the persona remembers about them.
-- Tasks: their calls and transcripts; their own private memory only; no system metrics.
+### Part 3.6 — Personal home
+- Goal: a signed-in user sees their own history and what the persona remembers about them.
+- Tasks: their calls and spoken transcripts; their own retrieve only; no system metrics.
 - Manual test: two accounts side by side, neither can reach the other by editing a URL.
 
 ### Part 3.7 — Observability & latency budgets
