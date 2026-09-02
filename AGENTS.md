@@ -66,7 +66,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, and the owner admin app are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, and the latency budget check are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
@@ -96,6 +96,7 @@ npm run bargein      # Barge-in state machine (no services needed)
 npm run failures     # Failure taxonomy and reconnect rules (no live outages)
 npm run isolation    # Two signed-in users cannot reach each other's conversation
 npm run nav          # Personal vs admin nav lists (from frontend/)
+npm run budgets      # First-word p50/p90 vs budget, plus Engram request-log review
 npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)

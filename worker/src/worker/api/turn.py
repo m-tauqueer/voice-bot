@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from worker.api.http import raise_turn
+from worker.api.http import raise_turn, read_correlation_id
 from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
 from worker.turn.errors import TurnError
@@ -27,6 +27,7 @@ class TurnOut(BaseModel):
     engram_session_id: str | None
     turn_ids: list[UUID]
     reasons: list[str]
+    correlation_id: UUID
     recorded: bool = True
     warning: str | None = None
     warning_code: str | None = None
@@ -41,7 +42,7 @@ def build_turn_router(
     runner = runner or TurnRunner(settings)
 
     @router.post("/internal/turn", response_model=TurnOut)
-    def turn(body: TurnIn) -> TurnOut:
+    def turn(request: Request, body: TurnIn) -> TurnOut:
         try:
             result = runner.run(
                 app_user_id=body.app_user_id,
@@ -49,6 +50,7 @@ def build_turn_router(
                 persona_id=body.persona_id,
                 session_id=body.session_id,
                 text=body.text,
+                correlation_id=read_correlation_id(request, settings),
             )
         except TurnError as exc:
             raise_turn(exc)
@@ -59,6 +61,7 @@ def build_turn_router(
             engram_session_id=result.engram_session_id,
             turn_ids=result.turn_ids,
             reasons=result.reasons,
+            correlation_id=result.correlation_id,
             recorded=result.recorded,
             warning=result.warning,
             warning_code=result.warning_code,

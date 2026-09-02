@@ -77,6 +77,21 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     internal_secret_header: str = Field(default="x-internal-secret")
+    correlation_id_header: str = Field(default="x-correlation-id")
+    log_turn_fields: str = Field(
+        default=(
+            "correlation_id,session_id,turn_ids,action,reasons,"
+            "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded"
+        ),
+        min_length=1,
+    )
+    log_turn_event: str = Field(default="turn", min_length=1)
+    voice_notice_kind_trace: str = Field(default="trace", min_length=1)
+    voice_notice_trace_code: str = Field(default="turn_traced", min_length=1)
+    voice_notice_trace_message: str = Field(default="Turn recorded.", min_length=1)
+    engram_logs_limit: int = Field(default=50, gt=0)
+    engram_log_result_denied: str = Field(default="denied", min_length=1)
+    engram_log_result_error: str = Field(default="error", min_length=1)
     engram_api_key: str | None = None
     engram_org_id: str | None = None
     engram_base_url: HttpUrl | None = None
@@ -148,6 +163,27 @@ class WorkerSettings(BaseSettings):
     def default_internal_header(cls, value: object) -> object:
         if isinstance(value, str) and value.strip() == "":
             return "x-internal-secret"
+        return value
+
+    @field_validator("correlation_id_header", mode="before")
+    @classmethod
+    def default_correlation_header(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip() == "":
+            return "x-correlation-id"
+        return value
+
+    @field_validator("log_turn_fields")
+    @classmethod
+    def turn_fields_required(cls, value: str) -> str:
+        fields = {
+            item.strip()
+            for item in value.replace("\n", ",").split(",")
+            if item.strip()
+        }
+        if "correlation_id" not in fields or "session_id" not in fields:
+            raise ValueError(
+                "LOG_TURN_FIELDS must include correlation_id and session_id",
+            )
         return value
 
     @field_validator(

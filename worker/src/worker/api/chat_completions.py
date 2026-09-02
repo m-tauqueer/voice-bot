@@ -10,10 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from worker.api.http import raise_turn
+from worker.api.http import raise_turn, read_correlation_id
 from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
 from worker.notices import publish_notice
+from worker.observe.fields import turn_log_fields
 from worker.turn.errors import TurnError
 from worker.turn.openai_completion import (
     chunk_line,
@@ -22,7 +23,7 @@ from worker.turn.openai_completion import (
     new_completion_id,
 )
 from worker.turn.openai_messages import last_user_text
-from worker.turn.service import TurnPlan, TurnResult, TurnRunner
+from worker.turn.service import TurnPlan, TurnRunner
 
 log = structlog.get_logger(__name__)
 
@@ -63,27 +64,6 @@ def _uuid_header(request: Request, name: str) -> UUID:
         ) from exc
 
 
-def _log_turn(
-    plan: TurnPlan,
-    result: TurnResult,
-    *,
-    streamed: bool,
-) -> None:
-    log.info(
-        "voice turn",
-        session_id=str(plan.session_id),
-        action=result.action,
-        reasons=result.reasons,
-        engram_session_id=result.engram_session_id,
-        turn_ids=[str(turn_id) for turn_id in result.turn_ids],
-        spoke=result.reply_text is not None,
-        streamed=streamed,
-        brain_ms=plan.brain_ms,
-        reframe_ms=plan.reframe_ms,
-        reframe_first_token_ms=plan.reframe_first_token_ms,
-    )
-
-
 def build_chat_completions_router(
     settings: WorkerSettings,
     runner: TurnRunner | None = None,
@@ -93,7 +73,7 @@ def build_chat_completions_router(
     runner = runner or TurnRunner(settings)
     path = settings.byo_llm_chat_completions_path
 
-    def _finish(plan: TurnPlan, *, streamed: bool) -> None:
+    def _finish(plan: TurnPlan) -> None:
         result = runner.finish(plan)
         if not result.recorded:
             publish_notice(
@@ -102,7 +82,6 @@ def build_chat_completions_router(
                 settings.failure_code_record,
                 settings.failure_message_record,
             )
-        _log_turn(plan, result, streamed=streamed)
 
     @router.post(path, response_model=None)
     def chat_completions(
@@ -113,21 +92,13 @@ def build_chat_completions_router(
         persona_id = _uuid_header(request, settings.byo_llm_persona_header)
         session_id = _uuid_header(request, settings.byo_llm_session_header)
         engram_user_id = _header(request, settings.byo_llm_engram_user_header)
+        correlation_id = read_correlation_id(request, settings)
         text = last_user_text(
             [message.model_dump() for message in body.messages],
             user_role=settings.byo_llm_user_role,
             text_part_type=settings.byo_llm_text_part_type,
         )
         streaming = bool(body.stream) and settings.reframe_stream_enabled
-        log.info(
-            "voice turn requested",
-            session_id=str(session_id),
-            stream_requested=bool(body.stream),
-            streaming=streaming,
-            messages=len(body.messages),
-            has_text=bool(text.strip()),
-        )
-
         # Everything that can choose a status code happens before the first byte.
         try:
             plan = runner.begin(
@@ -136,9 +107,26 @@ def build_chat_completions_router(
                 persona_id=persona_id,
                 session_id=session_id,
                 text=text,
+                correlation_id=correlation_id,
             )
         except TurnError as exc:
             raise_turn(exc)
+
+        log.info(
+            "voice turn requested",
+            session_id=str(session_id),
+            stream_requested=bool(body.stream),
+            streaming=streaming,
+            messages=len(body.messages),
+            has_text=bool(text.strip()),
+            **turn_log_fields(
+                settings,
+                {
+                    "correlation_id": str(plan.correlation_id),
+                    "session_id": str(session_id),
+                },
+            ),
+        )
 
         completion_id = new_completion_id(settings)
         created = int(time.time())
@@ -168,7 +156,6 @@ def build_chat_completions_router(
                 settings.failure_code_record,
                 settings.failure_message_record,
             )
-        _log_turn(plan, result, streamed=False)
         return completion_payload(
             settings,
             completion_id=completion_id,
@@ -220,6 +207,6 @@ def build_chat_completions_router(
             finish_reason=settings.byo_llm_finish_reason,
         )
         yield done_line(settings)
-        _finish(plan, streamed=True)
+        _finish(plan)
 
     return router

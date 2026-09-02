@@ -52,6 +52,35 @@ def publish_notice(
 ) -> None:
     """Tell the gateway a voice turn failed. Never raises."""
     body = notice_payload(session_id, code, message)
+    _publish(settings, session_id, code, body)
+
+
+def publish_trace(
+    settings: WorkerSettings,
+    session_id: UUID,
+    correlation_id: UUID,
+    turn_ids: list[UUID],
+) -> None:
+    """Tell the gateway the id that joins this turn's logs to its row."""
+    body = json.dumps(
+        {
+            "session_id": str(session_id),
+            "code": settings.voice_notice_trace_code,
+            "message": settings.voice_notice_trace_message,
+            "kind": settings.voice_notice_kind_trace,
+            "correlation_id": str(correlation_id),
+            "turn_ids": [str(turn_id) for turn_id in turn_ids],
+        },
+    )
+    _publish(settings, session_id, settings.voice_notice_trace_code, body)
+
+
+def _publish(
+    settings: WorkerSettings,
+    session_id: UUID,
+    code: str,
+    body: str,
+) -> None:
     try:
         client = _redis(settings)
         if client is None:

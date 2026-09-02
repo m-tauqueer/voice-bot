@@ -163,6 +163,7 @@ Rules the worker MUST follow:
 - **Writes:** on `chat`, Engram writes the caller's private pool automatically (both user turn and reply). On `retrieve`, the app writes both sides with `personas.converse(pid, text, session_id=..., speaker=...)` **after** the reply has been delivered, on a small thread pool so it never holds the reply open. Written turns are retrievable immediately. Never blind-retried; a failed write-back is logged and dropped.
 - **Subscriptions are not an access gate today.** `personas.subscribe` needs the `org:manage` permission, which the current API key lacks (403 for every caller identity). Independently, an unknown `user_id` was allowed `chat`, `retrieve` and `converse` on this persona — so a missing subscription does not refuse anything. Per-user isolation therefore rests on the app: the gateway only ever mints an Engram id from an authenticated account, and `TurnRunner` refuses a session whose stored ids do not match (403). Private pools remain scoped per Engram `user_id`.
 - **Consent:** we send text only, so audio/video/FER consent flags do not apply. Do not send audio to Engram.
+- **Request logs:** `engram.insights.logs(limit=...)` is org-scoped (`GET /orgs/{org}/logs`, SDK `EngramClient(org_id)` / empty `user_id`). Rows are metadata only. `result` distinguishes a refusal (`denied`) from a fault (`error`). The call is gated by `audit:read`; a 403 is reported as `SKIP` by `npm run budgets`, not treated as a product outage.
 - **Errors:** handle the documented taxonomy (401/402/403/404/409/422/5xx). Reads may retry on 429/502/503/504; **writes are never blind-retried**. Set client `timeout` generously.
 - **Latency reality:** Engram is alpha; `chat` latency is unknown and may be slow. Mitigate with session-open-at-call-start and a thinking cue; if unworkable under the Voice Agent API, trip the fallback.
 
@@ -189,12 +190,12 @@ Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurabl
 - `personas` — local reference to the Engram persona (Engram `persona_id`, handle, display name, voice config).
 - `subscriptions` — which users are subscribed to the persona (mirrors Engram state for admin visibility).
 - `sessions` — a voice/chat session: app session id, user id, persona id, **Engram `session_id`**, channel, started/ended.
-- `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), created_at.
+- `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), `correlation_id` (the same id as the gateway and worker log lines for that turn; added in `infra/migrations/0005_correlation_id.sql`; nullable on rows written before that), created_at.
 - `memory_refs` — Engram gids/tenants referenced or produced by a turn (for audit/debug).
 - `audio_assets` — per turn/direction: Azure Blob URL, duration, format, size. Written only when `VOICE_AUDIO_PERSIST_ENABLED` is on and the storage keys are set; off until there is a storage account.
 - `latency_spans` — per turn: `stt_ms`, `brain_ms` (the Engram call), `reframe_ms`, `reframe_first_token_ms` (when speech could start), `tts_first_byte_ms`, `total_ms`, and `transport_latency` holding the transport's own breakdown. That breakdown arrives as several single-field messages per turn and is merged before it is written.
 
-Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/cancel flags, interim-STT assembly buffer.
+Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/cancel flags, interim-STT assembly buffer. The voice notice Redis channel also carries a trace payload after a turn is recorded so the gateway can log the voice correlation id; that payload is log-only and is never sent to the caller.
 
 ---
 
@@ -215,7 +216,7 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 - **Latency:** ~2-2.5s/turn target for the first build; capture per-stage spans; a thinking cue masks brain latency. Measured to first spoken word: **~2.5-4s on the default `retrieve` brain**, against ~12.5s on `chat` (of which ~11s is Engram-side generation we do not control).
 - **Reliability:** Engram down = product down (honest messaging). Deepgram down = session ends + reconnect. Blob storage down = the call continues, logged and surfaced to the client as a warning — it is a secondary record, not the product. Handle Engram error taxonomy; never blind-retry writes.
 - **Security:** secrets server-side only; OAuth-gated; audit-friendly canonical store.
-- **Observability:** structured logs + turn-level durations from day one of Phase 2.
+- **Observability:** structured logs plus a per-turn correlation id on the stored row. Typed chat mints the id in the gateway and sends it on `CORRELATION_ID_HEADER`. Voice mints it on the worker (Deepgram does not forward a per-turn header) and the gateway logs it from the Redis trace notice. Log fields are an allow-list (`LOG_TURN_FIELDS`); transcript text is omitted unless listed. `npm run budgets` compares recent p50/p90 time-to-first-word per stored `brain_mode` to config and reviews Engram `insights.logs` for denials and errors. The check never changes call behaviour. The admin reconstruct shows the id; the personal spoken transcript does not.
 
 ---
 

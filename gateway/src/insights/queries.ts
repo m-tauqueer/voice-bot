@@ -14,9 +14,11 @@ import {
 } from "./parse.js";
 import type {
   ActivitySeries,
+  BudgetModeRow,
   InsightsUserList,
   LatencyByBrainMode,
   LatencyReport,
+  LatestTrace,
   OwnerOverview,
   PersonalOverview,
   SessionDetail,
@@ -472,6 +474,7 @@ async function sessionDetail(
       stt_meta: unknown;
       tts_meta: unknown;
       brain_mode: string | null;
+      correlation_id: string | null;
       created_at: Date;
       stt_ms: number | null;
       brain_ms: number | null;
@@ -495,6 +498,7 @@ async function sessionDetail(
       t.stt_meta,
       t.tts_meta,
       t.brain_mode,
+      t.correlation_id,
       t.created_at,
       l.stt_ms,
       l.brain_ms,
@@ -554,6 +558,7 @@ async function sessionDetail(
     stt_meta: asJsonValue(row.stt_meta),
     tts_meta: asJsonValue(row.tts_meta),
     brain_mode: row.brain_mode,
+    correlation_id: row.correlation_id,
     created_at: asIso(row.created_at) ?? row.created_at.toISOString(),
     latency: mapLatency(row),
     memory:
@@ -785,5 +790,66 @@ export async function ownerUsers(
       subscription_status: row.subscription_status,
     })),
     next_cursor: extra && last ? encodeUserCursor(last) : null,
+  };
+}
+
+export async function budgetByBrainMode(
+  sql: Sql,
+  config: GatewayConfig,
+): Promise<BudgetModeRow[]> {
+  const firstWord = firstWordExpr(sql, config);
+  const spoke = firstWordPresent(sql, config);
+  const hours = config.LATENCY_BUDGET_WINDOW_HOURS;
+  const rows = await sql<
+    {
+      brain_mode: string;
+      samples: number;
+      p50: number | null;
+      p90: number | null;
+    }[]
+  >`
+    SELECT
+      COALESCE(t.brain_mode, ${config.INSIGHTS_BRAIN_MODE_UNRECORDED}) AS brain_mode,
+      count(*)::int AS samples,
+      percentile_cont(0.5) WITHIN GROUP (ORDER BY ${firstWord}) AS p50,
+      percentile_cont(0.9) WITHIN GROUP (ORDER BY ${firstWord}) AS p90
+    FROM latency_spans l
+    INNER JOIN turns t ON t.id = l.turn_id
+    WHERE t.created_at >= clock_timestamp() - (${hours} * interval '1 hour')
+      AND ${spoke}
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  return rows.map((row) => ({
+    brain_mode: row.brain_mode,
+    samples: asCount(row.samples),
+    p50: asPercentile(row.p50),
+    p90: asPercentile(row.p90),
+  }));
+}
+
+export async function latestTracedTurn(sql: Sql): Promise<LatestTrace | null> {
+  const [row] = await sql<
+    {
+      id: string;
+      correlation_id: string;
+      session_id: string;
+      created_at: Date;
+    }[]
+  >`
+    SELECT t.id, t.correlation_id, t.session_id, t.created_at
+    FROM turns t
+    WHERE t.correlation_id IS NOT NULL
+    ORDER BY t.created_at DESC, t.id DESC
+    LIMIT 1
+  `;
+  if (!row) {
+    return null;
+  }
+  return {
+    turn_id: row.id,
+    correlation_id: row.correlation_id,
+    session_id: row.session_id,
+    created_at: asIso(row.created_at) ?? row.created_at.toISOString(),
   };
 }

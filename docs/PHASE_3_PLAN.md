@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 3. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 3 goal: the product survives its dependencies failing, can be watched and understood from a UI instead of `psql`, is safe to put in front of testers, and runs on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.6 implemented.** Click-through of owner vs tester still belongs to Tauqueer. Remaining parts start when Tauqueer names one.
+**Status: 3.1–3.7 implemented.** Click-through of owner vs tester still belongs to Tauqueer. Remaining parts start when Tauqueer names one.
 
 ---
 
@@ -49,7 +49,7 @@ Tauqueer's priorities are failure handling and observability, then the security 
 | Canonical record | Postgres | `users`, `personas`, `subscriptions`, `sessions`, `turns`, `memory_refs`, `audio_assets`, `latency_spans`. See §3. |
 | Product UI | `/`, `/dashboard`, `/chat`, `/voice`, `/admin` | Landing and sign-in at `/`. Personal app at `/dashboard`. Admin app at `/admin`. |
 | Component library | `Desktop/component-library` | Reference only. Copy a primitive into `frontend/` when a part needs it. The gallery and unused showcase files are not in this repo. |
-| Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`. |
+| Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`, `failures`, `nav`, `budgets`. |
 
 ---
 
@@ -69,7 +69,7 @@ Settled with Tauqueer before this plan was written. Do not silently change them.
 
 ## 3. The canonical record the dashboard reads
 
-Everything below already exists and is populated. No migration is needed for parts 3.2–3.6 unless a part says so.
+Everything below already exists and is populated. No migration is needed for parts 3.2–3.6 unless a part says so. Part 3.7 adds `turns.correlation_id` (`infra/migrations/0005_correlation_id.sql`).
 
 ```
 users(id, google_sub, email, engram_user_id, created_at, updated_at)
@@ -77,7 +77,7 @@ personas(id, engram_persona_id, handle, display_name, description, voice_config,
 subscriptions(id, user_id, persona_id, status, created_at)
 sessions(id, user_id, persona_id, engram_session_id, channel, started_at, ended_at)
 turns(id, session_id, ordinal, speaker, text, messages, controller_action,
-      controller_reasons, stt_meta, tts_meta, brain_mode, created_at)
+      controller_reasons, stt_meta, tts_meta, brain_mode, correlation_id, created_at)
 memory_refs(id, turn_id, memories_used, engram_session_id, created_at)
 audio_assets(id, turn_id, direction, blob_url, duration_ms, format, size_bytes, created_at)
 latency_spans(id, turn_id, stt_ms, brain_ms, reframe_ms, reframe_first_token_ms,
@@ -88,6 +88,7 @@ Notes that matter when querying:
 
 - `channel` is `text` or `voice`; both live in the same tables.
 - `brain_mode` is `retrieve`, `chat`, or NULL for turns recorded before it existed. Any A/B view must handle NULL.
+- `correlation_id` is NULL on turns recorded before the observability migration. Admin reconstruct hides the field when it is null.
 - `latency_spans` attaches to the **persona** turn when the turn spoke, and to the user turn when it stayed silent.
 - `reframe_first_token_ms` is when speech could start — the number to show as "time to first word", not `total_ms`.
 - `transport_latency` is JSONB holding the transport's own breakdown (`ttt_text_latency`, `tts_latency`, `total_latency`, sometimes `stt_latency`).
@@ -147,7 +148,7 @@ Rules: no blind write retries (TRD §3). Reads may retry on 429/502/503/504, whi
 
 **Errors.** This part *is* the error handling. Nothing may be swallowed.
 
-**Manual test.** `npm run failures` — taxonomy, reconnect rules, Redis timeout, and the worker turn runner against a real session. Live outages (dead Engram host, dropped tunnel, Redis stopped mid-call) are optional; the probe is the accepted gate.
+**Manual test.** `npm run failures` — taxonomy, reconnect rules, Redis timeout, and the worker turn runner against a real session. Live outages (dead Engram host, dropped tunnel, Redis stopped mid-call) are optional; the probe is the accepted gate. **Done.**
 
 **Done when.** `npm run failures` passes and each row in §7 is implemented in code.
 
@@ -217,9 +218,9 @@ Rules:
 
 **Errors.** Signed-out users get the sign-in card, not a broken shell.
 
-**Manual test.** `npm run nav` checks the configured lists. Sign-in click-through: owner sees Home, Chat, Voice, plus Admin; `/admin` has Overview, Conversations, People, Persona. Tester sees only Home, Chat, Voice; `/admin` bounces home. Persona forms still work.
+**Manual test.** `npm run nav` checks the configured lists. **Done.** Sign-in click-through: owner sees Home, Chat, Voice, plus Admin; `/admin` has Overview, Conversations, People, Persona. Tester sees only Home, Chat, Voice; `/admin` bounces home. Persona forms still work. That click-through still belongs to Tauqueer.
 
-**Done when.** Every product screen is in the personal shell and `/admin` is a standalone owner app.
+**Done when.** Every product screen is in the personal shell and `/admin` is a standalone owner app. **Implemented.**
 
 ---
 
@@ -242,9 +243,9 @@ Rules:
 
 **Errors.** A failed fetch shows an error card and a retry.
 
-**Manual test.** Hold two calls, one in each `BRAIN_MODE`. The overview shows both, the latency split matches `npm run brains`, and the KPI numbers match `psql`.
+**Manual test.** `npm run isolation` includes `owner_overview_matches_sql` and `owner_latency_ok`. **Done.** Hold two calls, one in each `BRAIN_MODE`, and confirm the overview split matches `npm run brains` — that live click-through still belongs to Tauqueer.
 
-**Done when.** The numbers are right, the range switch works, and no mock data remains.
+**Done when.** The numbers are right, the range switch works, and no mock data remains. **Implemented.**
 
 ---
 
@@ -259,7 +260,7 @@ Rules:
 
 **Logic.**
 - Conversations list: user, channel badge, start, duration, turn count, whether it ended. Filters by range, channel and user. Cursor paging.
-- Session detail: full reconstruct (turns, controller, timings, memory refs, audio when present).
+- Session detail: full reconstruct (turns, controller, timings, memory refs, audio when present). The correlation id is shown here only (added with 3.7); the personal spoken transcript does not.
 - People: users with call counts, last seen, and subscription state — labelled so subscription is not an access gate.
 - Persona: existing admin screen at `/admin/persona`.
 
@@ -267,9 +268,9 @@ Rules:
 
 **Errors.** A session that vanishes mid-view shows a clear message.
 
-**Manual test.** Pick a call from a live test, open it, and confirm the transcript matches what was actually said, the timings match `latency_spans`, and the controller reasons are shown.
+**Manual test.** Pick a call from a live test, open it, and confirm the transcript matches what was actually said, the timings match `latency_spans`, and the controller reasons are shown. The reconstruct UI is in; that live match still belongs to Tauqueer.
 
-**Done when.** A call can be reconstructed in the UI as completely as the SQL reconstruction.
+**Done when.** A call can be reconstructed in the UI as completely as the SQL reconstruction. **Implemented.**
 
 ---
 
@@ -292,9 +293,9 @@ Rules:
 
 **Errors.** Engram unavailable degrades the memory panel only — the history still renders.
 
-**Manual test.** Two accounts, side by side: each sees only their own calls, and neither can reach the other's session id by editing the URL.
+**Manual test.** `npm run isolation` covers the read API (non-owner 404 on another user's session, lists scoped to `sessions.user_id`). **Done.** Two-account browser click-through still belongs to Tauqueer.
 
-**Done when.** A member has something useful and cannot see anyone else.
+**Done when.** A member has something useful and cannot see anyone else. **Implemented.**
 
 ---
 
@@ -303,23 +304,29 @@ Rules:
 **Goal.** A turn can be traced end to end, and a latency regression is noticed without someone looking.
 
 **Files.**
-- `gateway/src/routes/voice.ts`, `worker/src/worker/turn/service.py` — a correlation id carried across gateway → worker → record.
-- `worker/src/worker/api/chat_completions.py` — already logs per turn; add the correlation id.
-- A budget check (a probe or a scheduled query) comparing recent p50/p90 against config.
+- `infra/migrations/0005_correlation_id.sql` — `turns.correlation_id`.
+- `gateway/src/routes/chat.ts`, `gateway/src/routes/voice.ts`, `gateway/src/voice/notices.ts` — mint, carry, and log the id.
+- `gateway/src/observe/fields.ts`, `gateway/src/observe/budgetProbe.ts` — allow-list and budget check.
+- `worker/src/worker/turn/service.py`, `worker/src/worker/api/turn.py`, `worker/src/worker/api/chat_completions.py`, `worker/src/worker/persistence/turns.py`, `worker/src/worker/notices.py` — bind, persist, log, and (for voice) publish the id.
+- `worker/src/worker/observe/fields.py`, `worker/src/worker/observe/probe.py` — allow-list and Engram `insights.logs`.
+- `frontend/src/app/dashboard/Transcripts.tsx` — admin reconstruct only.
 
 **Logic.**
-- One id per turn, present in gateway logs, worker logs and the stored row, so a log line and a database row can be joined.
-- Structured logs everywhere, no secrets, no transcript text in logs beyond what already exists.
-- Budgets: p50 and p90 for time to first word, per `brain_mode`. Breaching writes a loud log and fails the check.
-- Review Engram `insights.logs` for denials and errors (TRD §3).
+- One id per turn, present in gateway logs, worker logs and the stored row, so a log line and a database row can be joined. User and persona rows for the same exchange share it.
+- Typed chat: the gateway mints the id, sends it on `CORRELATION_ID_HEADER` to `POST /internal/turn`, and logs the allow-listed fields after the worker returns (including `turn_ids` when present).
+- Voice: Deepgram does not forward a per-turn header. The worker mints the id when the header is missing. After a successful persist it publishes a Redis notice with `kind=VOICE_NOTICE_KIND_TRACE`. The gateway logs that notice and does not send it to the caller.
+- The worker binds `correlation_id` and `session_id` on structlog contextvars for the turn and writes an allow-listed turn event in `finish()`.
+- Log fields are an allow-list (`LOG_TURN_FIELDS`). Boot fails unless that list includes `correlation_id` and `session_id`. Transcript `text` is omitted unless it is listed.
+- Budgets: SQL `percentile_cont` p50/p90 of time to first word over `LATENCY_BUDGET_WINDOW_HOURS`, grouped by stored `brain_mode`. Per-mode numbers come from `LATENCY_BUDGET_BY_BRAIN_MODE` (lookup by the stored string). A mode missing from that map uses `LATENCY_BUDGET_FIRST_WORD_MS` / `LATENCY_BUDGET_P90_MS`. A breach fails `npm run budgets`. The product call path never reads these budgets.
+- Review Engram `insights.logs` (org client, `GET /orgs/{org}/logs`) for rows whose structured `result` is `ENGRAM_LOG_RESULT_DENIED` or `ENGRAM_LOG_RESULT_ERROR`. Metadata only; no bodies. Unset Engram or `403 audit:read` is `SKIP`. Other Engram errors fail the probe.
 
-**Config.** `LATENCY_BUDGET_FIRST_WORD_MS`, `LATENCY_BUDGET_P90_MS`, `LATENCY_BUDGET_WINDOW`, and the log field allow-list.
+**Config.** `LATENCY_BUDGET_FIRST_WORD_MS`, `LATENCY_BUDGET_P90_MS`, `LATENCY_BUDGET_WINDOW_HOURS`, `LATENCY_BUDGET_BY_BRAIN_MODE`, `CORRELATION_ID_HEADER`, `LOG_TURN_FIELDS`, `LOG_TURN_EVENT`, `VOICE_NOTICE_KIND_TRACE`, `VOICE_NOTICE_TRACE_CODE`, `VOICE_NOTICE_TRACE_MESSAGE`, `ENGRAM_LOGS_LIMIT`, `ENGRAM_LOG_RESULT_DENIED`, `ENGRAM_LOG_RESULT_ERROR`, `VITE_CORRELATION_LABEL`.
 
 **Errors.** The budget check reports; it never changes behaviour on its own.
 
-**Manual test.** Run a handful of turns, then run the budget check and see it pass; force it to fail by lowering the budget and confirm it says so clearly.
+**Manual test.** `npm run budgets` against recent turns (pass). Force a fail with `LATENCY_BUDGET_BY_BRAIN_MODE='{}'` and `LATENCY_BUDGET_FIRST_WORD_MS` / `LATENCY_BUDGET_P90_MS` set below the measured values (`{}` is required: an empty string is treated as unset and reloads the default map). Engram `insights.logs` is reviewed in the same command (`SKIP` if the key cannot read org logs). **Done.**
 
-**Done when.** A single turn is traceable from log to row, and a regression is detectable by running one command.
+**Done when.** A single turn is traceable from log to row, and a regression is detectable by running one command. **Implemented.**
 
 ---
 

@@ -19,6 +19,7 @@ import {
   socketDataToBuffer,
 } from "../deepgram/agent.js";
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
+import { turnLogFields } from "../observe/fields.js";
 import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
 import {
   type Utterance,
@@ -750,6 +751,17 @@ export async function registerVoiceRoutes(
           bindAgent(live.agent);
 
           const unwatch = notices.watch(session.id, (notice) => {
+            if (notice.kind === config.VOICE_NOTICE_KIND_TRACE) {
+              request.log.info(
+                turnLogFields(config, {
+                  correlation_id: notice.correlation_id,
+                  session_id: notice.session_id,
+                  turn_ids: notice.turn_ids,
+                }),
+                config.LOG_TURN_EVENT,
+              );
+              return;
+            }
             request.log.error(
               { sessionId: session.id, code: notice.code },
               "voice notice",

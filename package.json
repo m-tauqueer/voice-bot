@@ -36,7 +36,8 @@
     "nav": "npm run nav -w frontend",
     "audio": "npm run audio -w gateway",
     "bargein": "npm run bargein -w gateway",
-    "failures": "npm run failures -w gateway && uv run --directory worker python -m worker.failure_probe"
+    "failures": "npm run failures -w gateway && uv run --directory worker python -m worker.failure_probe",
+    "budgets": "npm run budgets -w gateway && uv run --directory worker python -m worker.observe.probe"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4"

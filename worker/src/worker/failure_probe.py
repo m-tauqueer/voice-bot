@@ -107,7 +107,7 @@ def _silence_reasons(conn, session_id: UUID) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT controller_action, controller_reasons
+            SELECT controller_action, controller_reasons, correlation_id
             FROM turns
             WHERE session_id = %s
             ORDER BY ordinal
@@ -176,6 +176,10 @@ def main() -> int:
             "engram_controller_silence",
             rows[0]["controller_action"] == "silence",
             str(rows[0]["controller_reasons"]),
+        )
+        check(
+            "engram_silence_has_correlation",
+            all(row["correlation_id"] is not None for row in rows),
         )
 
     empty = runner.begin(

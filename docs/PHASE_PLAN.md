@@ -253,7 +253,7 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.6 implemented.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
+**Status: 3.1–3.7 implemented.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
 
 The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
@@ -270,27 +270,27 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 ### Part 3.3 — App shell & navigation
 - Goal: two navigation frames — personal app and `/admin`.
 - Tasks: library `AppShell`; same Home/Chat/Voice for every user; owner-only Admin sidebar item; `/admin` is its own app.
-- Manual test: `npm run nav`; owner and tester see the same personal nav in the browser; only the owner reaches `/admin`; persona forms still work.
+- Manual test: `npm run nav`. **Done.** Owner/tester browser click-through still belongs to Tauqueer.
 
 ### Part 3.4 — Admin overview: health & latency
 - Goal: answer "is it healthy and fast" without SQL.
 - Tasks: KPIs, activity over a range, per-stage p50/p90 split by brain mode, p50 against the configured budget.
-- Manual test: numbers match `psql` and `npm run brains`.
+- Manual test: `npm run isolation` matches overview and latency to SQL. **Done.** Live two-brain click-through still belongs to Tauqueer.
 
 ### Part 3.5 — Admin conversations & people
 - Goal: find any conversation and read what happened in it.
 - Tasks: filterable session list; full transcript with controller reasons, timings, memory refs and audio when present; users with activity.
-- Manual test: a call reconstructs in the UI as completely as it does in SQL.
+- Manual test: a call reconstructs in the UI as completely as it does in SQL. Reconstruct UI is in; the live match still belongs to Tauqueer. **Implemented.**
 
 ### Part 3.6 — Personal home
 - Goal: a signed-in user sees their own history and what the persona remembers about them.
 - Tasks: their calls and spoken transcripts; their own retrieve only; no system metrics.
-- Manual test: two accounts side by side, neither can reach the other by editing a URL.
+- Manual test: `npm run isolation` covers cross-user session reads. **Done.** Two-account browser click-through still belongs to Tauqueer.
 
 ### Part 3.7 — Observability & latency budgets
 - Goal: trace a turn end to end and notice a regression without watching.
 - Tasks: one correlation id across gateway, worker and the stored row; structured logs; p50/p90 budgets per brain mode; review Engram `insights.logs`.
-- Manual test: a turn is traceable from log line to database row; the budget check passes, then fails when tightened.
+- Manual test: `npm run budgets`. **Done.** A turn is traceable from log line to database row; the budget check passes, then fails when tightened. Engram org logs `SKIP` until the key has `audit:read`.
 
 ### Part 3.8 — Security & isolation review
 - Goal: confirm the safety posture before outside testers.

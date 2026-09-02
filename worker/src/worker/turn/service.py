@@ -8,6 +8,7 @@ from typing import Any, NoReturn
 from uuid import UUID, uuid4
 
 import structlog
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from worker.clients import create_openai
 from worker.config import WorkerSettings
@@ -27,7 +28,8 @@ from worker.engram.errors import (
 )
 from worker.engram.interface import ChatOutcome
 from worker.engram.registry import BrainRegistry
-from worker.notices import publish_notice
+from worker.notices import publish_notice, publish_trace
+from worker.observe.fields import turn_log_fields
 from worker.persistence.db import borrow
 from worker.persistence.personas import get_persona
 from worker.persistence.sessions import (
@@ -85,6 +87,7 @@ class TurnResult:
     engram_session_id: str | None
     turn_ids: list[UUID]
     reasons: list[str]
+    correlation_id: UUID
     recorded: bool = True
     warning: str | None = None
     warning_code: str | None = None
@@ -105,6 +108,7 @@ class TurnPlan:
     prior_sid: str | None
     voice_config: dict[str, Any]
     history: list[HistoryTurn]
+    correlation_id: UUID
     mode: str = "chat"
     memories: list[str] = field(default_factory=list)
     engram_user_id: str | None = None
@@ -173,6 +177,7 @@ class TurnRunner:
         persona_id: UUID,
         session_id: UUID,
         text: str,
+        correlation_id: UUID | None = None,
     ) -> TurnResult:
         plan = self.begin(
             app_user_id=app_user_id,
@@ -180,6 +185,7 @@ class TurnRunner:
             persona_id=persona_id,
             session_id=session_id,
             text=text,
+            correlation_id=correlation_id,
         )
         if plan.speaks:
             self.speak(plan)
@@ -193,10 +199,41 @@ class TurnRunner:
         persona_id: UUID,
         session_id: UUID,
         text: str,
+        correlation_id: UUID | None = None,
     ) -> TurnPlan:
         """Validate, ask the brain, and decide. Raises `TurnError` before any
         reply byte is produced, so the caller can still choose a status code."""
         started = time.perf_counter()
+        traced = correlation_id or uuid4()
+        bind_contextvars(
+            correlation_id=str(traced),
+            session_id=str(session_id),
+        )
+        try:
+            return self._begin(
+                app_user_id=app_user_id,
+                engram_user_id=engram_user_id,
+                persona_id=persona_id,
+                session_id=session_id,
+                text=text,
+                started=started,
+                correlation_id=traced,
+            )
+        except Exception:
+            clear_contextvars()
+            raise
+
+    def _begin(
+        self,
+        *,
+        app_user_id: UUID,
+        engram_user_id: str,
+        persona_id: UUID,
+        session_id: UUID,
+        text: str,
+        started: float,
+        correlation_id: UUID,
+    ) -> TurnPlan:
         try:
             with borrow(self._settings) as conn:
                 # Locked only for these local reads: it makes two turns that start
@@ -282,6 +319,7 @@ class TurnRunner:
                 prior_sid=prior_sid,
                 voice_config=voice_config,
                 history=history,
+                correlation_id=correlation_id,
                 mode=self._settings.brain_mode,
             )
 
@@ -327,6 +365,7 @@ class TurnRunner:
                 prior_sid=prior_sid,
                 voice_config=voice_config,
                 history=history,
+                correlation_id=correlation_id,
                 mode=mode,
             )
             log.error(
@@ -364,6 +403,7 @@ class TurnRunner:
             prior_sid=prior_sid,
             voice_config=voice_config,
             history=history,
+            correlation_id=correlation_id,
             mode=mode,
             memories=memories,
             outcome=outcome,
@@ -488,6 +528,7 @@ class TurnRunner:
                     reframe_first_token_ms=plan.reframe_first_token_ms,
                     total_ms=total_ms,
                     mode=plan.mode,
+                    correlation_id=plan.correlation_id,
                 )
                 conn.commit()
         except Exception:
@@ -498,19 +539,47 @@ class TurnRunner:
                 "turn was not recorded",
                 session_id=str(plan.session_id),
             )
+        if recorded:
+            publish_trace(
+                self._settings,
+                plan.session_id,
+                plan.correlation_id,
+                turn_ids,
+            )
         if self._should_write_back(plan):
             self._writers.submit(self._write_back, plan)
-        return TurnResult(
+        result = TurnResult(
             action=plan.decision.action.value,
             reply_text=spoken,
             session_id=plan.session_id,
             engram_session_id=next_sid if isinstance(next_sid, str) else None,
             turn_ids=turn_ids,
             reasons=[reason.value for reason in plan.decision.reasons],
+            correlation_id=plan.correlation_id,
             recorded=recorded,
             warning=warning,
             warning_code=warning_code,
         )
+        log.info(
+            self._settings.log_turn_event,
+            **turn_log_fields(
+                self._settings,
+                {
+                    "correlation_id": str(result.correlation_id),
+                    "session_id": str(plan.session_id),
+                    "action": result.action,
+                    "reasons": result.reasons,
+                    "turn_ids": [str(turn_id) for turn_id in result.turn_ids],
+                    "brain_ms": plan.brain_ms,
+                    "reframe_ms": plan.reframe_ms,
+                    "reframe_first_token_ms": plan.reframe_first_token_ms,
+                    "brain_mode": plan.mode,
+                    "recorded": result.recorded,
+                },
+            ),
+        )
+        clear_contextvars()
+        return result
 
     def _should_write_back(self, plan: TurnPlan) -> bool:
         # chat writes the caller's private pool itself; only retrieve owes one.
@@ -601,6 +670,7 @@ class TurnRunner:
         reframe_first_token_ms: int | None,
         total_ms: int,
         mode: str,
+        correlation_id: UUID,
     ) -> list[UUID]:
         reasons = [reason.value for reason in decision.reasons]
         user_ordinal = next_ordinal(conn, session_id)
@@ -613,6 +683,7 @@ class TurnRunner:
             controller_action=decision.action.value,
             controller_reasons=reasons,
             brain_mode=mode,
+            correlation_id=correlation_id,
         )
         ids = [user_turn_id]
         span_turn = user_turn_id
@@ -627,6 +698,7 @@ class TurnRunner:
                 controller_action=decision.action.value,
                 controller_reasons=reasons,
                 brain_mode=mode,
+                correlation_id=correlation_id,
             )
             ids.append(persona_turn_id)
             span_turn = persona_turn_id

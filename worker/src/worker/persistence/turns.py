@@ -38,15 +38,16 @@ def insert_turn(
     controller_action: str | None = None,
     controller_reasons: list[str] | None = None,
     brain_mode: str | None = None,
+    correlation_id: UUID | None = None,
 ) -> UUID:
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO turns (
               session_id, ordinal, speaker, text, messages,
-              controller_action, controller_reasons, brain_mode
+              controller_action, controller_reasons, brain_mode, correlation_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -58,6 +59,7 @@ def insert_turn(
                 controller_action,
                 Json(controller_reasons) if controller_reasons is not None else None,
                 brain_mode,
+                str(correlation_id) if correlation_id is not None else None,
             ),
         )
         row = cur.fetchone()

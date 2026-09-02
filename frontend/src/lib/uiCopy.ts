@@ -45,6 +45,7 @@ export type UiCopy = {
   actionLabel: string;
   latencyLabel: string;
   memoryRefsLabel: string;
+  correlationLabel: string;
   backLabel: string;
   memoryTitle: string;
   memoryUnavailable: string;
@@ -124,6 +125,7 @@ export function loadUiCopy(): UiCopy {
     actionLabel: requiredVite("VITE_ACTION_LABEL"),
     latencyLabel: requiredVite("VITE_LATENCY_LABEL"),
     memoryRefsLabel: requiredVite("VITE_MEMORY_REFS_LABEL"),
+    correlationLabel: requiredVite("VITE_CORRELATION_LABEL"),
     backLabel: requiredVite("VITE_BACK_LABEL"),
     memoryTitle: requiredVite("VITE_MEMORY_PANEL_TITLE"),
     memoryUnavailable: requiredVite("VITE_MEMORY_PANEL_UNAVAILABLE"),

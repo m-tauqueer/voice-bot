@@ -77,6 +77,7 @@ export type SessionTurn = {
   stt_meta: unknown;
   tts_meta: unknown;
   brain_mode: string | null;
+  correlation_id: string | null;
   created_at: string;
   latency: TurnLatency | null;
   memory: TurnMemory | null;

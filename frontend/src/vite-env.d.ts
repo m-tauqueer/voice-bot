@@ -94,6 +94,7 @@ interface ImportMetaEnv {
   readonly VITE_ACTION_LABEL: string;
   readonly VITE_LATENCY_LABEL: string;
   readonly VITE_MEMORY_REFS_LABEL: string;
+  readonly VITE_CORRELATION_LABEL: string;
   readonly VITE_BACK_LABEL: string;
   readonly VITE_MEMORY_PANEL_TITLE: string;
   readonly VITE_MEMORY_PANEL_UNAVAILABLE: string;

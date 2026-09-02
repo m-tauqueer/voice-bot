@@ -32,6 +32,7 @@ def _configure_logging(loaded: WorkerSettings) -> None:
         renderer = structlog.dev.ConsoleRenderer()
     structlog.configure(
         processors=[
+            structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             renderer,

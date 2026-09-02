@@ -83,7 +83,7 @@ See [Phase Plan](PHASE_PLAN.md) for the task-level breakdown.
 - **Phase 0 — Setup (complete):** repo, dependencies, Docker services, environment, external-account smoke checks.
 - **Phase 1 — Brain first (complete):** persona record + Engram wrapper + auth + reframe + controller + typed chat at `/chat`. Memory lives in Engram + Postgres and survives a process restart.
 - **Phase 2 — Voice loop (complete):** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product. Latency reduction was folded in: the reply streams to the transport as it is composed, and the default brain reads Engram memory rather than waiting for Engram to compose. Plan and measured outcome: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
-- **Phase 3 — Hardening (next):** failure handling, latency tuning, observability, multilingual, voice-clone groundwork, security review, Azure deployment. Blob audio archiving is built but switched off until there is a storage account.
+- **Phase 3 — Hardening (in progress):** failure handling, the read API, the personal and admin apps, observability and latency budgets are in. Remaining: security review, Azure deployment, multilingual, voice-clone groundwork. Blob audio archiving is built but switched off until there is a storage account.
 
 ---
 

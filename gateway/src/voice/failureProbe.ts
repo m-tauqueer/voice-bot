@@ -130,6 +130,20 @@ const notice = parseVoiceNotice({
 });
 check("notice_shape_accepted", notice !== null);
 
+const traced = parseVoiceNotice({
+  session_id: "11111111-1111-1111-1111-111111111111",
+  code: config.VOICE_NOTICE_TRACE_CODE,
+  message: config.VOICE_NOTICE_TRACE_MESSAGE,
+  kind: config.VOICE_NOTICE_KIND_TRACE,
+  correlation_id: "11111111-1111-1111-1111-111111111111",
+  turn_ids: ["11111111-1111-1111-1111-111111111111"],
+});
+check("trace_notice_shape_accepted", traced !== null);
+check(
+  "trace_is_not_fatal",
+  !isFatalFailure(config, config.VOICE_NOTICE_TRACE_CODE),
+);
+
 const rejected = parseVoiceNotice({
   session_id: "not-a-uuid",
   code: config.FAILURE_CODE_ENGRAM,

@@ -89,6 +89,11 @@ function ReconstructTurn({ turn }: { turn: SessionTurn }) {
           {copy.reasonsLabel}: {turn.controller_reasons.join(", ")}
         </p>
       ) : null}
+      {turn.correlation_id ? (
+        <p style={{ color: "var(--text-mid)", marginTop: 8 }}>
+          {copy.correlationLabel}: {turn.correlation_id}
+        </p>
+      ) : null}
       {turn.latency ? (
         <pre style={{ marginTop: 8, color: "var(--text-mid)", whiteSpace: "pre-wrap" }}>
           {copy.latencyLabel}: {jsonBlock(turn.latency)}

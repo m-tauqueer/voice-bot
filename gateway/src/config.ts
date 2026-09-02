@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import { validateInsightsConfig } from "./insights/parse.js";
+import { validateObserveConfig } from "./observe/fields.js";
 
 const requiredPort = z.preprocess(
   (val) => (val === undefined || val === "" ? undefined : val),
@@ -126,6 +127,10 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("x-internal-secret"),
   ),
+  CORRELATION_ID_HEADER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("x-correlation-id"),
+  ),
   POST_LOGIN_REDIRECT_URL: optionalUrl,
   OWNER_EMAILS: z.preprocess(
     (val) => (val === undefined ? "" : val),
@@ -201,6 +206,48 @@ const envFileSchema = z.object({
   LATENCY_BUDGET_FIRST_WORD_MS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(4000),
+  ),
+  LATENCY_BUDGET_P90_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(8000),
+  ),
+  LATENCY_BUDGET_WINDOW_HOURS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(24),
+  ),
+  LATENCY_BUDGET_BY_BRAIN_MODE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        '{"retrieve":{"p50":4000,"p90":8000},"chat":{"p50":20000,"p90":30000}}',
+      ),
+  ),
+  LOG_TURN_FIELDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded",
+      ),
+  ),
+  LOG_TURN_EVENT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("turn"),
+  ),
+  VOICE_NOTICE_KIND_TRACE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("trace"),
+  ),
+  VOICE_NOTICE_TRACE_CODE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("turn_traced"),
+  ),
+  VOICE_NOTICE_TRACE_MESSAGE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Turn recorded."),
   ),
   INSIGHTS_ERROR_INVALID_RANGE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -711,6 +758,7 @@ export function loadGatewayConfig(
   }
   try {
     validateInsightsConfig(parsed.data);
+    validateObserveConfig(parsed.data);
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",

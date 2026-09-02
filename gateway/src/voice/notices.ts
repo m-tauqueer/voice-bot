@@ -7,6 +7,9 @@ const noticeSchema = z.object({
   session_id: z.string().uuid(),
   code: z.string().min(1),
   message: z.string().min(1),
+  kind: z.string().min(1).optional(),
+  correlation_id: z.string().uuid().optional(),
+  turn_ids: z.array(z.string().uuid()).optional(),
 });
 
 export type VoiceNotice = z.infer<typeof noticeSchema>;

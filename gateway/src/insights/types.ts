@@ -77,6 +77,7 @@ export type SessionTurn = {
   stt_meta: JsonValue;
   tts_meta: JsonValue;
   brain_mode: string | null;
+  correlation_id: string | null;
   created_at: string;
   latency: TurnLatency | null;
   memory: TurnMemory | null;
@@ -139,4 +140,18 @@ export type InsightsUser = {
 export type InsightsUserList = {
   users: InsightsUser[];
   next_cursor: string | null;
+};
+
+export type BudgetModeRow = {
+  brain_mode: string;
+  samples: number;
+  p50: number | null;
+  p90: number | null;
+};
+
+export type LatestTrace = {
+  turn_id: string;
+  correlation_id: string;
+  session_id: string;
+  created_at: string;
 };

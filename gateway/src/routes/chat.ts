@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import { z } from "zod";
@@ -7,6 +8,7 @@ import { createTextSession, getSessionForUser } from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
+import { turnLogFields } from "../observe/fields.js";
 import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
 import { redisQuiet } from "../voice/redisSafe.js";
 
@@ -32,8 +34,7 @@ function personaPayload(
   };
 }
 
-async function sendWorker(reply: FastifyReply, response: Response) {
-  const text = await response.text();
+function parseWorkerBody(text: string): unknown {
   let body: unknown = null;
   if (text.length > 0) {
     try {
@@ -50,7 +51,7 @@ async function sendWorker(reply: FastifyReply, response: Response) {
       body = { error: detail };
     }
   }
-  return reply.code(response.status).send(body);
+  return body;
 }
 
 export async function registerChatRoutes(
@@ -169,9 +170,13 @@ export async function registerChatRoutes(
       request.log.error({ sessionId: session.id }, "chat activity not stored");
     }
 
+    const correlationId = randomUUID();
     const response = await callWorker(config, "/internal/turn", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        [config.CORRELATION_ID_HEADER]: correlationId,
+      },
       body: JSON.stringify({
         app_user_id: user.id,
         engram_user_id: user.engramUserId,
@@ -180,6 +185,25 @@ export async function registerChatRoutes(
         text: parsed.data.text,
       }),
     });
-    return sendWorker(reply, response);
+    const payload = parseWorkerBody(await response.text());
+    const fields =
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>)
+        : {};
+    request.log.info(
+      turnLogFields(config, {
+        correlation_id:
+          typeof fields.correlation_id === "string"
+            ? fields.correlation_id
+            : correlationId,
+        session_id: session.id,
+        turn_ids: fields.turn_ids,
+        action: fields.action,
+        reasons: fields.reasons,
+        recorded: fields.recorded,
+      }),
+      config.LOG_TURN_EVENT,
+    );
+    return reply.code(response.status).send(payload);
   });
 }
