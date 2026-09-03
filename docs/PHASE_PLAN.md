@@ -253,7 +253,7 @@ Goal: the end-to-end spoken product — talk in the browser, hear the persona, i
 
 Goal: survive dependency failures, be watchable from a UI instead of `psql`, be safe in front of testers, and run on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.7 implemented.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
+**Status: 3.1–3.8 implemented.** Remaining parts start when Tauqueer names one. Implementation-level plan: [PHASE_3_PLAN.md](PHASE_3_PLAN.md).
 
 The parts below were **renumbered from the original Phase 3 list** after Tauqueer set priorities (failure handling and observability first, then security, then Azure) and added the dashboard. Multilingual and voice cloning moved to the end.
 
@@ -295,7 +295,7 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 ### Part 3.8 — Security & isolation review
 - Goal: confirm the safety posture before outside testers.
 - Tasks: isolation end to end including the admin surface and URL tampering; decide what to do about Engram not gating on subscription; cookie, CORS and secret audit; verify the public BYO-LLM endpoint refuses forged identity.
-- Manual test: cross-user access attempted from a second real Google account and a crafted request; both refused and logged.
+- Manual test: `npm run isolation` and `npm run security`. Cross-user access from a second real app account and a crafted think-endpoint request are refused and logged. A brand-new Google OAuth click-through still belongs to Tauqueer. **Done.**
 
 ### Part 3.9 — Azure deployment
 - Goal: off the laptop, tunnel retired, audio stored.
@@ -314,3 +314,17 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 - Goal: final robustness pass.
 - Tasks: rate limits, write idempotency, retry policy, dependency pinning, documentation sync.
 - Manual test: load and robustness spot checks pass. **Phase 3 done.**
+
+> **Note:** deployment (3.9), multilingual (3.10), voice-clone groundwork (3.11) and the polish pass (3.12) are **carried into the production roadmap** below so there is one plan for going live, not two. Gateway rate limiting, a worker internal-secret brute-force throttle, and the memory-panel identity bind landed with the security review (3.8).
+
+---
+
+## Phases 4–6 — Production, scale & growth
+
+Goal: take the product from "works for 2–3 testers on a laptop" to "safe to launch for many real users, and good enough that they return." Detailed roadmap: [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md).
+
+- **Phase 4 — Launch readiness.** Azure deployment (retires the tunnel, turns Blob on), CI/CD, an automated test suite, member access control (invite/allowlist), quotas + write idempotency, observability + alerting, data lifecycle (delete/export/consent/privacy), backups + DR, and a second security pass. This is the "safe to invite strangers" gate.
+- **Phase 5 — Multi-tenant, scale & growth.** Multi-persona, load/scale tuning, onboarding + UX polish (mobile, accessibility, error states), accounts/preferences, optional billing, and growth loops.
+- **Phase 6 — Advanced capabilities.** Multilingual code-switch (was 3.10), voice cloning (was 3.11), a richer controller, more channels, owner analytics, and user-shaped personas.
+
+Open product decisions that shape these phases (access model, single vs multi persona, monetization, compliance depth, cloud, auth providers, data region) are listed in [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) §2.

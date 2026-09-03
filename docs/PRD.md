@@ -22,12 +22,15 @@ The product's reason to exist is **persona memory**: without Engram there is no 
 
 ## 3. Non-goals (for the first build)
 
-- Multi-persona management UI beyond a minimal admin screen for the single seeded persona.
-- Telephony / WhatsApp / mobile-native channels.
-- Video, facial-emotion, or any non-text modality into Engram.
-- Billing/usage dashboards and cost optimization (this is an internal product; Engram token cost is not a concern now).
-- Voice cloning (groundwork only, in the hardening phase).
-- Formal compliance / consent / delete-my-data flows (deferred until external users).
+These were out of scope for the first build. **Most are now planned for the launch/growth phases** — see [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) (Phases 4–6) for how and when.
+
+- Multi-persona management UI beyond a minimal admin screen for the single seeded persona. *(Planned: Phase 5.1.)*
+- Telephony / WhatsApp / mobile-native channels. *(Candidate: Phase 6.4.)*
+- Video, facial-emotion, or any non-text modality into Engram. *(Still out of scope.)*
+- Billing/usage dashboards and cost optimization. *(Planned if we charge: Phase 5.5; cost guardrails and quotas: Phase 4.5.)*
+- Voice cloning (groundwork only, in the hardening phase). *(Planned: Phase 6.2.)*
+- Formal compliance / consent / delete-my-data flows (deferred until external users — **which is now**). *(Planned: Phase 4.7.)*
+- Open self-serve signup. Launch is **waitlist-gated**: anyone can request access, the owner approves in batches (member access control: Phase 4.4).
 
 ---
 
@@ -83,7 +86,7 @@ See [Phase Plan](PHASE_PLAN.md) for the task-level breakdown.
 - **Phase 0 — Setup (complete):** repo, dependencies, Docker services, environment, external-account smoke checks.
 - **Phase 1 — Brain first (complete):** persona record + Engram wrapper + auth + reframe + controller + typed chat at `/chat`. Memory lives in Engram + Postgres and survives a process restart.
 - **Phase 2 — Voice loop (complete):** browser audio + Deepgram Voice Agent API + BYO-LLM shim + barge-in + audio persistence. This is the end-to-end voice product. Latency reduction was folded in: the reply streams to the transport as it is composed, and the default brain reads Engram memory rather than waiting for Engram to compose. Plan and measured outcome: [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
-- **Phase 3 — Hardening (in progress):** failure handling, the read API, the personal and admin apps, observability and latency budgets are in. Remaining: security review, Azure deployment, multilingual, voice-clone groundwork. Blob audio archiving is built but switched off until there is a storage account.
+- **Phase 3 — Hardening (in progress):** failure handling, the read API, the personal and admin apps, observability, latency budgets, and the security review are in. Remaining: Azure deployment, multilingual, voice-clone groundwork. Blob audio archiving is built but switched off until there is a storage account. Isolation is enforced in the app (`sessions.user_id` + identity match); Engram subscription is not an access gate. A brand-new Google OAuth click-through still belongs to Tauqueer.
 
 ---
 

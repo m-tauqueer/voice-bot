@@ -58,7 +58,8 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 - [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — The build plan: Phase 0 (setup) plus 3 phases, each split into parts, each part with defined tasks, manual-test gates, and commit gates.
 - [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8). **Phase 1 is complete.**
 - [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Implementation-level plan for Phase 2 (parts 2.1–2.9): BYO-LLM shim, Voice Agent bridge, browser audio, voice UI, barge-in, thinking cue, latency, Azure audio, and voice acceptance. **Phase 2 is complete**; §7–§9 hold the measured numbers and the open items.
-- [`docs/PHASE_3_PLAN.md`](docs/PHASE_3_PLAN.md) — Implementation-level plan for Phase 3 (parts 3.1–3.12): failure handling, the read API, the app shell, the owner and personal dashboards, observability, the security review, Azure, multilingual, and voice-clone groundwork.
+- [`docs/PHASE_3_PLAN.md`](docs/PHASE_3_PLAN.md) — Implementation-level plan for Phase 3 (parts 3.1–3.12): failure handling, the read API, the app shell, the owner and personal dashboards, observability, the security review, Azure, multilingual, and voice-clone groundwork. **Parts 3.1–3.8 are done.**
+- [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md) — Production & growth roadmap (Phases 4–6): launch readiness (deploy, CI/CD, tests, access control, quotas, observability, data lifecycle, backups, security 2.0), then multi-tenant/scale/UX, then advanced capabilities. Folds in the tail of Phase 3 (deployment, multilingual, voice-clone, polish). Open product decisions live in its §2.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -66,7 +67,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, and the latency budget check are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
@@ -97,6 +98,7 @@ npm run failures     # Failure taxonomy and reconnect rules (no live outages)
 npm run isolation    # Two signed-in users cannot reach each other's conversation
 npm run nav          # Personal vs admin nav lists (from frontend/)
 npm run budgets      # First-word p50/p90 vs budget, plus Engram request-log review
+npm run security     # Cookie/CORS/secrets, think-endpoint unauth, OpenAPI hidden, then isolation
 npm run admin -- show
 
 # Dev processes (need a filled .env; bind ports come from that file)
