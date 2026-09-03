@@ -136,7 +136,6 @@ export async function registerAuthRoutes(
     return {
       id: user.id,
       email: user.email,
-      engram_user_id: user.engramUserId,
       owner: isOwnerEmail(user.email, config),
     };
   });

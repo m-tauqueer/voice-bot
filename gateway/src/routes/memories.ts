@@ -60,6 +60,7 @@ export async function registerMemoryRoutes(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        app_user_id: user.id,
         engram_user_id: user.engramUserId,
         engram_persona_id: persona.engramPersonaId,
       }),

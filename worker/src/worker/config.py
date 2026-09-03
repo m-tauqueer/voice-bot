@@ -38,6 +38,10 @@ class WorkerSettings(BaseSettings):
     voice_notice_redis_channel: str = Field(default="voice-notice", min_length=1)
     redis_command_timeout_ms: int = Field(default=500, gt=0)
     internal_api_secret: str = Field(min_length=16)
+    rate_limit_enabled: bool = Field(default=True)
+    rate_limit_redis_prefix: str = Field(default="ratelimit:", min_length=1)
+    internal_auth_max_failures: int = Field(default=20, gt=0)
+    internal_auth_failure_window_seconds: int = Field(default=60, gt=0)
     failure_code_engram: str = Field(default="engram_unavailable", min_length=1)
     failure_code_speaking_llm: str = Field(
         default="speaking_llm_failed",
@@ -77,6 +81,7 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     internal_secret_header: str = Field(default="x-internal-secret")
+    worker_openapi_enabled: bool = Field(default=False)
     correlation_id_header: str = Field(default="x-correlation-id")
     log_turn_fields: str = Field(
         default=(

@@ -4,7 +4,7 @@ Detailed, implementation-level plan for Phase 3. Owner: Tauqueer. Read [AGENTS.m
 
 > Phase 3 goal: the product survives its dependencies failing, can be watched and understood from a UI instead of `psql`, is safe to put in front of testers, and runs on Azure instead of a laptop with a tunnel.
 
-**Status: 3.1–3.7 implemented.** Click-through of owner vs tester still belongs to Tauqueer. Remaining parts start when Tauqueer names one.
+**Status: 3.1–3.8 implemented.** Click-through of owner vs tester and a second Google OAuth sign-in still belong to Tauqueer. Remaining parts start when Tauqueer names one.
 
 ---
 
@@ -49,7 +49,7 @@ Tauqueer's priorities are failure handling and observability, then the security 
 | Canonical record | Postgres | `users`, `personas`, `subscriptions`, `sessions`, `turns`, `memory_refs`, `audio_assets`, `latency_spans`. See §3. |
 | Product UI | `/`, `/dashboard`, `/chat`, `/voice`, `/admin` | Landing and sign-in at `/`. Personal app at `/dashboard`. Admin app at `/admin`. |
 | Component library | `Desktop/component-library` | Reference only. Copy a primitive into `frontend/` when a part needs it. The gallery and unused showcase files are not in this repo. |
-| Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`, `failures`, `nav`, `budgets`. |
+| Probes | `package.json` | `smoke`, `controller`, `reframe`, `chat`, `byo`, `brains`, `voice`, `call`, `audio`, `bargein`, `isolation`, `failures`, `nav`, `budgets`, `security`. |
 
 ---
 
@@ -334,23 +334,39 @@ Rules:
 
 **Goal.** Confirm the safety posture before anyone outside the team uses it.
 
-**Files.** Mostly review; fixes land where the review finds them.
+**Files.**
+- `gateway/src/observe/securityProbe.ts`, `worker/src/worker/observe/security.py` (new).
+- `gateway/src/voice/isolationProbe.ts` — CORS, `/api/me` shape, 404/403 logs, URL tamper body, rate-limit active.
+- `gateway/src/auth/owner.ts`, `gateway/src/routes/insights.ts`, `gateway/src/routes/chat.ts` — refusal logs.
+- `gateway/src/routes/auth.ts` — `/api/me` omits Engram and Google ids.
+- `gateway/src/config.ts` — `SESSION_COOKIE_SAMESITE=none` requires a secure cookie; rate-limit keys.
+- `gateway/src/app.ts` — register the per-IP rate limiter.
+- `gateway/src/routes/memories.ts` — send `app_user_id` so the worker can bind identity.
+- `worker/src/worker/api/memories.py`, `worker/src/worker/turn/service.py` — memory panel identity match.
+- `worker/src/worker/ratelimit.py` (new), `worker/src/worker/api/internal_auth.py` — internal-secret brute-force throttle.
+- `worker/src/worker/main.py`, `worker/src/worker/config.py` — OpenAPI off unless `WORKER_OPENAPI_ENABLED`; rate-limit keys; close the throttle client.
+- `worker/src/worker/api/http.py` — 401/403 turns are logged.
+- `docs/TRD.md` §7 — recorded answers.
 
-**Logic.** Check, and write down the result of each:
-1. Per-user isolation end to end — repeat `npm run isolation`, plus the admin surface from 3.2, plus URL tampering in the UI from 3.6.
-2. **The Engram subscription finding** (§7): access is not gated by subscription today, and the API key cannot subscribe (`org:manage` missing). Decide whether to pursue the permission, enforce subscription in the app, or accept it and record why.
-3. Secrets never reach the browser — only `VITE_*` is exposed; audit for accidental leakage into logs or client payloads.
-4. Session cookie flags in production (`SESSION_COOKIE_SECURE`, `SameSite`), CORS origins, and the internal secret between gateway and worker.
-5. The BYO-LLM endpoint is publicly reachable by design — confirm it refuses everything without the internal secret and cannot be driven with forged identity headers (already covered by two probe cases; re-verify against the deployed URL).
-6. Audit trail: every turn attributable to a user and a session.
+**Logic.** Recorded answers:
+1. Per-user isolation — `npm run isolation` covers typed chat, personal `/api/me/sessions/:id` (404, same body as missing, no owner email), admin 403, session list scoped to the signed-in user. The SPA dashboard uses that personal API, so URL tampering cannot read another user's conversation.
+2. **Engram subscription** — accepted as not an access gate. The API key still lacks `org:manage`, so `personas.subscribe` stays 403 and the `subscriptions` mirror stays empty. An app-only subscription table would not stop Engram `chat`/`retrieve`/`converse`. Isolation stays `sessions.user_id` plus `TurnRunner` identity match. People UI copy already says subscription is visibility, not a gate.
+3. Secrets — only `VITE_*` is typed for the browser. `/api/me` does not return `engram_user_id` or `google_sub`. Turn logs are an allow-list (`LOG_TURN_FIELDS`).
+4. Cookie httpOnly + signed + SameSite from config; Secure follows production unless overridden. CORS origin is `FRONTEND_ORIGIN` with credentials. Internal secret on every worker product route except `/health`.
+5. Public think URL — POST without the secret is 401 (SKIP if the tunnel is down or returns non-JSON). Local TestClient: missing/wrong secret 401, forged Engram id 403, other user's session 403. Live `npm run byo` still covers a full brain turn.
+6. Audit trail — `turns.session_id` FK to `sessions`, `sessions.user_id` NOT NULL. Probe fails if orphan turns exist.
+7. Memory panel — `/internal/memories` requires `app_user_id` and re-verifies the stored Engram mapping (403 on mismatch), matching the turn path, so a valid internal secret alone can never read another user's private pool. `npm run security` covers `memories_unauth` (401) and `memories_forged_engram_id` (403).
+8. Rate limiting — the gateway rate-limits every request per client address (Redis-backed, fails open; `npm run isolation` asserts the limiter is active). The worker throttles repeated internal-secret failures per client address, returning 429 over the limit; only failed authentications are counted, so legitimate Deepgram/gateway traffic is never throttled even behind a shared address. `npm run security` asserts the throttle returns 429 (SKIP when Redis is unreachable).
+9. Ingress (deployment) — in production the worker's `/internal/*` routes are gateway-only (private ingress); only the think path stays public. Implemented in §3.9.
+10. CSRF — the production frontend stays same-site with the gateway, so `SameSite=lax` holds and no separate CSRF token is required.
 
-**Config.** Production cookie and CORS settings.
+**Config.** Existing cookie/CORS keys. `WORKER_OPENAPI_ENABLED` (default false). Gateway: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_REDIS_PREFIX`. Worker: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_REDIS_PREFIX`, `INTERNAL_AUTH_MAX_FAILURES`, `INTERNAL_AUTH_FAILURE_WINDOW_SECONDS`.
 
-**Errors.** Any finding is either fixed in this part or written into the TRD as accepted, with the reason.
+**Errors.** Findings are fixed or written into [TRD.md](TRD.md) §7. The remaining Tauqueer click is a brand-new Google OAuth in a browser, not a code hole.
 
-**Manual test.** Attempt cross-user access from a second real account and from a crafted request; both refused and logged.
+**Manual test.** `npm run isolation` and `npm run security`. Cross-user access from a second real app account and a crafted think-endpoint request are refused and logged. **Done.**
 
-**Done when.** Every item above has a recorded answer, and nothing outstanding is unwritten.
+**Done when.** Every item above has a recorded answer. **Implemented.**
 
 ---
 
@@ -368,7 +384,7 @@ Rules:
 - Three container apps: gateway, worker, frontend.
 - Azure Database for PostgreSQL and Azure Cache for Redis, private where possible.
 - Azure Blob for audio: provision the account and container, set the three `AZURE_*` keys, and **turn `VOICE_AUDIO_PERSIST_ENABLED` on** (D18). `AZURE_BLOB_ENDPOINT` stays unset in production — it exists for emulator and sovereign-cloud use.
-- The worker gets a public URL; `BYO_LLM_PUBLIC_URL` points at it and ngrok is retired.
+- The worker gets a public URL; `BYO_LLM_PUBLIC_URL` points at it and ngrok is retired. Only the think path is public: the `/internal/*` routes (turn, memories, admin) are reachable only from the gateway (private ingress / internal networking), so the shared internal secret is not the sole boundary in production (decision from §3.8).
 - Migrations run as a deployment step, forward-only, using the existing runner.
 - Secrets from Azure config, never baked into images.
 
@@ -431,10 +447,10 @@ Rules:
 
 Open items inherited by this phase, all recorded in [PHASE_2_PLAN.md](PHASE_2_PLAN.md) §9:
 
-1. **A second Google account sign-in** has still not been done. Everything after Google's redirect is proven; the OAuth flow for a genuinely new account is not. Fold into 3.8.
+1. **A second Google account sign-in** has still not been done in a browser. Isolation is proven with two real Google-mapped users via signed cookies (`npm run isolation`). The OAuth redirect path after Google's callback is the same code. Recorded; not a product hole. The live click still belongs to Tauqueer.
 2. **Blob audio archiving is off** (`VOICE_AUDIO_PERSIST_ENABLED=false`) until 3.9 provisions storage.
-3. **The Engram API key lacks `org:manage`**, so `personas.subscribe` returns 403 and the `subscriptions` mirror stays empty. Decide in 3.8.
-4. **Engram does not gate access on subscription** — an unknown user id was allowed `chat`, `retrieve` and `converse`. Isolation rests on the app's session-ownership check. Confirm and record in 3.8.
+3. **The Engram API key lacks `org:manage`**, so `personas.subscribe` returns 403 and the `subscriptions` mirror stays empty. **Accepted.** Do not gate product access on that table. Pursue `org:manage` later only if admin wants a live subscription mirror.
+4. **Engram does not gate access on subscription** — an unknown user id was allowed `chat`, `retrieve` and `converse`. **Confirmed and accepted.** Isolation is `sessions.user_id` plus `TurnRunner` refusing a mismatched identity (403). Private pools stay scoped per Engram `user_id`.
 5. **`BRAIN_MODE=chat` is kept as a switch.** If `retrieve` holds up over real use, consider removing the second path in 3.12 rather than maintaining both forever.
 
 ---

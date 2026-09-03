@@ -14,6 +14,7 @@ export function createRequireOwner(config: GatewayConfig) {
       return reply.code(401).send({ error: "unauthorized" });
     }
     if (!isOwnerEmail(user.email, config)) {
+      request.log.warn({ userId: user.id }, "owner route refused");
       return reply.code(403).send({ error: "forbidden" });
     }
   };

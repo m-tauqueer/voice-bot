@@ -635,9 +635,11 @@ class TurnRunner:
     def retrieve_memories(
         self,
         *,
+        app_user_id: UUID,
         engram_user_id: str,
         engram_persona_id: str,
     ) -> list[dict[str, str | None]]:
+        self._assert_identity(app_user_id, engram_user_id)
         brain = self._brains.get(engram_user_id)
         outcome = brain.retrieve(
             engram_persona_id,
@@ -650,6 +652,30 @@ class TurnRunner:
                 continue
             memories.append({"text": hit.text, "tenant": hit.tenant})
         return memories
+
+    def _assert_identity(self, app_user_id: UUID, engram_user_id: str) -> None:
+        """Refuse a caller whose stored Engram id does not match the header.
+
+        The turn path already checks this inline in `_begin`; the memory panel
+        needs the same gate so a valid internal secret alone can never read
+        another user's private pool.
+        """
+        try:
+            with borrow(self._settings) as conn:
+                stored = user_engram_id(conn, app_user_id)
+        except Exception as exc:
+            raise TurnError(
+                self._settings.failure_message_database,
+                status=503,
+                reason="database_unavailable",
+                code=self._settings.failure_code_database,
+            ) from exc
+        if stored is None or stored != engram_user_id:
+            raise TurnError(
+                "forbidden",
+                status=403,
+                reason="identity_mismatch",
+            )
 
     def close(self) -> None:
         self._writers.shutdown(wait=True)

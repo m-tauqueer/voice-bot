@@ -16,6 +16,7 @@ from worker.api.turn import build_turn_router
 from worker.config import WorkerSettings, load_settings
 from worker.notices import close_notices
 from worker.persistence.db import close_pool, pool
+from worker.ratelimit import close_rate_limit
 from worker.turn.service import TurnRunner
 
 settings = load_settings()
@@ -56,10 +57,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     finally:
         runner.close()
         close_notices()
+        close_rate_limit()
         close_pool()
 
 
-app = FastAPI(title="voice-bot-worker", lifespan=lifespan)
+app = FastAPI(
+    title="voice-bot-worker",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.worker_openapi_enabled else None,
+    redoc_url="/redoc" if settings.worker_openapi_enabled else None,
+    openapi_url="/openapi.json" if settings.worker_openapi_enabled else None,
+)
 app.include_router(build_subscribe_router(settings))
 app.include_router(build_admin_router(settings))
 app.include_router(build_turn_router(settings, runner))

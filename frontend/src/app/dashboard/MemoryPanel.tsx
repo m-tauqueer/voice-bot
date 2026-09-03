@@ -5,13 +5,18 @@ import { ApiError } from "../../lib/gateway";
 import { fetchPersonalMemories, type MemoryHit } from "../../lib/insights";
 import { loadUiCopy } from "../../lib/uiCopy";
 import { EmptyNote } from "./FetchState";
+import { useSession } from "../session";
 
 export function MemoryPanel() {
   const copy = loadUiCopy();
+  const session = useSession();
   const [hits, setHits] = useState<MemoryHit[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   const load = useCallback(async () => {
+    if (session.status !== "ready") {
+      return;
+    }
     if (!copy.memoryEnabled) {
       setHits([]);
       return;
@@ -24,11 +29,11 @@ export function MemoryPanel() {
       setHits([]);
       setUnavailable(!(error instanceof ApiError && error.status === 404));
     }
-  }, [copy.memoryEnabled]);
+  }, [copy.memoryEnabled, session.me?.id, session.status]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, session.me?.id, session.status]);
 
   if (!copy.memoryEnabled) {
     return null;

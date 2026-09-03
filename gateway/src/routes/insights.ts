@@ -104,6 +104,10 @@ export async function registerInsightRoutes(
     }
     const detail = await personalSessionDetail(sql, parsed.data, user.id);
     if (!detail) {
+      request.log.info(
+        { sessionId: parsed.data, userId: user.id },
+        "personal session not found",
+      );
       return reply.code(404).send({ error: config.INSIGHTS_ERROR_NOT_FOUND });
     }
     return detail;

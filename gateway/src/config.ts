@@ -32,6 +32,22 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("GET,HEAD,POST,PUT,PATCH,DELETE"),
   ),
+  RATE_LIMIT_ENABLED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  RATE_LIMIT_MAX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(300),
+  ),
+  RATE_LIMIT_WINDOW_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(60000),
+  ),
+  RATE_LIMIT_REDIS_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ratelimit:"),
+  ),
   WORKER_URL: z.string().url(),
   BYO_LLM_PUBLIC_URL: optionalUrl,
   DATABASE_URL: z.string().min(1),
@@ -756,6 +772,14 @@ export function loadGatewayConfig(
       "Invalid gateway environment: GOOGLE_CALLBACK_URL origin must match GATEWAY_PUBLIC_URL",
     );
   }
+  if (
+    parsed.data.SESSION_COOKIE_SAMESITE === "none" &&
+    !sessionCookieSecure(parsed.data)
+  ) {
+    throw new Error(
+      "Invalid gateway environment: SESSION_COOKIE_SAMESITE=none requires a secure cookie",
+    );
+  }
   try {
     validateInsightsConfig(parsed.data);
     validateObserveConfig(parsed.data);
@@ -818,6 +842,10 @@ export function corsAllowedMethods(config: GatewayConfig): string[] {
   return config.CORS_ALLOWED_METHODS.split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter((value) => value.length > 0);
+}
+
+export function rateLimitEnabled(config: GatewayConfig): boolean {
+  return config.RATE_LIMIT_ENABLED === "true";
 }
 
 export function ownerEmails(config: GatewayConfig): Set<string> {

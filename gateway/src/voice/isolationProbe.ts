@@ -3,10 +3,16 @@
  * the read API. Runs against the real HTTP handlers with two session cookies.
  */
 import { randomUUID } from "node:crypto";
+import { Writable } from "node:stream";
+import pino from "pino";
 import { createGatewayApp } from "../app.js";
 import { persistAuthSession, signSessionCookieValue } from "../auth/session.js";
 import { createPostgres, createRedis } from "../clients.js";
-import { isOwnerEmail, loadGatewayConfig } from "../config.js";
+import {
+  isOwnerEmail,
+  loadGatewayConfig,
+  rateLimitEnabled,
+} from "../config.js";
 import {
   decodeSessionCursor,
   encodeSessionCursor,
@@ -33,7 +39,26 @@ function check(name: string, ok: boolean, detail = ""): void {
 const config = loadGatewayConfig();
 const sql = createPostgres(config);
 const redis = createRedis(config);
-const app = await createGatewayApp({ config, sql, redis });
+const logLines: string[] = [];
+const logger = pino(
+  { level: "info" },
+  new Writable({
+    write(chunk, _encoding, callback) {
+      logLines.push(chunk.toString());
+      callback();
+    },
+  }),
+);
+const app = await createGatewayApp({
+  config,
+  sql,
+  redis,
+  loggerInstance: logger,
+});
+
+function logged(message: string): boolean {
+  return logLines.some((line) => line.includes(message));
+}
 
 try {
   const defaultRange = resolveRangeId(config, undefined);
@@ -62,8 +87,10 @@ try {
   );
   check("session_cursor_rejects_garbage", decodeSessionCursor("nope") === null);
 
-  const users = await sql<{ id: string; email: string }[]>`
-    SELECT id, email FROM users ORDER BY created_at
+  const users = await sql<
+    { id: string; email: string; engram_user_id: string }[]
+  >`
+    SELECT id, email, engram_user_id FROM users ORDER BY created_at
   `;
   const owner = users.find((user) => isOwnerEmail(user.email, config)) ?? null;
   const other =
@@ -107,6 +134,48 @@ try {
     `${anonymousAdmin.statusCode}`,
   );
 
+  if (rateLimitEnabled(config)) {
+    check(
+      "rate_limit_active",
+      anonymous.headers["x-ratelimit-limit"] !== undefined,
+      String(anonymous.headers["x-ratelimit-limit"] ?? ""),
+    );
+  } else {
+    console.log("rate_limit_active=SKIP (RATE_LIMIT_ENABLED=false)");
+  }
+
+  const corsOk = await app.inject({
+    method: "OPTIONS",
+    url: "/api/me",
+    headers: {
+      origin: config.FRONTEND_ORIGIN,
+      "access-control-request-method": "GET",
+    },
+  });
+  check(
+    "cors_allows_frontend_origin",
+    corsOk.headers["access-control-allow-origin"] === config.FRONTEND_ORIGIN,
+    String(corsOk.headers["access-control-allow-origin"] ?? ""),
+  );
+  check(
+    "cors_allows_credentials",
+    corsOk.headers["access-control-allow-credentials"] === "true",
+  );
+  const foreignOrigin = new URL(config.FRONTEND_ORIGIN);
+  foreignOrigin.host = `not-${foreignOrigin.host}`;
+  const corsForeign = await app.inject({
+    method: "OPTIONS",
+    url: "/api/me",
+    headers: {
+      origin: foreignOrigin.origin,
+      "access-control-request-method": "GET",
+    },
+  });
+  check(
+    "cors_rejects_other_origin",
+    corsForeign.headers["access-control-allow-origin"] !== foreignOrigin.origin,
+  );
+
   if (!owner || !other || owner.id === other.id) {
     console.log("isolation=SKIP (needs an owner and a second app user)");
   } else {
@@ -117,8 +186,8 @@ try {
 
     const meOwner = await get("/api/me", ownerCookie);
     const meOther = await get("/api/me", otherCookie);
-    const ownerBody = meOwner.json() as { id?: string };
-    const otherBody = meOther.json() as { id?: string };
+    const ownerBody = meOwner.json() as Record<string, unknown>;
+    const otherBody = meOther.json() as Record<string, unknown>;
     check(
       "separate_identities",
       meOwner.statusCode === 200 &&
@@ -127,6 +196,68 @@ try {
         otherBody.id === other.id &&
         ownerBody.id !== otherBody.id,
     );
+    check(
+      "me_omits_engram_user_id",
+      !Object.hasOwn(ownerBody, "engram_user_id"),
+    );
+    check("me_omits_google_sub", !Object.hasOwn(ownerBody, "google_sub"));
+
+    const ownerMem = await get("/api/me/memories", ownerCookie);
+    const otherMem = await get("/api/me/memories", otherCookie);
+
+    if (ownerMem.statusCode === 404 || otherMem.statusCode === 404) {
+      console.log("memories_panel_probe=SKIP (MEMORY_PANEL_ENABLED is off)");
+    } else {
+      check(
+        "memory_panel_owner_ok",
+        ownerMem.statusCode === 200,
+        `${ownerMem.statusCode}`,
+      );
+      check(
+        "memory_panel_other_ok",
+        otherMem.statusCode === 200,
+        `${otherMem.statusCode}`,
+      );
+
+      if (ownerMem.statusCode !== 200 || otherMem.statusCode !== 200) {
+        console.log("memory_panel_probe=SKIP (non-200 response)");
+      } else {
+        function privateEngramUserId(tenant: unknown): string | null {
+          if (typeof tenant !== "string") return null;
+          const parts = tenant.split(":");
+          // Engram private tenant is `{org}:{persona}:{user}`.
+          if (parts.length !== 3) return null;
+          return parts[2] ?? null;
+        }
+
+        const ownerPanel = ownerMem.json() as {
+          memories?: { tenant?: string | null }[];
+        };
+        const otherPanel = otherMem.json() as {
+          memories?: { tenant?: string | null }[];
+        };
+
+        const ownerPrivateTenants = new Set(
+          (ownerPanel.memories ?? [])
+            .map((m) => privateEngramUserId(m.tenant))
+            .filter((v): v is string => typeof v === "string" && v.length > 0),
+        );
+        const otherPrivateTenants = new Set(
+          (otherPanel.memories ?? [])
+            .map((m) => privateEngramUserId(m.tenant))
+            .filter((v): v is string => typeof v === "string" && v.length > 0),
+        );
+
+        check(
+          "memory_panel_owner_never_leaks_other_private_tenant",
+          !ownerPrivateTenants.has(other.engram_user_id),
+        );
+        check(
+          "memory_panel_other_never_leaks_owner_private_tenant",
+          !otherPrivateTenants.has(owner.engram_user_id),
+        );
+      }
+    }
 
     const [ownerSession] = await sql<{ id: string }[]>`
       SELECT s.id FROM sessions s
@@ -156,9 +287,10 @@ try {
       const leaked = (stolenBody.turns?.length ?? 0) > 0;
       check(
         "other_user_reads_nothing",
-        !leaked,
+        stolen.statusCode === 404 && !leaked,
         `${stolen.statusCode}, ${stolenBody.turns?.length ?? 0} turns returned`,
       );
+      check("other_user_chat_read_logged", logged("chat session not found"));
 
       const posted = await post("/api/chat", otherCookie, {
         text: "reading someone else's thread",
@@ -169,6 +301,7 @@ try {
         posted.statusCode >= 400,
         `HTTP ${posted.statusCode}`,
       );
+      check("other_user_chat_write_logged", logged("chat session not found"));
 
       const [audio] = await sql<{ n: string }[]>`
         SELECT count(*)::text AS n
@@ -196,6 +329,14 @@ try {
       check(
         "other_user_insight_session_no_confirm",
         stolenJson.error === config.INSIGHTS_ERROR_NOT_FOUND,
+      );
+      check(
+        "other_user_insight_session_no_email",
+        !JSON.stringify(stolenJson).includes(owner.email),
+      );
+      check(
+        "other_user_insight_session_logged",
+        logged("personal session not found"),
       );
 
       const ownInsight = await get(
@@ -225,6 +366,7 @@ try {
         `${refused.statusCode}`,
       );
     }
+    check("other_user_admin_logged", logged("owner route refused"));
     if (ownerSession) {
       const adminStolen = await get(
         `/api/admin/sessions/${ownerSession.id}`,

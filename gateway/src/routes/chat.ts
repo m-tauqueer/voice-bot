@@ -99,6 +99,10 @@ export async function registerChatRoutes(
       });
     }
     if (turns === null) {
+      request.log.info(
+        { sessionId: parsed.data.session_id, userId: user.id },
+        "chat session not found",
+      );
       return reply.code(404).send({ error: "session not found" });
     }
     return {
@@ -140,6 +144,10 @@ export async function registerChatRoutes(
       if (parsed.data.session_id) {
         session = await getSessionForUser(sql, parsed.data.session_id, user.id);
         if (!session) {
+          request.log.info(
+            { sessionId: parsed.data.session_id, userId: user.id },
+            "chat session not found",
+          );
           return reply.code(404).send({ error: "session not found" });
         }
         if (session.endedAt) {

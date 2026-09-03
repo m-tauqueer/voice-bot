@@ -1,11 +1,16 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
-import { type GatewayConfig, corsAllowedMethods } from "./config.js";
+import {
+  type GatewayConfig,
+  corsAllowedMethods,
+  rateLimitEnabled,
+} from "./config.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerChatRoutes } from "./routes/chat.js";
@@ -19,16 +24,21 @@ export async function createGatewayApp(deps: {
   config: GatewayConfig;
   sql: Sql;
   redis: Redis;
+  loggerInstance?: FastifyBaseLogger;
 }): Promise<FastifyInstance> {
   const { config, sql, redis } = deps;
-  const app = Fastify({
-    logger: {
-      level: config.LOG_LEVEL,
-      ...(config.NODE_ENV === "development"
-        ? { transport: { target: "pino-pretty" } }
-        : {}),
-    },
-  });
+  const app = Fastify(
+    deps.loggerInstance
+      ? { loggerInstance: deps.loggerInstance }
+      : {
+          logger: {
+            level: config.LOG_LEVEL,
+            ...(config.NODE_ENV === "development"
+              ? { transport: { target: "pino-pretty" } }
+              : {}),
+          },
+        },
+  );
 
   redis.on("error", (error) => {
     app.log.error({ err: error }, "redis error");
@@ -39,6 +49,19 @@ export async function createGatewayApp(deps: {
     credentials: true,
     methods: corsAllowedMethods(config),
   });
+  if (rateLimitEnabled(config)) {
+    // Keyed by client IP. Redis-backed so the limit holds across gateway
+    // instances; skipOnError fails open so a Redis blip never takes the door
+    // down. The public front door is the DoS/brute-force boundary; the worker
+    // guards its own internal-secret surface separately.
+    await app.register(rateLimit, {
+      max: config.RATE_LIMIT_MAX,
+      timeWindow: config.RATE_LIMIT_WINDOW_MS,
+      redis,
+      nameSpace: config.RATE_LIMIT_REDIS_PREFIX,
+      skipOnError: true,
+    });
+  }
   await app.register(cookie, {
     secret: config.SESSION_SECRET,
   });

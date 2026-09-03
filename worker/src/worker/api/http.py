@@ -3,13 +3,18 @@ from __future__ import annotations
 from typing import NoReturn
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException, Request
 
 from worker.config import WorkerSettings
 from worker.turn.errors import TurnError
 
+log = structlog.get_logger(__name__)
+
 
 def raise_turn(exc: TurnError) -> NoReturn:
+    if exc.status in {401, 403}:
+        log.warning("turn refused", status=exc.status, reason=exc.reason)
     raise HTTPException(
         status_code=exc.status,
         detail={

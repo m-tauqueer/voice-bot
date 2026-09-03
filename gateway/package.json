@@ -20,13 +20,15 @@
     "call": "tsx src/voice/callProbe.ts",
     "isolation": "tsx src/voice/isolationProbe.ts",
     "failures": "tsx src/voice/failureProbe.ts",
-    "budgets": "tsx src/observe/budgetProbe.ts"
+    "budgets": "tsx src/observe/budgetProbe.ts",
+    "security": "tsx src/observe/securityProbe.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.32.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.0.1",
     "@fastify/multipart": "^10.1.1",
+    "@fastify/rate-limit": "^11.2.0",
     "@fastify/websocket": "^11.2.0",
     "dotenv": "^17.4.2",
     "fastify": "^5.2.1",
