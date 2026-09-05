@@ -114,7 +114,6 @@ def build_chat_completions_router(
 
         log.info(
             "voice turn requested",
-            session_id=str(session_id),
             stream_requested=bool(body.stream),
             streaming=streaming,
             messages=len(body.messages),

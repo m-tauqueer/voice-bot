@@ -1,6 +1,20 @@
 from __future__ import annotations
 
 
+def quota_applies_to_caller(*, owner: bool) -> bool:
+    return not owner
+
+
+def parse_owner_emails(raw: str) -> frozenset[str]:
+    return frozenset(
+        part.strip().lower() for part in raw.replace(",", " ").split() if part.strip()
+    )
+
+
+def is_owner_email(email: str, raw_owners: str) -> bool:
+    return email.strip().lower() in parse_owner_emails(raw_owners)
+
+
 def quota_limit_active(limit: float) -> bool:
     return limit > 0
 

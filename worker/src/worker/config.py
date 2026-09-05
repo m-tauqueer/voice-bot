@@ -56,6 +56,7 @@ class WorkerSettings(BaseSettings):
     )
     quota_log_refused: str = Field(default="quota refused", min_length=1)
     quota_log_warn: str = Field(default="quota warn", min_length=1)
+    owner_emails: str = Field(default="")
     internal_api_secret: str = Field(min_length=16)
     rate_limit_enabled: bool = Field(default=True)
     rate_limit_redis_prefix: str = Field(default="ratelimit:", min_length=1)

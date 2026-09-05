@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   firstQuotaHit,
+  quotaAppliesToCaller,
   quotaExceeded,
   quotaLimitActive,
   quotaShouldWarn,
 } from "./decision.js";
 
 describe("quota decision", () => {
+  it("does not apply to an owner", () => {
+    expect(quotaAppliesToCaller(true)).toBe(false);
+    expect(quotaAppliesToCaller(false)).toBe(true);
+  });
+
   it("treats a zero limit as off", () => {
     expect(quotaLimitActive(0)).toBe(false);
     expect(quotaExceeded(99, 0)).toBe(false);

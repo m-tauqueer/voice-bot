@@ -41,6 +41,7 @@ from worker.persistence.receipts import (
 from worker.persistence.sessions import (
     get_session,
     set_engram_session_id,
+    user_email,
     user_engram_id,
 )
 from worker.persistence.turns import (
@@ -50,6 +51,7 @@ from worker.persistence.turns import (
     next_ordinal,
     recent_history,
 )
+from worker.quota.decision import is_owner_email, quota_applies_to_caller
 from worker.quota.store import (
     load_quota_usage,
     log_quota_warn,
@@ -280,25 +282,29 @@ class TurnRunner:
                         reason=mismatch,
                     )
 
-                limits = resolve_live_quota_limits(conn, self._settings)
-                usage = load_quota_usage(conn, app_user_id, limits)
-                refused = refuse_quota(self._settings, usage, limits)
-                if refused is not None:
-                    log.warning(
-                        self._settings.quota_log_refused,
-                        user_id=str(app_user_id),
-                        kind=refused["kind"],
-                        used=refused["used"],
-                        limit=refused["limit"],
-                    )
-                    raise TurnError(
-                        str(refused["error"]),
-                        status=429,
-                        reason=str(refused["code"]),
-                        code=str(refused["code"]),
-                        reset_at=usage.reset_at,
-                    )
-                log_quota_warn(self._settings, app_user_id, usage, limits)
+                email = user_email(conn, app_user_id)
+                if quota_applies_to_caller(
+                    owner=is_owner_email(email or "", self._settings.owner_emails),
+                ):
+                    limits = resolve_live_quota_limits(conn, self._settings)
+                    usage = load_quota_usage(conn, app_user_id, limits)
+                    refused = refuse_quota(self._settings, usage, limits)
+                    if refused is not None:
+                        log.warning(
+                            self._settings.quota_log_refused,
+                            user_id=str(app_user_id),
+                            kind=refused["kind"],
+                            used=refused["used"],
+                            limit=refused["limit"],
+                        )
+                        raise TurnError(
+                            str(refused["error"]),
+                            status=429,
+                            reason=str(refused["code"]),
+                            code=str(refused["code"]),
+                            reset_at=usage.reset_at,
+                        )
+                    log_quota_warn(self._settings, app_user_id, usage, limits)
 
                 persona = get_persona(conn, persona_id)
                 if persona is None:

@@ -67,7 +67,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan code for the test suite, waitlist, and quotas (4.3–4.5) is in; **the next named work is the manual test backlog after 4.5 in [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md) — finish those live checks before starting 4.6 or anything later.** Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan work for the test suite, waitlist, quotas, and the post-quota live checks (4.3–4.5) is done. **Do not start 4.6 or anything later until Tauqueer names the next part** from [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md). Remaining Phase 3 parts start when he names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 

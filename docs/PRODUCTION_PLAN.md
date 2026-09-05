@@ -18,7 +18,7 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 
 ## 1. Where the product is today (ground truth from the code)
 
-**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in.
+**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in. The offline test suite (4.3), waitlist access (4.4), daily member quotas and write receipts (4.5), and the post-4.5 live checks are in and signed off. `OWNER_EMAILS` are not capped. The think request log takes `session_id` from `LOG_TURN_FIELDS` only.
 
 **Not yet built (the gap this plan closes):**
 
@@ -27,12 +27,12 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 | --------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
 | Deployment      | Laptop + ngrok tunnel; Blob archiving off                        | Azure Container Apps, managed Postgres/Redis, Blob on, tunnel retired |
 | CI/CD           | None                                                             | Build + test + lint + typecheck + migrate + deploy pipeline           |
-| Automated tests | Only probe scripts                                               | Unit + integration tests with a coverage gate; probes become e2e      |
-| Member access   | Any Google account becomes a member                              | An explicit access model (invite / allowlist / waitlist)              |
+| Automated tests | Vitest + pytest with a coverage gate; probes stay as live smoke  | Keep the floor; turn probes into e2e against staging                  |
+| Member access   | Waitlist; owners auto-approved; People queue on `/admin/people`  | Same model on the Azure deploy                                        |
 | Personas        | Exactly one active persona (`resolveActivePersona` throws on >1) | Support many personas cleanly, even if launch ships one               |
 | Data lifecycle  | None                                                             | Delete-my-data, export, retention, consent, privacy/ToS               |
-| Observability   | Logs + budget probe                                              | Error tracking, metrics, uptime/synthetic checks, alerts              |
-| Abuse / cost    | IP rate limit + auth throttle                                    | Per-user quotas, write idempotency, cost guardrails                   |
+| Observability   | Logs + budget probe + per-turn correlation id                    | Error tracking, metrics, uptime/synthetic checks, alerts              |
+| Abuse / cost    | Member daily caps, receipts, per-user rate-limit keys            | Cost dashboards; billing only if we charge                            |
 | Resilience      | Single instances                                                 | Backups, restore runbook, horizontal scale, load test                 |
 | UX polish       | Functional                                                       | Onboarding, empty/error states, mobile, accessibility                 |
 
@@ -137,7 +137,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 **Manual test.** A new Google account lands on the waitlist with no `users` / pool row; the owner batch-approves; the next sign-in becomes a member; denied/revoked accounts see a clear refuse message. Existing owner and tester still sign in after backfill.
 
-**Done when.** Unapproved sign-in cannot reach chat, voice, or memories, and the owner can admit or refuse from People. **Implemented.** (Live Google OAuth and the People click-through are the remaining human checks.)
+**Done when.** Unapproved sign-in cannot reach chat, voice, or memories, and the owner can admit or refuse from People. **Done.** Live waitlist and People checks signed off (see the backlog below).
 
 ### Part 4.5 — Quotas, idempotency & abuse controls
 
@@ -147,7 +147,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 | Subpart | What |
 | --- | --- |
-| 4.5.1 | Daily per-user quotas: user-speaker turns and overlapping voice minutes. `0` disables a cap. Calendar day in `QUOTA_TIMEZONE`. |
+| 4.5.1 | Daily per-user quotas for members: user-speaker turns and overlapping voice minutes. `0` disables a cap. `OWNER_EMAILS` are not capped. Calendar day in `QUOTA_TIMEZONE`. |
 | 4.5.2 | Enforce in `TurnRunner._begin` before the brain; gateway chat refuses with the same count so typed chat never spends on a known overage. 429 `{ error, code, reset_at }`. |
 | 4.5.3 | `write_receipts` unique on `(session_id, correlation_id)`. Persist and converse write-back run at most once per receipt. Chat accepts an optional `correlation_id` so a retry can reuse it. |
 | 4.5.4 | Cookie plugin before rate-limit. `keyGenerator` uses `user:{id}` when the session is a member, otherwise IP. |
@@ -156,7 +156,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 **Logic.**
 - Count only `speaker = user` turns. Voice minutes clamp each session to the calendar window (`started_at` → `ended_at` or now).
-- A limit of `0` is off. Owner emails are not exempt — spend is spend.
+- A limit of `0` is off. `OWNER_EMAILS` accounts are not capped. Members still are.
 - Receipts are claimed in the persist transaction; a second finish with the same ids returns the stored turn ids and does not converse again.
 - Rate-limit key is a configured prefix plus user id or IP. No request-body matching.
 
@@ -164,37 +164,35 @@ Goal: the product can be put in front of real, external users without a data lea
 
 **Manual test.** Save a turn cap of 1 on admin Overview. The next extra chat turn is 429 `{ error, code, reset_at }` and logs `quota refused`. A retried chat/think write with the same correlation id does not double-record.
 
-**Done when.** Caps and receipts are server-side, messages are honest, and per-user rate-limit keys are used when a member cookie is present. **Implemented.** (Live over-quota and retry-the-same-correlation-id checks need a running stack.)
+**Done when.** Caps and receipts are server-side, messages are honest, and per-user rate-limit keys are used when a member cookie is present. **Done.** Owners skip the cap. Live quota and receipt checks signed off (see the backlog below).
 
-### After 4.5 — Manual test backlog (do this before anything else)
+### After 4.5 — Manual test backlog
 
-**Stop here.** Code for 4.3, 4.4, and 4.5 is in. Offline `npm test` / `npm run test:worker` passed once. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. **Do not start 4.6, 4.7, 4.1–4.2, 4.8–4.9, or Phase 5/6 until Tauqueer says the list below is done.**
+**Complete.** Tauqueer signed the list off. Offline `npm test` / `npm run test:worker` passed. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. Live waitlist, quota, and spoken-think checks are done. A think-handler log that passed `session_id` twice returned 500 to Deepgram (`FAILED_TO_THINK` / "The persona could not answer"); that collision is fixed. Do not start 4.6, 4.7, 4.1–4.2, 4.8–4.9, or Phase 5/6 until Tauqueer names the next part.
 
-A new agent session’s only job, until he names something else, is to **finish this backlog** with him: re-run the 4.3–4.5 automated suite, then walk the live/manual checks a machine cannot do. Restart gateway, worker, and frontend first — any process started before this work will not have the waitlist routes, quota refuse, or new `VITE_*` copy.
+**4.3 — re-run the suite**
 
-**4.3 — re-run the suite (not optional)**
+- [x] `npm run lint` and `npm run typecheck` pass.
+- [x] `npm test` and `npm run test:worker` pass. Coverage still meets `config/test-coverage.json`.
+- [x] Existing probes are unchanged (`npm run isolation`, `npm run security` still exist; do not replace them).
 
-- [ ] `npm run lint` and `npm run typecheck` pass.
-- [ ] `npm test` and `npm run test:worker` pass. Coverage still meets `config/test-coverage.json`.
-- [ ] Existing probes are unchanged (`npm run isolation`, `npm run security` still exist; do not replace them).
+**4.4 — live waitlist**
 
-**4.4 — live waitlist (needs a second Google account that is not already a `users` row)**
+- [x] New Google sign-in lands on `/waitlist`. No `users` row. No Engram pool / subscribe.
+- [x] Owner batch-approves on `/admin/people`. Next sign-in becomes a member and can use chat/voice.
+- [x] Denied or revoked account sees the refuse card; product `/api/*` stays 401.
+- [x] Existing owner and tester still sign in after the `active` backfill.
+- [x] Click-through: waitlist card, People queue (approve/deny/revoke), personal vs admin frames. Landing does not bounce a waitlisted account to `/dashboard`.
+- [x] Revoke of a live member cookie is refused on the next product request. Cannot revoke-of-self or deny/revoke an `OWNER_EMAILS` account.
 
-- [ ] New Google sign-in lands on `/waitlist`. No `users` row. No Engram pool / subscribe.
-- [ ] Owner batch-approves on `/admin/people`. Next sign-in becomes a member and can use chat/voice.
-- [ ] Denied or revoked account sees the refuse card; product `/api/*` stays 401.
-- [ ] Existing owner and tester still sign in after the `active` backfill.
-- [ ] Click-through: waitlist card, People queue (approve/deny/revoke), personal vs admin frames. Landing does not bounce a waitlisted account to `/dashboard`.
-- [ ] Revoke of a live member cookie is refused on the next product request. Cannot revoke-of-self or deny/revoke an `OWNER_EMAILS` account.
+**4.5 — live quotas and write receipts**
 
-**4.5 — live quotas and write receipts (needs the restarted stack)**
+- [x] On `/admin`, set turns per day to `1` and save. Send two chat turns. Second is 429 `{ error, code, reset_at }` and logs `quota refused` (or the configured event name).
+- [x] POST `/api/chat` twice with the same `correlation_id`. One user-speaker turn row. Converse write-back does not double.
+- [x] Optional: a spoken turn after the turn cap — think refuses, no extra Engram spend. Owner accounts are not capped.
+- [x] Member cookie rate-limit key is `user:{id}`; signed-out traffic still keys by IP.
 
-- [ ] On `/admin`, set turns per day to `1` and save. Send two chat turns. Second is 429 `{ error, code, reset_at }` and logs `quota refused` (or the configured event name).
-- [ ] POST `/api/chat` twice with the same `correlation_id`. One user-speaker turn row. Converse write-back does not double.
-- [ ] Optional: a spoken turn after the turn cap — think refuses, no extra Engram spend.
-- [ ] Member cookie rate-limit key is `user:{id}`; signed-out traffic still keys by IP.
-
-**Done when.** Every box above is checked with Tauqueer. Only then may the next named part start.
+**Done when.** Every box above is checked with Tauqueer. **Done.** The next named part starts when he says so.
 
 ### Part 4.6 — Observability, monitoring & alerting
 
@@ -308,8 +306,8 @@ Not all of these will ship; they are candidates so we choose deliberately.
 
 **Azure deployment (4.1) comes last — after everything else in Phase 4 is complete.** Everything that can be built and tested locally lands first; the product moves to Azure only once it is fully hardened.
 
-**Now:** 4.3 / 4.4 / 4.5 code is in. Next work is the **After 4.5 manual test backlog** (re-run the suite, then the live waitlist and quota checks). Do not skip it.
+**Now:** 4.3 / 4.4 / 4.5 and the After 4.5 backlog are done. Wait for Tauqueer to name the next part.
 
-Order of the rest: **4.4 waitlist access → 4.3 test suite → 4.5 quotas & idempotency → After 4.5 manual backlog → 4.7 data lifecycle → 4.6 observability → 4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
+Order of the rest: **4.7 data lifecycle → 4.6 observability → 4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
 
 Some sub-tasks can only be *finished* against real infra (the live public-think check in 4.9, managed-Postgres backups in 4.8, the deploy step of the pipeline in 4.2); those complete when 4.1 lands. Phase 5 begins once the beta is stable; Phase 6 is pulled by demand.

@@ -14,6 +14,10 @@ export function quotaShouldWarn(
   return quotaLimitActive(limit) && ratio > 0 && used >= limit * ratio;
 }
 
+export function quotaAppliesToCaller(owner: boolean): boolean {
+  return !owner;
+}
+
 export function firstQuotaHit(input: {
   turnsUsed: number;
   turnsLimit: number;

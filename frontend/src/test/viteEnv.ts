@@ -97,7 +97,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_OVERVIEW_BUDGET_LABEL: "Budget",
   VITE_RECENT_TITLE: "Recent",
   VITE_QUOTA_TITLE: "Daily limits",
-  VITE_QUOTA_HELP: "0 turns a cap off. Changes apply on the next turn.",
+  VITE_QUOTA_HELP: "0 turns a cap off. Changes apply on the next turn. Owner accounts are not capped.",
   VITE_QUOTA_TURNS_LABEL: "Turns per day",
   VITE_QUOTA_MINUTES_LABEL: "Voice minutes per day",
   VITE_QUOTA_TIMEZONE_LABEL: "Timezone",

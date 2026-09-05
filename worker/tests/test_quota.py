@@ -3,12 +3,21 @@ from datetime import UTC, datetime
 from worker.config import WorkerSettings
 from worker.quota.decision import (
     first_quota_hit,
+    is_owner_email,
+    quota_applies_to_caller,
     quota_exceeded,
     quota_limit_active,
     quota_should_warn,
 )
 from worker.quota.settings import QuotaLimits, env_quota_limits, resolve_quota_limits
 from worker.quota.store import QuotaUsage, refuse_quota
+
+
+def test_owner_is_not_capped() -> None:
+    assert quota_applies_to_caller(owner=True) is False
+    assert quota_applies_to_caller(owner=False) is True
+    assert is_owner_email("Owner@Example.com", "owner@example.com, other@x.com")
+    assert not is_owner_email("member@example.com", "owner@example.com")
 
 
 def test_zero_limit_is_off() -> None:

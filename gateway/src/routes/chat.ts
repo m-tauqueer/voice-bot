@@ -7,9 +7,10 @@ import { touchChatActivity } from "../chat/activity.js";
 import { createTextSession, getSessionForUser } from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
-import type { GatewayConfig } from "../config.js";
+import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { turnLogFields } from "../observe/fields.js";
 import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { quotaAppliesToCaller } from "../quota/decision.js";
 import {
   type QuotaUsage,
   loadQuotaUsage,
@@ -186,32 +187,34 @@ export async function registerChatRoutes(
       request.log.error({ sessionId: session.id }, "chat activity not stored");
     }
 
-    let usage: QuotaUsage;
-    let limits: Awaited<ReturnType<typeof resolveLiveQuotaLimits>>;
-    try {
-      limits = await resolveLiveQuotaLimits(sql, config);
-      usage = await loadQuotaUsage(sql, user.id, limits);
-    } catch (error) {
-      request.log.error({ err: error }, "chat quota lookup failed");
-      return reply.code(503).send({
-        error: config.FAILURE_MESSAGE_DATABASE,
-        code: config.FAILURE_CODE_DATABASE,
-      });
-    }
-    const refused = quotaRefusal(config, usage, limits);
-    if (refused) {
-      request.log.warn(
-        {
-          userId: user.id,
-          code: refused.code,
-          reset_at: refused.reset_at,
-        },
-        config.QUOTA_LOG_REFUSED,
-      );
-      return reply.code(429).send(refused);
-    }
-    for (const kind of quotaWarnKinds(config, usage, limits)) {
-      request.log.warn({ userId: user.id, kind }, config.QUOTA_LOG_WARN);
+    if (quotaAppliesToCaller(isOwnerEmail(user.email, config))) {
+      let usage: QuotaUsage;
+      let limits: Awaited<ReturnType<typeof resolveLiveQuotaLimits>>;
+      try {
+        limits = await resolveLiveQuotaLimits(sql, config);
+        usage = await loadQuotaUsage(sql, user.id, limits);
+      } catch (error) {
+        request.log.error({ err: error }, "chat quota lookup failed");
+        return reply.code(503).send({
+          error: config.FAILURE_MESSAGE_DATABASE,
+          code: config.FAILURE_CODE_DATABASE,
+        });
+      }
+      const refused = quotaRefusal(config, usage, limits);
+      if (refused) {
+        request.log.warn(
+          {
+            userId: user.id,
+            code: refused.code,
+            reset_at: refused.reset_at,
+          },
+          config.QUOTA_LOG_REFUSED,
+        );
+        return reply.code(429).send(refused);
+      }
+      for (const kind of quotaWarnKinds(config, usage, limits)) {
+        request.log.warn({ userId: user.id, kind }, config.QUOTA_LOG_WARN);
+      }
     }
 
     const correlationId = parsed.data.correlation_id ?? randomUUID();

@@ -77,3 +77,13 @@ def user_engram_id(conn: psycopg.Connection, user_id: UUID) -> str | None:
         return None
     value = row["engram_user_id"]
     return value if isinstance(value, str) else None
+
+
+def user_email(conn: psycopg.Connection, user_id: UUID) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT email FROM users WHERE id = %s", (str(user_id),))
+        row = cur.fetchone()
+    if row is None:
+        return None
+    value = row["email"]
+    return value if isinstance(value, str) else None
