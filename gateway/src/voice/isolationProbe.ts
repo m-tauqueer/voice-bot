@@ -357,6 +357,7 @@ try {
       "/api/admin/sessions",
       "/api/admin/users",
       "/api/admin/persona",
+      "/api/admin/quota",
     ];
     for (const path of adminPaths) {
       const refused = await get(path, otherCookie);

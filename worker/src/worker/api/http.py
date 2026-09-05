@@ -13,16 +13,22 @@ log = structlog.get_logger(__name__)
 
 
 def raise_turn(exc: TurnError) -> NoReturn:
-    if exc.status in {401, 403}:
-        log.warning("turn refused", status=exc.status, reason=exc.reason)
-    raise HTTPException(
-        status_code=exc.status,
-        detail={
-            "error": str(exc),
-            "reason": exc.reason,
-            "code": exc.code,
-        },
-    ) from exc
+    if exc.status in {401, 403, 429}:
+        log.warning(
+            "turn refused",
+            status=exc.status,
+            reason=exc.reason,
+            code=exc.code,
+        )
+    detail: dict[str, object] = {
+        "error": str(exc),
+        "reason": exc.reason,
+        "code": exc.code,
+    }
+    if exc.reset_at is not None:
+        stamp = exc.reset_at.isoformat().replace("+00:00", "Z")
+        detail["reset_at"] = stamp
+    raise HTTPException(status_code=exc.status, detail=detail) from exc
 
 
 def read_correlation_id(

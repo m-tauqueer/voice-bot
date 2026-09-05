@@ -67,7 +67,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan code for the test suite, waitlist, and quotas (4.3–4.5) is in; **the next named work is the manual test backlog after 4.5 in [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md) — finish those live checks before starting 4.6 or anything later.** Remaining Phase 3 parts start when Tauqueer names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
@@ -78,6 +78,8 @@ Install and run (after copying `.env.example` to `.env` and filling secrets):
 npm install
 npm run typecheck
 npm run lint
+npm test
+npm run test:worker
 
 # Python worker (uv pins CPython 3.12 via worker/.python-version)
 cd worker && uv sync
@@ -117,7 +119,7 @@ npm run infra:reset
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
 
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
-- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Signed-in product is `/dashboard` (Home, Chat, Voice) for every user; `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
+- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Signed-in members use `/dashboard` (Home, Chat, Voice); unapproved Google accounts land on `/waitlist` with no `users` row. `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
 - `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/TRD.md) §1.2.
 - `infra/` — Docker Compose, migrations, scripts.

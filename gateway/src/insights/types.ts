@@ -135,6 +135,9 @@ export type InsightsUser = {
   session_count: number;
   last_seen_at: string | null;
   subscription_status: string | null;
+  access_request_id: string | null;
+  access_status: string | null;
+  owner: boolean;
 };
 
 export type InsightsUserList = {

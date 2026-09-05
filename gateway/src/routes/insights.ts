@@ -260,7 +260,7 @@ export async function registerInsightRoutes(
               .send({ error: config.INSIGHTS_ERROR_INVALID_CURSOR });
           }
         }
-        return ownerUsers(sql, { limit: limit.limit, cursor });
+        return ownerUsers(sql, config, { limit: limit.limit, cursor });
       });
     },
     { prefix: "/api/admin" },

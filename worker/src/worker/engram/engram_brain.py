@@ -93,10 +93,17 @@ def _map_sdk_error(exc: SdkEngramError, *, chat: bool = False) -> app.BrainError
 
 
 class EngramBrain(PersonaBrain):
-    def __init__(self, settings: WorkerSettings, user_id: str) -> None:
+    def __init__(
+        self,
+        settings: WorkerSettings,
+        user_id: str,
+        client: Any | None = None,
+    ) -> None:
         self._settings = settings
         self._user_id = user_id
-        self._client = create_engram(settings, user_id)
+        self._client = (
+            client if client is not None else create_engram(settings, user_id)
+        )
 
     def _read(self, op: Callable[[], T]) -> T:
         attempts = 0

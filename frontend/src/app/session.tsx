@@ -7,12 +7,14 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, api } from "../lib/gateway";
+import {
+  sessionFromMeFetch,
+  type HeldMe,
+  type MePayload,
+  type ReadyMe,
+} from "../lib/sessionState";
 
-export type AppUser = {
-  id: string;
-  email: string;
-  owner: boolean;
-};
+export type AppUser = ReadyMe;
 
 export type AppPersona = {
   id: string;
@@ -24,7 +26,10 @@ export type AppPersona = {
 type SessionState =
   | { status: "loading"; me: null; persona: null }
   | { status: "signed_out"; me: null; persona: null }
-  | { status: "ready"; me: AppUser; persona: AppPersona | null };
+  | { status: "ready"; me: AppUser; persona: AppPersona | null }
+  | { status: "waitlisted"; me: HeldMe; persona: null }
+  | { status: "denied"; me: HeldMe; persona: null }
+  | { status: "revoked"; me: HeldMe; persona: null };
 
 type SessionContextValue = SessionState & {
   reloadPersona: () => Promise<void>;
@@ -68,8 +73,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const me = await api<AppUser>("/api/me");
+        const me = await api<MePayload>("/api/me");
         if (cancelled) return;
+        const resolved = sessionFromMeFetch({ ok: true, me });
+        if (resolved.status !== "ready") {
+          setState({ ...resolved, persona: null });
+          return;
+        }
         let persona: AppPersona | null = null;
         try {
           persona = await fetchPersona();
@@ -77,14 +87,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           persona = null;
         }
         if (cancelled) return;
-        setState({ status: "ready", me, persona });
-      } catch (error) {
+        setState({ ...resolved, persona });
+      } catch {
         if (cancelled) return;
-        if (error instanceof ApiError && error.status === 401) {
-          setState({ status: "signed_out", me: null, persona: null });
-          return;
-        }
-        setState({ status: "signed_out", me: null, persona: null });
+        setState({ ...sessionFromMeFetch({ ok: false }), persona: null });
       }
     })();
     return () => {

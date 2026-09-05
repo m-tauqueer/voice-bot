@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff"]
+dev = ["ruff", "pytest", "pytest-cov"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/worker"]
@@ -34,3 +34,25 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "--cov=worker.controller",
+    "--cov=worker.turn.identity",
+    "--cov=worker.quota.decision",
+    "--cov=worker.quota.settings",
+    "--cov=worker.ratelimit",
+    "--cov=worker.api.internal_auth",
+    "--cov=worker.engram.engram_brain",
+    "--cov=worker.reframe.reframer",
+    "--cov=worker.reframe.answerer",
+    "--cov=worker.reframe.defaults",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/probe.py", "*/__main__.py"]

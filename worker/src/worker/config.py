@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,6 +38,24 @@ class WorkerSettings(BaseSettings):
     redis_url: str | None = None
     voice_notice_redis_channel: str = Field(default="voice-notice", min_length=1)
     redis_command_timeout_ms: int = Field(default=500, gt=0)
+    quota_turns_per_day: int = Field(default=200, ge=0)
+    quota_voice_minutes_per_day: float = Field(default=60, ge=0)
+    quota_timezone: str = Field(default="UTC", min_length=1)
+    quota_warn_ratio: float = Field(default=0.8, ge=0, le=1)
+    quota_kind_turns: str = Field(default="turns", min_length=1)
+    quota_kind_minutes: str = Field(default="minutes", min_length=1)
+    quota_code_turns: str = Field(default="quota_turns", min_length=1)
+    quota_code_minutes: str = Field(default="quota_minutes", min_length=1)
+    quota_error_turns: str = Field(
+        default="Daily turn limit reached. Try again after reset_at.",
+        min_length=1,
+    )
+    quota_error_minutes: str = Field(
+        default="Daily voice-minute limit reached. Try again after reset_at.",
+        min_length=1,
+    )
+    quota_log_refused: str = Field(default="quota refused", min_length=1)
+    quota_log_warn: str = Field(default="quota warn", min_length=1)
     internal_api_secret: str = Field(min_length=16)
     rate_limit_enabled: bool = Field(default=True)
     rate_limit_redis_prefix: str = Field(default="ratelimit:", min_length=1)
@@ -175,6 +194,12 @@ class WorkerSettings(BaseSettings):
     def default_correlation_header(cls, value: object) -> object:
         if isinstance(value, str) and value.strip() == "":
             return "x-correlation-id"
+        return value
+
+    @field_validator("quota_timezone")
+    @classmethod
+    def quota_timezone_known(cls, value: str) -> str:
+        ZoneInfo(value)
         return value
 
     @field_validator("log_turn_fields")

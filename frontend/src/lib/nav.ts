@@ -2,6 +2,7 @@ import { MEMORY_ICONS } from "./memory-icons";
 import { requiredVite } from "./env";
 import { matchPath, matchPattern, pathWithin } from "./router";
 import {
+  ADMIN_APP_NAV_ROUTE_IDS,
   ADMIN_NAV_ROUTE_IDS,
   OWNER_NAV_ROUTE_IDS,
   PATTERNS,
@@ -63,6 +64,7 @@ export type NavConfig = {
   items: NavItem[];
   ownerItems: NavItem[];
   adminItems: NavItem[];
+  adminAppItems: NavItem[];
   signOutLabel: string;
   loadingLabel: string;
   continueLabel: string;
@@ -83,6 +85,10 @@ export type NavConfig = {
 
 let cached: NavConfig | null = null;
 
+export function resetNavConfig(): void {
+  cached = null;
+}
+
 export function loadNavConfig(): NavConfig {
   if (cached) {
     return cached;
@@ -102,11 +108,20 @@ export function loadNavConfig(): NavConfig {
     new Set(ADMIN_NAV_ROUTE_IDS),
     "VITE_ADMIN_NAV_ITEMS",
   );
+  const adminAppItems = parseNavItems(
+    requiredVite("VITE_ADMIN_APP_ITEMS"),
+    new Set(ADMIN_APP_NAV_ROUTE_IDS),
+    "VITE_ADMIN_APP_ITEMS",
+  );
+  if (requiredVite("VITE_WAITLIST_PATH") !== ROUTES.waitlist) {
+    throw new Error("VITE_WAITLIST_PATH must match the waitlist route");
+  }
   cached = {
     appName: requiredVite("VITE_APP_NAME"),
     items,
     ownerItems,
     adminItems,
+    adminAppItems,
     signOutLabel: requiredVite("VITE_SIGNOUT_LABEL"),
     loadingLabel: requiredVite("VITE_LOADING_LABEL"),
     continueLabel: requiredVite("VITE_SIGNIN_CONTINUE"),
@@ -132,6 +147,11 @@ export function personalNav(owner: boolean): NavItem[] {
   return owner ? [...items, ...ownerItems] : items;
 }
 
+export function adminNav(): NavItem[] {
+  const { adminItems, adminAppItems } = loadNavConfig();
+  return [...adminItems, ...adminAppItems];
+}
+
 export function navIdForPath(items: NavItem[], path: string): string {
   const exact = items.find((item) => matchPath(path, item.to));
   if (exact) {
@@ -154,6 +174,10 @@ export function isPersonalPath(path: string): boolean {
 
 export function isAdminPath(path: string): boolean {
   return pathWithin(path, ROUTES.admin);
+}
+
+export function isWaitlistPath(path: string): boolean {
+  return matchPath(path, ROUTES.waitlist);
 }
 
 export function signInCopy(path: string): { title: string; body: string } {

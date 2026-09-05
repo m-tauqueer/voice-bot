@@ -32,6 +32,12 @@ from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
 from worker.persistence.db import borrow
 from worker.persistence.personas import get_persona
+from worker.persistence.receipts import (
+    claim_write_receipt,
+    claim_writeback,
+    load_receipt_turn_ids,
+    store_receipt_turn_ids,
+)
 from worker.persistence.sessions import (
     get_session,
     set_engram_session_id,
@@ -44,12 +50,19 @@ from worker.persistence.turns import (
     next_ordinal,
     recent_history,
 )
+from worker.quota.store import (
+    load_quota_usage,
+    log_quota_warn,
+    refuse_quota,
+    resolve_live_quota_limits,
+)
 from worker.reframe.answerer import Answerer
 from worker.reframe.errors import ReframeError, ReframeUnavailableError
 from worker.reframe.reframer import Reframer
 from worker.reframe.types import HistoryTurn
 from worker.schema import TURN_SPEAKER_PERSONA, TURN_SPEAKER_USER
 from worker.turn.errors import TurnError
+from worker.turn.identity import session_identity_reason, stored_engram_matches
 
 log = structlog.get_logger(__name__)
 
@@ -251,25 +264,41 @@ class TurnRunner:
                         status=409,
                         reason="session_ended",
                     )
-                if UUID(str(session["user_id"])) != app_user_id:
-                    raise TurnError(
-                        "forbidden",
-                        status=403,
-                        reason="session_mismatch",
-                    )
-                if UUID(str(session["persona_id"])) != persona_id:
-                    raise TurnError(
-                        "forbidden",
-                        status=403,
-                        reason="persona_mismatch",
-                    )
                 stored_engram = user_engram_id(conn, app_user_id)
-                if stored_engram is None or stored_engram != engram_user_id:
+                mismatch = session_identity_reason(
+                    session_user_id=UUID(str(session["user_id"])),
+                    session_persona_id=UUID(str(session["persona_id"])),
+                    stored_engram_user_id=stored_engram,
+                    claimed_app_user_id=app_user_id,
+                    claimed_persona_id=persona_id,
+                    claimed_engram_user_id=engram_user_id,
+                )
+                if mismatch is not None:
                     raise TurnError(
                         "forbidden",
                         status=403,
-                        reason="identity_mismatch",
+                        reason=mismatch,
                     )
+
+                limits = resolve_live_quota_limits(conn, self._settings)
+                usage = load_quota_usage(conn, app_user_id, limits)
+                refused = refuse_quota(self._settings, usage, limits)
+                if refused is not None:
+                    log.warning(
+                        self._settings.quota_log_refused,
+                        user_id=str(app_user_id),
+                        kind=refused["kind"],
+                        used=refused["used"],
+                        limit=refused["limit"],
+                    )
+                    raise TurnError(
+                        str(refused["error"]),
+                        status=429,
+                        reason=str(refused["code"]),
+                        code=str(refused["code"]),
+                        reset_at=usage.reset_at,
+                    )
+                log_quota_warn(self._settings, app_user_id, usage, limits)
 
                 persona = get_persona(conn, persona_id)
                 if persona is None:
@@ -597,6 +626,22 @@ class TurnRunner:
         """
         if not plan.engram_user_id or not plan.engram_persona_id:
             return
+        try:
+            with borrow(self._settings) as conn:
+                claimed = claim_writeback(
+                    conn,
+                    plan.session_id,
+                    plan.correlation_id,
+                )
+                conn.commit()
+            if not claimed:
+                return
+        except Exception:
+            log.warning(
+                "engram write-back claim failed",
+                session_id=str(plan.session_id),
+            )
+            return
         sid = plan.engram_session_id
         entries: list[tuple[str, str]] = [
             (plan.text, self._settings.engram_converse_user_speaker),
@@ -670,7 +715,7 @@ class TurnRunner:
                 reason="database_unavailable",
                 code=self._settings.failure_code_database,
             ) from exc
-        if stored is None or stored != engram_user_id:
+        if not stored_engram_matches(stored, engram_user_id):
             raise TurnError(
                 "forbidden",
                 status=403,
@@ -698,6 +743,8 @@ class TurnRunner:
         mode: str,
         correlation_id: UUID,
     ) -> list[UUID]:
+        if not claim_write_receipt(conn, session_id, correlation_id):
+            return load_receipt_turn_ids(conn, session_id, correlation_id)
         reasons = [reason.value for reason in decision.reasons]
         user_ordinal = next_ordinal(conn, session_id)
         user_turn_id = insert_turn(
@@ -742,5 +789,12 @@ class TurnRunner:
             reframe_ms=reframe_ms,
             reframe_first_token_ms=reframe_first_token_ms,
             total_ms=total_ms,
+        )
+        store_receipt_turn_ids(
+            conn,
+            session_id,
+            correlation_id,
+            user_turn_id,
+            ids[1] if len(ids) > 1 else None,
         )
         return ids

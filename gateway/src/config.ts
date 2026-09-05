@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
+import { parseAccessStatus } from "./access/parse.js";
 import { validateInsightsConfig } from "./insights/parse.js";
 import { validateObserveConfig } from "./observe/fields.js";
 
@@ -47,6 +48,84 @@ const envFileSchema = z.object({
   RATE_LIMIT_REDIS_PREFIX: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("ratelimit:"),
+  ),
+  RATE_LIMIT_USER_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("user:"),
+  ),
+  RATE_LIMIT_IP_KEY_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ip:"),
+  ),
+  QUOTA_TURNS_PER_DAY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(200),
+  ),
+  QUOTA_VOICE_MINUTES_PER_DAY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().nonnegative().default(60),
+  ),
+  QUOTA_TIMEZONE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("UTC"),
+  ),
+  QUOTA_WARN_RATIO: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().min(0).max(1).default(0.8),
+  ),
+  QUOTA_KIND_TURNS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("turns"),
+  ),
+  QUOTA_KIND_MINUTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("minutes"),
+  ),
+  QUOTA_CODE_TURNS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("quota_turns"),
+  ),
+  QUOTA_CODE_MINUTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("quota_minutes"),
+  ),
+  QUOTA_ERROR_TURNS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("Daily turn limit reached. Try again after reset_at."),
+  ),
+  QUOTA_ERROR_MINUTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("Daily voice-minute limit reached. Try again after reset_at."),
+  ),
+  QUOTA_LOG_REFUSED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("quota refused"),
+  ),
+  QUOTA_LOG_WARN: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("quota warn"),
+  ),
+  QUOTA_ERROR_INVALID: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_quota_settings"),
+  ),
+  QUOTA_ERROR_INVALID_TIMEZONE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_quota_timezone"),
+  ),
+  QUOTA_SOURCE_STORED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("stored"),
+  ),
+  QUOTA_SOURCE_ENV: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("env"),
   ),
   WORKER_URL: z.string().url(),
   BYO_LLM_PUBLIC_URL: optionalUrl,
@@ -148,6 +227,70 @@ const envFileSchema = z.object({
     z.string().min(1).default("x-correlation-id"),
   ),
   POST_LOGIN_REDIRECT_URL: optionalUrl,
+  WAITLIST_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/waitlist"),
+  ),
+  ACCESS_ME_ACTIVE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("active"),
+  ),
+  ACCESS_ME_WAITLISTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("waitlisted"),
+  ),
+  ACCESS_ME_DENIED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("denied"),
+  ),
+  ACCESS_ME_REVOKED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("revoked"),
+  ),
+  ACCESS_ACTION_APPROVE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("approve"),
+  ),
+  ACCESS_ACTION_DENY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("deny"),
+  ),
+  ACCESS_ACTION_REVOKE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("revoke"),
+  ),
+  ACCESS_QUEUE_DEFAULT_STATUS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("requested"),
+  ),
+  ACCESS_BATCH_MAX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(100),
+  ),
+  ACCESS_ERROR_UNAUTHORIZED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("unauthorized"),
+  ),
+  ACCESS_ERROR_FORBIDDEN: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("forbidden"),
+  ),
+  ACCESS_ERROR_INVALID_BATCH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_access_batch"),
+  ),
+  ACCESS_ERROR_OWNER_PROTECTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("owner_access_protected"),
+  ),
+  ACCESS_ERROR_SELF: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("cannot_change_own_access"),
+  ),
+  ACCESS_ERROR_INVALID_STATUS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_access_status"),
+  ),
   OWNER_EMAILS: z.preprocess(
     (val) => (val === undefined ? "" : val),
     z.string(),
@@ -783,12 +926,63 @@ export function loadGatewayConfig(
   try {
     validateInsightsConfig(parsed.data);
     validateObserveConfig(parsed.data);
+    validateAccessConfig(parsed.data);
+    validateQuotaConfig(parsed.data);
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",
     );
   }
   return parsed.data;
+}
+
+export function validateAccessConfig(config: GatewayConfig): void {
+  const path = frontendPathRedirect(config, config.WAITLIST_PATH);
+  if (!path || path !== config.WAITLIST_PATH) {
+    throw new Error(
+      "WAITLIST_PATH must be a same-origin absolute path with no query",
+    );
+  }
+  const labels = [
+    config.ACCESS_ME_ACTIVE,
+    config.ACCESS_ME_WAITLISTED,
+    config.ACCESS_ME_DENIED,
+    config.ACCESS_ME_REVOKED,
+  ];
+  if (new Set(labels).size !== labels.length) {
+    throw new Error("access /api/me labels must be unique");
+  }
+  const actions = [
+    config.ACCESS_ACTION_APPROVE,
+    config.ACCESS_ACTION_DENY,
+    config.ACCESS_ACTION_REVOKE,
+  ];
+  if (new Set(actions).size !== actions.length) {
+    throw new Error("access batch actions must be unique");
+  }
+  if (!parseAccessStatus(config.ACCESS_QUEUE_DEFAULT_STATUS)) {
+    throw new Error(
+      "ACCESS_QUEUE_DEFAULT_STATUS must be a known access status",
+    );
+  }
+}
+
+export function waitlistRedirectUrl(config: GatewayConfig): string {
+  return new URL(config.WAITLIST_PATH, config.FRONTEND_ORIGIN).toString();
+}
+
+export function validateQuotaConfig(config: GatewayConfig): void {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: config.QUOTA_TIMEZONE });
+  } catch {
+    throw new Error("QUOTA_TIMEZONE must be a valid IANA timezone");
+  }
+  if (config.QUOTA_KIND_TURNS === config.QUOTA_KIND_MINUTES) {
+    throw new Error("quota kind tokens must be unique");
+  }
+  if (config.QUOTA_CODE_TURNS === config.QUOTA_CODE_MINUTES) {
+    throw new Error("quota codes must be unique");
+  }
 }
 
 export function sessionCookieSecure(config: GatewayConfig): boolean {

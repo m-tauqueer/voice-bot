@@ -3,6 +3,20 @@ export const SUBSCRIPTION_STATUS = {
   REVOKED: "revoked",
 } as const;
 
+export const ACCESS_STATUS = {
+  REQUESTED: "requested",
+  APPROVED: "approved",
+  ACTIVE: "active",
+  DENIED: "denied",
+  REVOKED: "revoked",
+} as const;
+
+export const SESSION_KIND = {
+  MEMBER: "member",
+  WAITLIST: "waitlist",
+  REFUSED: "refused",
+} as const;
+
 export const SESSION_CHANNEL = {
   TEXT: "text",
   VOICE: "voice",
@@ -25,6 +39,8 @@ export const AUDIO_DIRECTION = {
 
 export type SubscriptionStatus =
   (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
+export type AccessStatus = (typeof ACCESS_STATUS)[keyof typeof ACCESS_STATUS];
+export type SessionKind = (typeof SESSION_KIND)[keyof typeof SESSION_KIND];
 export type SessionChannel =
   (typeof SESSION_CHANNEL)[keyof typeof SESSION_CHANNEL];
 export type TurnSpeaker = (typeof TURN_SPEAKER)[keyof typeof TURN_SPEAKER];

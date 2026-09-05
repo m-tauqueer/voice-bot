@@ -6,16 +6,19 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
+import { rateLimitPluginOptions } from "./auth/rateLimit.js";
 import {
   type GatewayConfig,
   corsAllowedMethods,
   rateLimitEnabled,
 } from "./config.js";
+import { registerAccessRoutes } from "./routes/access.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerInsightRoutes } from "./routes/insights.js";
 import { registerMemoryRoutes } from "./routes/memories.js";
+import { registerQuotaRoutes } from "./routes/quota.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 
 type Sql = ReturnType<typeof postgres>;
@@ -49,22 +52,18 @@ export async function createGatewayApp(deps: {
     credentials: true,
     methods: corsAllowedMethods(config),
   });
-  if (rateLimitEnabled(config)) {
-    // Keyed by client IP. Redis-backed so the limit holds across gateway
-    // instances; skipOnError fails open so a Redis blip never takes the door
-    // down. The public front door is the DoS/brute-force boundary; the worker
-    // guards its own internal-secret surface separately.
-    await app.register(rateLimit, {
-      max: config.RATE_LIMIT_MAX,
-      timeWindow: config.RATE_LIMIT_WINDOW_MS,
-      redis,
-      nameSpace: config.RATE_LIMIT_REDIS_PREFIX,
-      skipOnError: true,
-    });
-  }
   await app.register(cookie, {
     secret: config.SESSION_SECRET,
   });
+  if (rateLimitEnabled(config)) {
+    // Cookie is registered first so a member session can key the limiter by
+    // user id. Unknown callers still key by IP. Redis-backed; skipOnError
+    // fails open so a Redis blip never takes the door down.
+    await app.register(rateLimit, {
+      ...rateLimitPluginOptions(config, { redis }),
+      redis,
+    });
+  }
   await app.register(multipart, {
     limits: { fileSize: config.ADMIN_INGEST_MAX_BYTES },
   });
@@ -73,6 +72,8 @@ export async function createGatewayApp(deps: {
   await registerAdminRoutes(app, { config });
   await registerChatRoutes(app, { config, sql, redis });
   await registerInsightRoutes(app, { config, sql });
+  await registerAccessRoutes(app, { config, sql });
+  await registerQuotaRoutes(app, { config, sql });
   await registerMemoryRoutes(app, { config, sql });
   await registerVoiceRoutes(app, { config, sql, redis });
 

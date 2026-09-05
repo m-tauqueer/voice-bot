@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 
 import structlog
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse
 
 from worker.api.admin import build_admin_router
 from worker.api.chat_completions import build_chat_completions_router
@@ -68,6 +70,18 @@ app = FastAPI(
     redoc_url="/redoc" if settings.worker_openapi_enabled else None,
     openapi_url="/openapi.json" if settings.worker_openapi_enabled else None,
 )
+
+
+@app.exception_handler(HTTPException)
+async def flatten_quota_http_exception(
+    request: Request,
+    exc: HTTPException,
+) -> JSONResponse:
+    if exc.status_code == 429 and isinstance(exc.detail, dict):
+        return JSONResponse(status_code=429, content=exc.detail)
+    return await http_exception_handler(request, exc)
+
+
 app.include_router(build_subscribe_router(settings))
 app.include_router(build_admin_router(settings))
 app.include_router(build_turn_router(settings, runner))

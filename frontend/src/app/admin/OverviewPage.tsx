@@ -21,6 +21,7 @@ import {
   stageLabel,
 } from "../../lib/uiCopy";
 import { EmptyNote, FetchError } from "../dashboard/FetchState";
+import { QuotaPanel } from "./QuotaPanel";
 
 export function OverviewPage() {
   const nav = loadNavConfig();
@@ -129,12 +130,13 @@ export function OverviewPage() {
           onChange={setRange}
         />
       </div>
+      <QuotaPanel />
       {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
       {loading && !overview ? <p>{nav.loadingLabel}</p> : null}
       {!error && overview ? (
         <>
           <KpiStrip items={kpis} />
-          <Section title={copy.overviewActivity} first>
+          <Section title={copy.overviewActivity}>
             {graphPoints.length === 0 || empty ? (
               <EmptyNote text={copy.emptyRange} />
             ) : (

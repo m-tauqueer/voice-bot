@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ChatPage } from "../chat/ChatPage";
 import { PersonalHome } from "../dashboard/PersonalHome";
 import { VoicePage } from "../voice/VoicePage";
@@ -8,8 +9,9 @@ import {
   personalNav,
   signInCopy,
 } from "../../lib/nav";
-import { matchPath, useRoute } from "../../lib/router";
+import { matchPath, replace, useRoute } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
+import { isHeldSessionStatus } from "../../lib/sessionState";
 import { useSession } from "../session";
 import { AppShell } from "./AppShell";
 import { GateLayout, SignInCard } from "./SignInCard";
@@ -29,7 +31,13 @@ export function ProductFrame() {
   const session = useSession();
   const nav = loadNavConfig();
 
-  if (session.status === "loading") {
+  useEffect(() => {
+    if (isHeldSessionStatus(session.status)) {
+      replace(ROUTES.waitlist);
+    }
+  }, [session.status]);
+
+  if (session.status === "loading" || isHeldSessionStatus(session.status)) {
     return (
       <GateLayout>
         <p>{nav.loadingLabel}</p>

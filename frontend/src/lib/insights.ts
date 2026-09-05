@@ -135,6 +135,29 @@ export type InsightsUser = {
   session_count: number;
   last_seen_at: string | null;
   subscription_status: string | null;
+  access_request_id: string | null;
+  access_status: string | null;
+  owner: boolean;
+};
+
+export type AccessRequest = {
+  id: string;
+  email: string;
+  status: string;
+  requested_at: string;
+  decided_at: string | null;
+  user_id: string | null;
+  owner: boolean;
+};
+
+export type AccessRequestList = {
+  requests: AccessRequest[];
+  next_cursor: string | null;
+};
+
+export type AccessBatchResult = {
+  updated: string[];
+  errors: { id: string; error: string }[];
 };
 
 export type InsightsUserList = {
@@ -198,6 +221,48 @@ export function fetchOwnerSession(id: string) {
 
 export function fetchOwnerUsers(cursor?: string) {
   return api<InsightsUserList>(withQuery("/api/admin/users", { cursor }));
+}
+
+export function fetchAccessRequests(params: { status?: string; cursor?: string }) {
+  return api<AccessRequestList>(
+    withQuery("/api/admin/access-requests", {
+      status: params.status,
+      cursor: params.cursor,
+    }),
+  );
+}
+
+export function postAccessBatch(body: { action: string; ids: string[] }) {
+  return api<AccessBatchResult>("/api/admin/access-requests", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export type QuotaSettings = {
+  turns_per_day: number;
+  voice_minutes_per_day: number;
+  timezone: string;
+  warn_ratio: number;
+  source: string;
+};
+
+export type QuotaSettingsWrite = {
+  turns_per_day: number;
+  voice_minutes_per_day: number;
+  timezone: string;
+  warn_ratio: number;
+};
+
+export function fetchQuotaSettings() {
+  return api<QuotaSettings>("/api/admin/quota");
+}
+
+export function saveQuotaSettings(body: QuotaSettingsWrite) {
+  return api<QuotaSettings>("/api/admin/quota", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function fetchPersonalSessions(params: {

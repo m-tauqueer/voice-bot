@@ -39,6 +39,7 @@ interface ImportMetaEnv {
   readonly VITE_NAV_ITEMS: string;
   readonly VITE_NAV_OWNER_ITEMS: string;
   readonly VITE_ADMIN_NAV_ITEMS: string;
+  readonly VITE_ADMIN_APP_ITEMS: string;
   readonly VITE_SIGNOUT_LABEL: string;
   readonly VITE_LOADING_LABEL: string;
   readonly VITE_SIGNIN_CONTINUE: string;
@@ -100,11 +101,40 @@ interface ImportMetaEnv {
   readonly VITE_MEMORY_PANEL_UNAVAILABLE: string;
   readonly VITE_MEMORY_PANEL_ENABLED: string;
   readonly VITE_PEOPLE_TITLE: string;
+  readonly VITE_WAITLIST_PATH: string;
+  readonly VITE_WAITLIST_TITLE: string;
+  readonly VITE_WAITLIST_BODY: string;
+  readonly VITE_ACCESS_ACTIVE: string;
+  readonly VITE_ACCESS_WAITLISTED: string;
+  readonly VITE_ACCESS_DENIED: string;
+  readonly VITE_ACCESS_REVOKED: string;
+  readonly VITE_ACCESS_DENIED_TITLE: string;
+  readonly VITE_ACCESS_DENIED_BODY: string;
+  readonly VITE_ACCESS_REVOKED_TITLE: string;
+  readonly VITE_ACCESS_REVOKED_BODY: string;
+  readonly VITE_WAITLIST_QUEUE_TITLE: string;
+  readonly VITE_WAITLIST_APPROVE_LABEL: string;
+  readonly VITE_WAITLIST_DENY_LABEL: string;
+  readonly VITE_WAITLIST_REVOKE_LABEL: string;
+  readonly VITE_WAITLIST_EMPTY_QUEUE: string;
+  readonly VITE_WAITLIST_SELECTED_NONE: string;
+  readonly VITE_ACCESS_QUEUE_STATUS: string;
+  readonly VITE_ACCESS_ACTION_APPROVE: string;
+  readonly VITE_ACCESS_ACTION_DENY: string;
+  readonly VITE_ACCESS_ACTION_REVOKE: string;
   readonly VITE_CONVERSATIONS_TITLE: string;
   readonly VITE_OVERVIEW_ACTIVITY_TITLE: string;
   readonly VITE_OVERVIEW_LATENCY_TITLE: string;
   readonly VITE_OVERVIEW_BUDGET_LABEL: string;
   readonly VITE_RECENT_TITLE: string;
+  readonly VITE_QUOTA_TITLE: string;
+  readonly VITE_QUOTA_HELP: string;
+  readonly VITE_QUOTA_TURNS_LABEL: string;
+  readonly VITE_QUOTA_MINUTES_LABEL: string;
+  readonly VITE_QUOTA_TIMEZONE_LABEL: string;
+  readonly VITE_QUOTA_WARN_LABEL: string;
+  readonly VITE_QUOTA_SAVE_LABEL: string;
+  readonly VITE_QUOTA_SAVED: string;
 }
 
 interface ImportMeta {

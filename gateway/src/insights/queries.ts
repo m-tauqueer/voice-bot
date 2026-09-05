@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import type { GatewayConfig } from "../config.js";
+import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { asJsonValue } from "../json.js";
 import { TURN_SPEAKER } from "../schema.js";
 import {
@@ -12,6 +12,7 @@ import {
   parseList,
   parseRangeWindows,
 } from "./parse.js";
+import { sessionDetailScope, sessionListScope } from "./scope.js";
 import type {
   ActivitySeries,
   BudgetModeRow,
@@ -373,9 +374,8 @@ export async function personalSessions(
 ): Promise<SessionList> {
   return listSessions(sql, config, {
     ...args,
-    userId: null,
     channel: null,
-    scopeUserId: userId,
+    ...sessionListScope({ viewerUserId: userId, ownerView: false }),
   });
 }
 
@@ -392,7 +392,11 @@ export async function ownerSessions(
 ): Promise<SessionList> {
   return listSessions(sql, config, {
     ...args,
-    scopeUserId: null,
+    ...sessionListScope({
+      viewerUserId: "",
+      ownerView: true,
+      filterUserId: args.userId,
+    }),
   });
 }
 
@@ -588,14 +592,14 @@ export async function personalSessionDetail(
   sessionId: string,
   userId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, userId);
+  return sessionDetail(sql, sessionId, sessionDetailScope(false, userId));
 }
 
 export async function ownerSessionDetail(
   sql: Sql,
   sessionId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, null);
+  return sessionDetail(sql, sessionId, sessionDetailScope(true, ""));
 }
 
 export async function ownerActivity(
@@ -723,6 +727,7 @@ export async function ownerLatency(
 
 export async function ownerUsers(
   sql: Sql,
+  config: GatewayConfig,
   args: { limit: number; cursor: UserCursor | null },
 ): Promise<InsightsUserList> {
   const cursorTs = args.cursor?.lastSeenAt ?? null;
@@ -743,6 +748,8 @@ export async function ownerUsers(
       session_count: number;
       last_seen_at: Date | null;
       subscription_status: string | null;
+      access_request_id: string | null;
+      access_status: string | null;
     }[]
   >`
     SELECT
@@ -751,7 +758,9 @@ export async function ownerUsers(
       u.created_at,
       COALESCE(counts.session_count, 0)::int AS session_count,
       last_seen.last_seen_at,
-      sub.status AS subscription_status
+      sub.status AS subscription_status,
+      access.id AS access_request_id,
+      access.status AS access_status
     FROM users u
     LEFT JOIN LATERAL (
       SELECT count(*)::int AS session_count
@@ -770,6 +779,7 @@ export async function ownerUsers(
       ORDER BY sub.created_at DESC
       LIMIT 1
     ) sub ON true
+    LEFT JOIN access_requests access ON access.google_sub = u.google_sub
     WHERE true
       ${cursorFilter}
     ORDER BY
@@ -788,6 +798,9 @@ export async function ownerUsers(
       session_count: asCount(row.session_count),
       last_seen_at: asIso(row.last_seen_at),
       subscription_status: row.subscription_status,
+      access_request_id: row.access_request_id,
+      access_status: row.access_status,
+      owner: isOwnerEmail(row.email, config),
     })),
     next_cursor: extra && last ? encodeUserCursor(last) : null,
   };

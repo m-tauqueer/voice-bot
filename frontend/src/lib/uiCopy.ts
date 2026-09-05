@@ -51,14 +51,38 @@ export type UiCopy = {
   memoryUnavailable: string;
   memoryEnabled: boolean;
   peopleTitle: string;
+  waitlistTitle: string;
+  waitlistBody: string;
+  accessDeniedTitle: string;
+  accessDeniedBody: string;
+  accessRevokedTitle: string;
+  accessRevokedBody: string;
+  waitlistQueueTitle: string;
+  waitlistApproveLabel: string;
+  waitlistDenyLabel: string;
+  waitlistRevokeLabel: string;
+  waitlistEmptyQueue: string;
+  waitlistSelectedNone: string;
   conversationsTitle: string;
   overviewActivity: string;
   overviewLatency: string;
   overviewBudget: string;
   recentTitle: string;
+  quotaTitle: string;
+  quotaHelp: string;
+  quotaTurnsLabel: string;
+  quotaMinutesLabel: string;
+  quotaTimezoneLabel: string;
+  quotaWarnLabel: string;
+  quotaSaveLabel: string;
+  quotaSaved: string;
 };
 
 let cached: UiCopy | null = null;
+
+export function resetUiCopy(): void {
+  cached = null;
+}
 
 export function loadUiCopy(): UiCopy {
   if (cached) {
@@ -131,11 +155,31 @@ export function loadUiCopy(): UiCopy {
     memoryUnavailable: requiredVite("VITE_MEMORY_PANEL_UNAVAILABLE"),
     memoryEnabled: requiredViteBool("VITE_MEMORY_PANEL_ENABLED"),
     peopleTitle: requiredVite("VITE_PEOPLE_TITLE"),
+    waitlistTitle: requiredVite("VITE_WAITLIST_TITLE"),
+    waitlistBody: requiredVite("VITE_WAITLIST_BODY"),
+    accessDeniedTitle: requiredVite("VITE_ACCESS_DENIED_TITLE"),
+    accessDeniedBody: requiredVite("VITE_ACCESS_DENIED_BODY"),
+    accessRevokedTitle: requiredVite("VITE_ACCESS_REVOKED_TITLE"),
+    accessRevokedBody: requiredVite("VITE_ACCESS_REVOKED_BODY"),
+    waitlistQueueTitle: requiredVite("VITE_WAITLIST_QUEUE_TITLE"),
+    waitlistApproveLabel: requiredVite("VITE_WAITLIST_APPROVE_LABEL"),
+    waitlistDenyLabel: requiredVite("VITE_WAITLIST_DENY_LABEL"),
+    waitlistRevokeLabel: requiredVite("VITE_WAITLIST_REVOKE_LABEL"),
+    waitlistEmptyQueue: requiredVite("VITE_WAITLIST_EMPTY_QUEUE"),
+    waitlistSelectedNone: requiredVite("VITE_WAITLIST_SELECTED_NONE"),
     conversationsTitle: requiredVite("VITE_CONVERSATIONS_TITLE"),
     overviewActivity: requiredVite("VITE_OVERVIEW_ACTIVITY_TITLE"),
     overviewLatency: requiredVite("VITE_OVERVIEW_LATENCY_TITLE"),
     overviewBudget: requiredVite("VITE_OVERVIEW_BUDGET_LABEL"),
     recentTitle: requiredVite("VITE_RECENT_TITLE"),
+    quotaTitle: requiredVite("VITE_QUOTA_TITLE"),
+    quotaHelp: requiredVite("VITE_QUOTA_HELP"),
+    quotaTurnsLabel: requiredVite("VITE_QUOTA_TURNS_LABEL"),
+    quotaMinutesLabel: requiredVite("VITE_QUOTA_MINUTES_LABEL"),
+    quotaTimezoneLabel: requiredVite("VITE_QUOTA_TIMEZONE_LABEL"),
+    quotaWarnLabel: requiredVite("VITE_QUOTA_WARN_LABEL"),
+    quotaSaveLabel: requiredVite("VITE_QUOTA_SAVE_LABEL"),
+    quotaSaved: requiredVite("VITE_QUOTA_SAVED"),
   };
   return cached;
 }

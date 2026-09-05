@@ -55,7 +55,7 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 - Frontend: **reuse the existing component library** (React 18 + Vite + Tailwind design tokens) + new voice UI.
 - Stack: **TypeScript gateway** (web + WS bridge + auth) + **Python AI worker** (Engram SDK + reframe).
 - Local Docker Compose now -> Azure later. Azure Blob is used from day 1.
-- Auth: **Google OAuth / OIDC**, mapped to Engram `user_id`. **Hard per-user isolation is mandatory.**
+- Auth: **Google OAuth / OIDC**, mapped to Engram `user_id` only after waitlist approval (owners auto-approved). **Hard per-user isolation is mandatory.** Daily turn and voice-minute caps are enforced before the brain spends; a retried think reuses `write_receipts`.
 - **Lightweight turn-level tracing** (structured logs + durations). Consent/compliance deferred.
 
 ---
@@ -186,11 +186,14 @@ Only non-language-understanding thresholds (endpointing ms, timeouts) are config
 
 Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurable; no hardcoded values.
 
-- `users` — app user id, Google subject, email, mapped Engram `user_id`, timestamps.
+- `users` — app user id, Google subject, email, mapped Engram `user_id`, timestamps. A `users` row is membership; it is created only after owner approval (or for `OWNER_EMAILS`).
+- `access_requests` — Google subject + email admission queue: `requested` → `approved` → `active`, plus `denied` / `revoked`. Unapproved sign-in writes or refreshes a `requested` row and does not create a `users` row or an Engram pool.
 - `personas` — local reference to the Engram persona (Engram `persona_id`, handle, display name, voice config).
-- `subscriptions` — which users are subscribed to the persona (mirrors Engram state for admin visibility).
+- `subscriptions` — which users are subscribed to the persona (mirrors Engram state for admin visibility). Not an access gate.
 - `sessions` — a voice/chat session: app session id, user id, persona id, **Engram `session_id`**, channel, started/ended.
 - `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), `correlation_id` (the same id as the gateway and worker log lines for that turn; added in `infra/migrations/0005_correlation_id.sql`; nullable on rows written before that), created_at.
+- `write_receipts` — one persist + converse write-back per `(session_id, correlation_id)` so a retried think does not double-record.
+- `quota_settings` — at most one row. Daily turn and voice-minute caps, timezone, and warn ratio as set from the owner admin Overview. Env values are the fallback until that row exists.
 - `memory_refs` — Engram gids/tenants referenced or produced by a turn (for audit/debug).
 - `audio_assets` — per turn/direction: Azure Blob URL, duration, format, size. Written only when `VOICE_AUDIO_PERSIST_ENABLED` is on and the storage keys are set; off until there is a storage account.
 - `latency_spans` — per turn: `stt_ms`, `brain_ms` (the Engram call), `reframe_ms`, `reframe_first_token_ms` (when speech could start), `tts_first_byte_ms`, `total_ms`, and `transport_latency` holding the transport's own breakdown. That breakdown arrives as several single-field messages per turn and is merged before it is written.

@@ -2,7 +2,7 @@
  * Personal vs admin nav: everyone sees the same personal items;
  * only the owner extra list includes Admin.
  */
-import { isAdminPath, loadNavConfig, personalNav } from "./nav";
+import { adminNav, isAdminPath, isPersonalPath, loadNavConfig, personalNav } from "./nav";
 import { ROUTES } from "./routes";
 
 let failed = 0;
@@ -19,10 +19,11 @@ function check(name: string, ok: boolean, detail = ""): void {
 const nav = loadNavConfig();
 const memberItems = personalNav(false);
 const ownerPersonal = personalNav(true);
+const ownerAdmin = adminNav();
 
 console.log(`member_nav=${memberItems.map((item) => item.label).join(",")}`);
 console.log(`owner_personal_nav=${ownerPersonal.map((item) => item.label).join(",")}`);
-console.log(`admin_nav=${nav.adminItems.map((item) => item.label).join(",")}`);
+console.log(`admin_nav=${ownerAdmin.map((item) => item.label).join(",")}`);
 
 check("member_nav_not_empty", memberItems.length > 0);
 check("admin_nav_not_empty", nav.adminItems.length > 0);
@@ -54,6 +55,12 @@ check(
 check(
   "admin_overview_is_admin_root",
   nav.adminItems.some((item) => item.to === ROUTES.admin),
+);
+check(
+  "admin_has_app_entry",
+  nav.adminAppItems.every((extra) =>
+    ownerAdmin.some((item) => item.id === extra.id),
+  ) && nav.adminAppItems.every((item) => isPersonalPath(item.to)),
 );
 
 if (failed) {

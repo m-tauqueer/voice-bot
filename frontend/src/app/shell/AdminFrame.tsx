@@ -5,12 +5,14 @@ import { OverviewPage } from "../admin/OverviewPage";
 import { PeoplePage } from "../admin/PeoplePage";
 import { logoutUrl } from "../../lib/gateway";
 import {
+  adminNav,
   loadNavConfig,
   navIdForPath,
   signInCopy,
 } from "../../lib/nav";
 import { matchPath, matchPattern, replace, useRoute } from "../../lib/router";
 import { PATTERNS, ROUTES } from "../../lib/routes";
+import { isHeldSessionStatus } from "../../lib/sessionState";
 import { useSession } from "../session";
 import { AppShell } from "./AppShell";
 import { GateLayout, SignInCard } from "./SignInCard";
@@ -38,12 +40,16 @@ export function AdminFrame() {
   const isOwner = session.status === "ready" && session.me.owner;
 
   useEffect(() => {
+    if (isHeldSessionStatus(session.status)) {
+      replace(ROUTES.waitlist);
+      return;
+    }
     if (session.status === "ready" && !isOwner) {
       replace(ROUTES.dashboard);
     }
   }, [isOwner, session.status]);
 
-  if (session.status === "loading") {
+  if (session.status === "loading" || isHeldSessionStatus(session.status)) {
     return (
       <GateLayout>
         <p>{nav.loadingLabel}</p>
@@ -64,10 +70,12 @@ export function AdminFrame() {
     );
   }
 
+  const items = adminNav();
+
   return (
     <AppShell
-      active={navIdForPath(nav.adminItems, path)}
-      items={nav.adminItems}
+      active={navIdForPath(items, path)}
+      items={items}
       brand={nav.appName}
       homeTo={ROUTES.admin}
       personaName={session.persona?.display_name ?? nav.appName}

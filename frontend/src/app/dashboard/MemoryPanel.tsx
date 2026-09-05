@@ -3,6 +3,7 @@ import { Card } from "../../components/ui/Card";
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/gateway";
 import { fetchPersonalMemories, type MemoryHit } from "../../lib/insights";
+import { memoryPanelReloadKey } from "../../lib/memoryPanel";
 import { loadUiCopy } from "../../lib/uiCopy";
 import { EmptyNote } from "./FetchState";
 import { useSession } from "../session";
@@ -12,6 +13,9 @@ export function MemoryPanel() {
   const session = useSession();
   const [hits, setHits] = useState<MemoryHit[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+
+  const userId = session.status === "ready" ? session.me.id : undefined;
+  const reloadKey = memoryPanelReloadKey(userId, session.status);
 
   const load = useCallback(async () => {
     if (session.status !== "ready") {
@@ -29,11 +33,11 @@ export function MemoryPanel() {
       setHits([]);
       setUnavailable(!(error instanceof ApiError && error.status === 404));
     }
-  }, [copy.memoryEnabled, session.me?.id, session.status]);
+  }, [copy.memoryEnabled, reloadKey, session.status]);
 
   useEffect(() => {
     void load();
-  }, [load, session.me?.id, session.status]);
+  }, [load, reloadKey]);
 
   if (!copy.memoryEnabled) {
     return null;

@@ -3,6 +3,7 @@ export const ROUTES = {
   dashboard: "/dashboard",
   chat: "/chat",
   voice: "/voice",
+  waitlist: "/waitlist",
   admin: "/admin",
   adminConversations: "/admin/conversations",
   adminPeople: "/admin/people",
@@ -27,6 +28,10 @@ export const ADMIN_NAV_ROUTE_IDS = [
 ] as const satisfies readonly RouteId[];
 
 export const OWNER_NAV_ROUTE_IDS = ["admin"] as const satisfies readonly RouteId[];
+
+export const ADMIN_APP_NAV_ROUTE_IDS = [
+  "dashboard",
+] as const satisfies readonly RouteId[];
 
 export const LEGACY_DASHBOARD_REDIRECTS: ReadonlyArray<{ from: string; to: Route }> = [
   { from: "/dashboard/persona", to: ROUTES.adminPersona },
