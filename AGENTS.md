@@ -32,7 +32,7 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 
 ## 3. Working loop (follow exactly)
 
-1. Tauqueer names a **phase** and a **part** from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+1. Tauqueer names a **phase** and a **part** from [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) (or from [`docs/FUTURE.md`](docs/FUTURE.md) when he says that work is next).
 2. Complete **only that part** — all of its tasks, nothing from later parts.
 3. Where the part has a **Manual test**, run it (or walk Tauqueer through running it) and confirm it passes. Do not mark a part done until its manual test passes.
 4. **Do not commit automatically.** Commits happen **only when Tauqueer explicitly says to commit**, and **only after the part is complete** and its manual test has passed.
@@ -55,11 +55,11 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 
 - [`docs/PRD.md`](docs/PRD.md) — Product Requirements. What we're building and for whom, scope in/out, success criteria.
 - [`docs/TRD.md`](docs/TRD.md) — Technical Requirements & Design. **The locked decisions, architecture, data model, external services, risks, and future improvements.** This is the source of truth for how things are built.
-- [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — The build plan: Phase 0 (setup) plus 3 phases, each split into parts, each part with defined tasks, manual-test gates, and commit gates.
-- [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Implementation-level plan for Phase 1 (parts 1.1–1.8). **Phase 1 is complete.**
-- [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Implementation-level plan for Phase 2 (parts 2.1–2.9): BYO-LLM shim, Voice Agent bridge, browser audio, voice UI, barge-in, thinking cue, latency, Azure audio, and voice acceptance. **Phase 2 is complete**; §7–§9 hold the measured numbers and the open items.
-- [`docs/PHASE_3_PLAN.md`](docs/PHASE_3_PLAN.md) — Implementation-level plan for Phase 3 (parts 3.1–3.12): failure handling, the read API, the app shell, the owner and personal dashboards, observability, the security review, Azure, multilingual, and voice-clone groundwork. **Parts 3.1–3.8 are done.**
-- [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md) — Production & growth roadmap (Phases 4–6): launch readiness (deploy, CI/CD, tests, access control, quotas, observability, data lifecycle, backups, security 2.0), then multi-tenant/scale/UX, then advanced capabilities. Folds in the tail of Phase 3 (deployment, multilingual, voice-clone, polish). Open product decisions live in its §2.
+- [`docs/ENGRAM.md`](docs/ENGRAM.md) — Engram contract: pools, tenants, subscribe/delete, what we ingest where. Read this before changing memory or isolation.
+- [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — Index of current vs shipped vs later.
+- [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) — **Current work: personas.** Tauqueer names a part from this file.
+- [`docs/SHIPPED.md`](docs/SHIPPED.md) — History of what already works (measured latency, isolation notes). Not a build plan.
+- [`docs/FUTURE.md`](docs/FUTURE.md) — Phase 6, parked product, Plan X (CI/CD, backups, security 2.0, Azure last). Do not start until named.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -67,9 +67,9 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan work for the test suite, waitlist, quotas, the post-quota live checks, data lifecycle (consent, export, delete, retention), local ops alerts, and the public `/status` page is done. **Do not start 4.2 or anything later until Tauqueer names the next part** from [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md). Remaining Phase 3 parts start when he names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Current work is personas.** Architecture is locked in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md). Tauqueer names a part from that file to start coding. Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
 
-Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
+Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -127,7 +127,7 @@ npm run infra:reset
 - `infra/` — Docker Compose, migrations, scripts.
 - `docs/` — PRD, TRD, phase plans.
 
-External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until the Phase 2 parts that use them; `npm run smoke` reports `SKIP` for those until the keys are set. Engram and OpenAI are required for the live brain (typed chat and voice).
+External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until those keys are set; `npm run smoke` reports `SKIP` until then. Engram and OpenAI are required for the live brain (typed chat and voice).
 
 ---
 
@@ -138,7 +138,7 @@ External services you must have credentials for (Tauqueer holds the accounts): D
 - **Build for production, not just to pass a demo.** No "TODO later" holes in a part you called done.
 - **Reference the code, not the docs, for behavior.** Keep docs updated when you change intent, but trust the code as ground truth.
 - **Use Context7 MCP for any library/API documentation, setup, or configuration lookups** (Engram SDK, Deepgram, OpenAI, etc.). If Context7 MCP is not connected in your session, say so and set it up before relying on memory. The Engram alpha docs (<https://engram-docs-alpha.netlify.app/llms.txt>) and Deepgram docs (<https://developers.deepgram.com/>) are the authoritative fallback.
-- **Respect Engram's contracts:** never build tenant strings by hand; use the persona endpoints; carry `session_id` across a conversation; read `tenant` off each retrieve row. See the TRD.
+- **Respect Engram's contracts:** never build tenant strings by hand; use the persona endpoints; carry `session_id` across a conversation; read `tenant` off each retrieve row. Full map: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
 ---
 
