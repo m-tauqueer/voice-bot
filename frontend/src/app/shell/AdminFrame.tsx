@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { AdminPage } from "../admin/AdminPage";
 import { ConversationsPage } from "../admin/ConversationsPage";
+import { DeletionsPage } from "../admin/DeletionsPage";
 import { OverviewPage } from "../admin/OverviewPage";
 import { PeoplePage } from "../admin/PeoplePage";
 import { logoutUrl } from "../../lib/gateway";
@@ -12,7 +13,7 @@ import {
 } from "../../lib/nav";
 import { matchPath, matchPattern, replace, useRoute } from "../../lib/router";
 import { PATTERNS, ROUTES } from "../../lib/routes";
-import { isHeldSessionStatus } from "../../lib/sessionState";
+import { isConsentSessionStatus, isHeldSessionStatus } from "../../lib/sessionState";
 import { useSession } from "../session";
 import { AppShell } from "./AppShell";
 import { GateLayout, SignInCard } from "./SignInCard";
@@ -30,6 +31,9 @@ function adminPage(path: string) {
   if (matchPath(path, ROUTES.adminPeople)) {
     return <PeoplePage />;
   }
+  if (matchPath(path, ROUTES.adminDeletions)) {
+    return <DeletionsPage />;
+  }
   return <OverviewPage />;
 }
 
@@ -40,6 +44,10 @@ export function AdminFrame() {
   const isOwner = session.status === "ready" && session.me.owner;
 
   useEffect(() => {
+    if (isConsentSessionStatus(session.status)) {
+      replace(ROUTES.consent);
+      return;
+    }
     if (isHeldSessionStatus(session.status)) {
       replace(ROUTES.waitlist);
       return;
@@ -49,7 +57,11 @@ export function AdminFrame() {
     }
   }, [isOwner, session.status]);
 
-  if (session.status === "loading" || isHeldSessionStatus(session.status)) {
+  if (
+    session.status === "loading" ||
+    isHeldSessionStatus(session.status) ||
+    isConsentSessionStatus(session.status)
+  ) {
     return (
       <GateLayout>
         <p>{nav.loadingLabel}</p>

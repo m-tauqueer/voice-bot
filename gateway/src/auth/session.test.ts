@@ -162,4 +162,28 @@ describe("auth session", () => {
     await destroySession(redis as never, request, reply, config);
     expect(redis.store.size).toBe(0);
   });
+
+  it("does not treat a consent record as a member", async () => {
+    const config = testConfig();
+    const redis = memoryRedis();
+    const sessionId = await persistSessionRecord(redis as never, config, {
+      kind: SESSION_KIND.CONSENT,
+      google_sub: "sub-consent",
+      email: "new@example.com",
+      next: "/dashboard",
+    });
+    const request = mockRequest({
+      cookies: { [config.SESSION_COOKIE_NAME]: sessionId },
+    });
+    await expect(
+      readSessionAppUserId(redis as never, request, config),
+    ).resolves.toBeNull();
+    await expect(
+      readSessionRecord(redis as never, request, config),
+    ).resolves.toMatchObject({
+      kind: SESSION_KIND.CONSENT,
+      email: "new@example.com",
+      next: "/dashboard",
+    });
+  });
 });

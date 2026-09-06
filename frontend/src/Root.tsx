@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { CookieBanner } from "./app/landing/CookieBanner";
 import { LandingGate } from "./app/landing/LandingGate";
 import { AdminFrame } from "./app/shell/AdminFrame";
 import { ProductFrame } from "./app/shell/ProductFrame";
@@ -31,6 +32,7 @@ export default function Root() {
       ) : (
         <LandingGate />
       )}
+      <CookieBanner />
     </SessionProvider>
   );
 }

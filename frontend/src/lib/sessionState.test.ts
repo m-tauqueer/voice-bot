@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHeldSessionStatus, sessionFromMeFetch } from "./sessionState";
+import { isConsentSessionStatus, isHeldSessionStatus, sessionFromMeFetch } from "./sessionState";
 
 describe("sessionFromMeFetch", () => {
   it("becomes ready on a successful member /api/me", () => {
@@ -20,6 +20,18 @@ describe("sessionFromMeFetch", () => {
     expect(sessionFromMeFetch({ ok: true, me })).toEqual({
       status: "ready",
       me,
+    });
+  });
+
+  it("becomes consent without exposing an id", () => {
+    expect(
+      sessionFromMeFetch({
+        ok: true,
+        me: { access: "consent", email: "c@example.com", owner: false },
+      }),
+    ).toEqual({
+      status: "consent",
+      me: { email: "c@example.com", owner: false },
     });
   });
 
@@ -60,5 +72,8 @@ describe("sessionFromMeFetch", () => {
   it("classifies held access statuses", () => {
     expect(isHeldSessionStatus("waitlisted")).toBe(true);
     expect(isHeldSessionStatus("ready")).toBe(false);
+    expect(isHeldSessionStatus("consent")).toBe(false);
+    expect(isConsentSessionStatus("consent")).toBe(true);
+    expect(isConsentSessionStatus("waitlisted")).toBe(false);
   });
 });

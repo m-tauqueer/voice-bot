@@ -1,21 +1,36 @@
 import { useEffect } from "react";
-import { loadNavConfig } from "../../lib/nav";
+import { isLegalPath, loadNavConfig } from "../../lib/nav";
 import { matchPath, replace, useRoute } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
-import { isHeldSessionStatus } from "../../lib/sessionState";
+import {
+  isConsentSessionStatus,
+  isHeldSessionStatus,
+} from "../../lib/sessionState";
 import { useSession } from "../session";
 import { AccessCard } from "../shell/AccessCard";
 import { GateLayout } from "../shell/SignInCard";
+import { ConsentPage } from "./ConsentPage";
 import { LandingPage } from "./LandingPage";
+import { LegalPage } from "./LegalPage";
 
 export function LandingGate() {
   const path = useRoute();
   const session = useSession();
   const { loadingLabel } = loadNavConfig();
+  const legal = isLegalPath(path);
 
   useEffect(() => {
+    if (legal) {
+      return;
+    }
     if (session.status === "ready") {
       replace(ROUTES.dashboard);
+      return;
+    }
+    if (isConsentSessionStatus(session.status)) {
+      if (!matchPath(path, ROUTES.consent)) {
+        replace(ROUTES.consent);
+      }
       return;
     }
     if (isHeldSessionStatus(session.status)) {
@@ -27,7 +42,11 @@ export function LandingGate() {
     if (session.status === "signed_out" && !matchPath(path, ROUTES.home)) {
       replace(ROUTES.home);
     }
-  }, [path, session.status]);
+  }, [legal, path, session.status]);
+
+  if (legal) {
+    return <LegalPage />;
+  }
 
   if (session.status === "loading" || session.status === "ready") {
     return (
@@ -35,6 +54,10 @@ export function LandingGate() {
         <p>{loadingLabel}</p>
       </GateLayout>
     );
+  }
+
+  if (isConsentSessionStatus(session.status)) {
+    return <ConsentPage />;
   }
 
   if (isHeldSessionStatus(session.status)) {

@@ -12,6 +12,7 @@ import {
   corsAllowedMethods,
   rateLimitEnabled,
 } from "./config.js";
+import { registerLifecycleRoutes } from "./lifecycle/routes.js";
 import { registerAccessRoutes } from "./routes/access.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
@@ -74,6 +75,7 @@ export async function createGatewayApp(deps: {
   await registerInsightRoutes(app, { config, sql });
   await registerAccessRoutes(app, { config, sql });
   await registerQuotaRoutes(app, { config, sql });
+  await registerLifecycleRoutes(app, { config, sql, redis });
   await registerMemoryRoutes(app, { config, sql });
   await registerVoiceRoutes(app, { config, sql, redis });
 

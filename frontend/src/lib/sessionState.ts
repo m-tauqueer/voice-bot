@@ -23,6 +23,7 @@ export type SessionFromMe =
   | { status: "waitlisted"; me: HeldMe }
   | { status: "denied"; me: HeldMe }
   | { status: "revoked"; me: HeldMe }
+  | { status: "consent"; me: HeldMe }
   | { status: "signed_out"; me: null };
 
 export function accessMeLabels() {
@@ -31,6 +32,7 @@ export function accessMeLabels() {
     waitlisted: requiredVite("VITE_ACCESS_WAITLISTED"),
     denied: requiredVite("VITE_ACCESS_DENIED"),
     revoked: requiredVite("VITE_ACCESS_REVOKED"),
+    consent: requiredVite("VITE_ACCESS_CONSENT"),
   };
 }
 
@@ -42,6 +44,10 @@ export function isHeldSessionStatus(
   );
 }
 
+export function isConsentSessionStatus(status: string): status is "consent" {
+  return status === "consent";
+}
+
 export function sessionFromMeFetch(
   result: { ok: true; me: MePayload } | { ok: false },
 ): SessionFromMe {
@@ -50,6 +56,9 @@ export function sessionFromMeFetch(
   }
   const { me } = result;
   const labels = accessMeLabels();
+  if (me.access === labels.consent) {
+    return { status: "consent", me: { email: me.email, owner: false } };
+  }
   if (me.access === labels.waitlisted) {
     return { status: "waitlisted", me: { email: me.email, owner: false } };
   }

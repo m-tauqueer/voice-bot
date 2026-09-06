@@ -7,6 +7,7 @@ const labels = {
   waitlisted: "waitlisted",
   denied: "denied",
   revoked: "revoked",
+  consent: "consent",
 };
 
 const user = { id: "11111111-1111-1111-1111-111111111111", email: "a@x.com" };
@@ -95,6 +96,27 @@ describe("resolveMeView", () => {
         id: user.id,
         email: user.email,
         owner: true,
+      },
+    });
+  });
+
+  it("returns consent before membership when versions are stale", () => {
+    expect(
+      resolveMeView({
+        hasMemberSession: false,
+        user,
+        requestStatus: ACCESS_STATUS.ACTIVE,
+        email: user.email,
+        owner: false,
+        labels,
+        needsConsent: true,
+      }),
+    ).toEqual({
+      http: 200,
+      body: {
+        access: "consent",
+        email: user.email,
+        owner: false,
       },
     });
   });

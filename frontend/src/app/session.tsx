@@ -29,7 +29,8 @@ type SessionState =
   | { status: "ready"; me: AppUser; persona: AppPersona | null }
   | { status: "waitlisted"; me: HeldMe; persona: null }
   | { status: "denied"; me: HeldMe; persona: null }
-  | { status: "revoked"; me: HeldMe; persona: null };
+  | { status: "revoked"; me: HeldMe; persona: null }
+  | { status: "consent"; me: HeldMe; persona: null };
 
 type SessionContextValue = SessionState & {
   reloadPersona: () => Promise<void>;

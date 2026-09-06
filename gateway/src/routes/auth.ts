@@ -2,13 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import { z } from "zod";
-import { nextSignInAction } from "../access/decision.js";
 import { meAccessLabels, resolveMeView } from "../access/me.js";
-import {
-  getAccessByGoogleSub,
-  upsertActiveAccess,
-  upsertWaitlistRequest,
-} from "../access/store.js";
+import { getAccessByGoogleSub } from "../access/store.js";
+import { admitGoogleIdentity } from "../auth/admit.js";
 import { SignInError } from "../auth/errors.js";
 import {
   buildGoogleAuthorizationUrl,
@@ -18,7 +14,6 @@ import {
 } from "../auth/google.js";
 import { createRequireAppUser } from "../auth/guard.js";
 import {
-  createSession,
   createSessionFromRecord,
   destroySession,
   readSessionRecord,
@@ -28,21 +23,18 @@ import {
   storeOauthPending,
   takeOauthPending,
 } from "../auth/session.js";
-import { subscribeUserToActivePersona } from "../auth/subscribe.js";
-import {
-  getUserByGoogleSub,
-  getUserById,
-  upsertGoogleUser,
-} from "../auth/users.js";
+import { getUserById } from "../auth/users.js";
 import {
   type GatewayConfig,
+  consentRedirectUrl,
   frontendPathRedirect,
   googleCallbackPath,
   isOwnerEmail,
   postLoginRedirectUrl,
-  waitlistRedirectUrl,
 } from "../config.js";
-import { ACCESS_STATUS, SESSION_KIND } from "../schema.js";
+import { consentIsCurrent } from "../lifecycle/decision.js";
+import { getConsent } from "../lifecycle/store.js";
+import { SESSION_KIND } from "../schema.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -102,43 +94,29 @@ export async function registerAuthRoutes(
         idToken,
         pending.nonce,
       );
-      const existing = await getUserByGoogleSub(sql, identity.sub);
-      const access = await getAccessByGoogleSub(sql, identity.sub);
-      const action = nextSignInAction({
-        owner: isOwnerEmail(identity.email, config),
-        hasUser: existing !== null,
-        requestStatus: access?.status ?? null,
-      });
-      if (action.type === "provision") {
-        const user = await upsertGoogleUser(sql, identity);
-        await upsertActiveAccess(sql, identity, user.id);
-        await subscribeUserToActivePersona(sql, config, user, request.log);
-        await createSession(redis, reply, config, user.id);
-        const next = frontendPathRedirect(config, pending.next);
-        if (next) {
-          return reply.redirect(
-            new URL(next, config.FRONTEND_ORIGIN).toString(),
-          );
-        }
-        return reply.redirect(postLoginRedirectUrl(config));
-      }
-      if (action.type === "waitlist") {
-        await upsertWaitlistRequest(sql, identity);
+      const storedConsent = await getConsent(sql, identity.sub);
+      if (
+        !consentIsCurrent(storedConsent, {
+          privacyVersion: config.CONSENT_PRIVACY_VERSION,
+          termsVersion: config.CONSENT_TERMS_VERSION,
+        })
+      ) {
         await createSessionFromRecord(redis, reply, config, {
-          kind: SESSION_KIND.WAITLIST,
+          kind: SESSION_KIND.CONSENT,
           google_sub: identity.sub,
           email: identity.email,
-          status: ACCESS_STATUS.REQUESTED,
+          next: frontendPathRedirect(config, pending.next),
         });
-        return reply.redirect(waitlistRedirectUrl(config));
+        return reply.redirect(consentRedirectUrl(config));
       }
-      await createSessionFromRecord(redis, reply, config, {
-        kind: SESSION_KIND.REFUSED,
-        google_sub: identity.sub,
-        email: identity.email,
-        status: action.status,
-      });
-      return reply.redirect(waitlistRedirectUrl(config));
+      const admitted = await admitGoogleIdentity(
+        { sql, config, redis },
+        identity,
+        pending.next,
+        reply,
+        request.log,
+      );
+      return reply.redirect(admitted.redirect);
     } catch (error) {
       if (error instanceof SignInError) {
         request.log.warn({ reason: error.reason }, "google sign-in failed");
@@ -172,7 +150,7 @@ export async function registerAuthRoutes(
     if (path !== "/api" && !path.startsWith("/api/")) {
       return;
     }
-    if (path === "/api/me") {
+    if (path === "/api/me" || path === "/api/consent") {
       return;
     }
     await requireAppUser(request, reply);
@@ -199,6 +177,7 @@ export async function registerAuthRoutes(
       email,
       owner: email ? isOwnerEmail(email, config) : false,
       labels: meAccessLabels(config),
+      needsConsent: record.kind === SESSION_KIND.CONSENT,
     });
     if (view.http === 401) {
       return reply.code(401).send({ error: config.ACCESS_ERROR_UNAUTHORIZED });

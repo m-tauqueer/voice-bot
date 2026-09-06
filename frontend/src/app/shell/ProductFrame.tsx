@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { ChatPage } from "../chat/ChatPage";
+import { DataPage } from "../dashboard/DataPage";
 import { PersonalHome } from "../dashboard/PersonalHome";
 import { VoicePage } from "../voice/VoicePage";
 import { logoutUrl } from "../../lib/gateway";
@@ -11,7 +12,7 @@ import {
 } from "../../lib/nav";
 import { matchPath, replace, useRoute } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
-import { isHeldSessionStatus } from "../../lib/sessionState";
+import { isConsentSessionStatus, isHeldSessionStatus } from "../../lib/sessionState";
 import { useSession } from "../session";
 import { AppShell } from "./AppShell";
 import { GateLayout, SignInCard } from "./SignInCard";
@@ -23,6 +24,9 @@ function pageFor(path: string) {
   if (matchPath(path, ROUTES.voice)) {
     return <VoicePage />;
   }
+  if (matchPath(path, ROUTES.data)) {
+    return <DataPage />;
+  }
   return <PersonalHome />;
 }
 
@@ -32,12 +36,20 @@ export function ProductFrame() {
   const nav = loadNavConfig();
 
   useEffect(() => {
+    if (isConsentSessionStatus(session.status)) {
+      replace(ROUTES.consent);
+      return;
+    }
     if (isHeldSessionStatus(session.status)) {
       replace(ROUTES.waitlist);
     }
   }, [session.status]);
 
-  if (session.status === "loading" || isHeldSessionStatus(session.status)) {
+  if (
+    session.status === "loading" ||
+    isHeldSessionStatus(session.status) ||
+    isConsentSessionStatus(session.status)
+  ) {
     return (
       <GateLayout>
         <p>{nav.loadingLabel}</p>

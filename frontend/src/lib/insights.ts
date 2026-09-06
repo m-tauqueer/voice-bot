@@ -286,3 +286,68 @@ export function fetchPersonalSession(id: string) {
 export function fetchPersonalMemories() {
   return api<MemoryPanel>("/api/me/memories");
 }
+
+export type DeletionStatus = {
+  owner_protected: boolean;
+  pending: {
+    id: string;
+    status: string;
+    requested_at: string;
+  } | null;
+};
+
+export function fetchDeletionStatus() {
+  return api<DeletionStatus>("/api/me/deletion");
+}
+
+export function requestAccountDeletion(body: {
+  action: string;
+  confirmation?: string;
+}) {
+  return api<{ id: string; status: string }>("/api/me/deletion-requests", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteOwnAccount(confirmation: string) {
+  return api<{ deleted: boolean }>("/api/me/delete", {
+    method: "POST",
+    body: JSON.stringify({ confirmation }),
+  });
+}
+
+export type DeletionRequest = {
+  id: string;
+  email: string;
+  status: string;
+  requested_at: string;
+  completed_at: string | null;
+  user_id: string | null;
+  owner: boolean;
+};
+
+export type DeletionRequestList = {
+  requests: DeletionRequest[];
+  next_cursor: string | null;
+};
+
+export function fetchDeletionRequests(params: { status?: string; cursor?: string }) {
+  return api<DeletionRequestList>(
+    withQuery("/api/admin/deletions", {
+      status: params.status,
+      cursor: params.cursor,
+    }),
+  );
+}
+
+export function postDeletionBatch(body: {
+  action: string;
+  ids: string[];
+  confirmation?: string;
+}) {
+  return api<AccessBatchResult>("/api/admin/deletions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

@@ -56,7 +56,7 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 - Stack: **TypeScript gateway** (web + WS bridge + auth) + **Python AI worker** (Engram SDK + reframe).
 - Local Docker Compose now -> Azure later. Azure Blob is used from day 1.
 - Auth: **Google OAuth / OIDC**, mapped to Engram `user_id` only after waitlist approval (owners auto-approved). **Hard per-user isolation is mandatory.** Daily turn and voice-minute caps are enforced before the brain spends for members (`OWNER_EMAILS` are not capped); a retried think reuses `write_receipts`.
-- **Lightweight turn-level tracing** (structured logs + durations). Consent/compliance deferred.
+- **Lightweight turn-level tracing** (structured logs + durations). GDPR-light: consent at sign-in for the current privacy/terms versions, export-my-data, delete-my-data (owners cannot be deleted), ended-session retention. No formal certification.
 
 ---
 
@@ -194,11 +194,15 @@ Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurabl
 - `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), `correlation_id` (the same id as the gateway and worker log lines for that turn; added in `infra/migrations/0005_correlation_id.sql`; nullable on rows written before that), created_at.
 - `write_receipts` — one persist + converse write-back per `(session_id, correlation_id)` so a retried think does not double-record.
 - `quota_settings` — at most one row. Daily turn and voice-minute caps, timezone, and warn ratio as set from the owner admin Overview. Env values are the fallback until that row exists.
+- `consents` — one row per Google subject: current privacy and terms versions plus accepted-at. Existing members were backfilled as version `1`. Survives account delete so a later sign-in does not re-prompt until versions bump.
+- `deletion_requests` — `pending` / `completed` / `cancelled`. Member self-delete or owner complete wipes app rows; `user_id` is set null when the user row goes. `access_requests` stays `active` so re-sign-in provisions a new empty user.
 - `memory_refs` — Engram gids/tenants referenced or produced by a turn (for audit/debug).
 - `audio_assets` — per turn/direction: Azure Blob URL, duration, format, size. Written only when `VOICE_AUDIO_PERSIST_ENABLED` is on and the storage keys are set; off until there is a storage account.
 - `latency_spans` — per turn: `stt_ms`, `brain_ms` (the Engram call), `reframe_ms`, `reframe_first_token_ms` (when speech could start), `tts_first_byte_ms`, `total_ms`, and `transport_latency` holding the transport's own breakdown. That breakdown arrives as several single-field messages per turn and is merged before it is written.
 
-Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/cancel flags, interim-STT assembly buffer. The voice notice Redis channel also carries a trace payload after a turn is recorded so the gateway can log the voice correlation id; that payload is log-only and is never sent to the caller.
+Redis keys (ephemeral, TTL'd): active session map (kinds `member` / `waitlist` / `refused` / `consent`), current turn state, barge-in/cancel flags, interim-STT assembly buffer. The voice notice Redis channel also carries a trace payload after a turn is recorded so the gateway can log the voice correlation id; that payload is log-only and is never sent to the caller.
+
+Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are deleted by `npm run retain` or an optional gateway sweep. Open sessions are never retained. Audio blob delete is a no-op until archiving is on. Engram private-pool purge uses the org persona admin surface (`user_memories` / `forget_user_memory` / `unsubscribe`) and is skipped when Engram keys are unset.
 
 ---
 
@@ -241,5 +245,5 @@ Redis keys (ephemeral, TTL'd): active session map, current turn state, barge-in/
 - Sentence-level TTS shaping. Token streaming to the transport is done; speech already starts on the first words.
 - Selective salient-fact ingest and persona compression tuning.
 - Multi-persona admin UI and multi-tenant SaaS shape.
-- Consent, retention, delete-my-data, and usage/billing dashboards.
+- Usage/billing dashboards (only if we charge).
 - Azure production hardening (managed Postgres/Redis, autoscaling, CI/CD).

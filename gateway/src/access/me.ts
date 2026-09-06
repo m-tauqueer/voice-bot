@@ -6,6 +6,7 @@ export type MeAccessLabels = {
   waitlisted: string;
   denied: string;
   revoked: string;
+  consent: string;
 };
 
 export type MeView =
@@ -33,9 +34,20 @@ export function resolveMeView(input: {
   email: string | null;
   owner: boolean;
   labels: MeAccessLabels;
+  needsConsent?: boolean;
 }): MeView {
   if (!input.email) {
     return { http: 401 };
+  }
+  if (input.needsConsent) {
+    return {
+      http: 200,
+      body: {
+        access: input.labels.consent,
+        email: input.email,
+        owner: false,
+      },
+    };
   }
   const action = nextSignInAction({
     owner: input.owner,
@@ -81,11 +93,13 @@ export function meAccessLabels(config: {
   ACCESS_ME_WAITLISTED: string;
   ACCESS_ME_DENIED: string;
   ACCESS_ME_REVOKED: string;
+  ACCESS_ME_CONSENT: string;
 }): MeAccessLabels {
   return {
     active: config.ACCESS_ME_ACTIVE,
     waitlisted: config.ACCESS_ME_WAITLISTED,
     denied: config.ACCESS_ME_DENIED,
     revoked: config.ACCESS_ME_REVOKED,
+    consent: config.ACCESS_ME_CONSENT,
   };
 }

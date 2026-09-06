@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adminNav,
   isAdminPath,
+  isConsentPath,
+  isLegalPath,
   isPersonalPath,
   isWaitlistPath,
   loadNavConfig,
@@ -47,13 +49,19 @@ describe("nav config", () => {
   it("classifies personal and admin paths", () => {
     expect(isPersonalPath("/dashboard")).toBe(true);
     expect(isPersonalPath("/dashboard/sessions/abc")).toBe(true);
+    expect(isPersonalPath("/dashboard/data")).toBe(true);
     expect(isPersonalPath("/chat")).toBe(true);
     expect(isPersonalPath("/admin")).toBe(false);
     expect(isAdminPath("/admin/people")).toBe(true);
+    expect(isAdminPath("/admin/deletions")).toBe(true);
     expect(isAdminPath("/dashboard")).toBe(false);
     expect(isWaitlistPath("/waitlist")).toBe(true);
     expect(isPersonalPath("/waitlist")).toBe(false);
     expect(isAdminPath("/waitlist")).toBe(false);
+    expect(isConsentPath("/consent")).toBe(true);
+    expect(isLegalPath("/privacy")).toBe(true);
+    expect(isLegalPath("/terms")).toBe(true);
+    expect(isLegalPath("/consent")).toBe(false);
   });
 
   it("picks the nested nav id for a session path", () => {

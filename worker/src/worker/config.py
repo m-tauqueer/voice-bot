@@ -117,6 +117,7 @@ class WorkerSettings(BaseSettings):
     engram_logs_limit: int = Field(default=50, gt=0)
     engram_log_result_denied: str = Field(default="denied", min_length=1)
     engram_log_result_error: str = Field(default="error", min_length=1)
+    lifecycle_memory_page_size: int = Field(default=50, gt=0)
     engram_api_key: str | None = None
     engram_org_id: str | None = None
     engram_base_url: HttpUrl | None = None

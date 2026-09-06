@@ -4,10 +4,15 @@ export const ROUTES = {
   chat: "/chat",
   voice: "/voice",
   waitlist: "/waitlist",
+  consent: "/consent",
+  privacy: "/privacy",
+  terms: "/terms",
+  data: "/dashboard/data",
   admin: "/admin",
   adminConversations: "/admin/conversations",
   adminPeople: "/admin/people",
   adminPersona: "/admin/persona",
+  adminDeletions: "/admin/deletions",
 } as const;
 
 export const PATTERNS = {
@@ -18,13 +23,14 @@ export const PATTERNS = {
 export type Route = (typeof ROUTES)[keyof typeof ROUTES];
 export type RouteId = keyof typeof ROUTES;
 
-export const PERSONAL_ROUTE_IDS = ["dashboard", "chat", "voice"] as const satisfies readonly RouteId[];
+export const PERSONAL_ROUTE_IDS = ["dashboard", "chat", "voice", "data"] as const satisfies readonly RouteId[];
 
 export const ADMIN_NAV_ROUTE_IDS = [
   "admin",
   "adminConversations",
   "adminPeople",
   "adminPersona",
+  "adminDeletions",
 ] as const satisfies readonly RouteId[];
 
 export const OWNER_NAV_ROUTE_IDS = ["admin"] as const satisfies readonly RouteId[];

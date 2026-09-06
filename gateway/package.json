@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "migrate": "tsx src/migrate-cli.ts",
+    "retain": "tsx src/lifecycle/retain-cli.ts",
     "smoke": "tsx src/smoke.ts",
     "voice": "tsx src/voice/probe.ts",
     "audio": "tsx src/voice/audioProbe.ts",

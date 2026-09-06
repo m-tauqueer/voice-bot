@@ -76,6 +76,39 @@ export type UiCopy = {
   quotaWarnLabel: string;
   quotaSaveLabel: string;
   quotaSaved: string;
+  privacyTitle: string;
+  privacyBody: string;
+  termsTitle: string;
+  termsBody: string;
+  consentTitle: string;
+  consentBody: string;
+  consentPrivacyLabel: string;
+  consentTermsLabel: string;
+  consentAcceptLabel: string;
+  cookieNoticeBody: string;
+  cookieNoticeAccept: string;
+  dataTitle: string;
+  dataHelp: string;
+  dataExportTitle: string;
+  dataExportBody: string;
+  dataExportLabel: string;
+  dataExportDone: string;
+  dataDeleteTitle: string;
+  dataDeleteBody: string;
+  dataDeleteHint: string;
+  dataDeletePending: string;
+  dataConfirmationLabel: string;
+  dataDeleteNowLabel: string;
+  dataRequestLabel: string;
+  dataCancelRequestLabel: string;
+  dataOwnerProtected: string;
+  deletionsTitle: string;
+  deletionsQueueTitle: string;
+  deletionsHelp: string;
+  deletionsCompleteLabel: string;
+  deletionsCancelLabel: string;
+  deletionsEmptyQueue: string;
+  deletionsSelectedNone: string;
 };
 
 let cached: UiCopy | null = null;
@@ -180,6 +213,39 @@ export function loadUiCopy(): UiCopy {
     quotaWarnLabel: requiredVite("VITE_QUOTA_WARN_LABEL"),
     quotaSaveLabel: requiredVite("VITE_QUOTA_SAVE_LABEL"),
     quotaSaved: requiredVite("VITE_QUOTA_SAVED"),
+    privacyTitle: requiredVite("VITE_PRIVACY_TITLE"),
+    privacyBody: requiredVite("VITE_PRIVACY_BODY"),
+    termsTitle: requiredVite("VITE_TERMS_TITLE"),
+    termsBody: requiredVite("VITE_TERMS_BODY"),
+    consentTitle: requiredVite("VITE_CONSENT_TITLE"),
+    consentBody: requiredVite("VITE_CONSENT_BODY"),
+    consentPrivacyLabel: requiredVite("VITE_CONSENT_PRIVACY_LABEL"),
+    consentTermsLabel: requiredVite("VITE_CONSENT_TERMS_LABEL"),
+    consentAcceptLabel: requiredVite("VITE_CONSENT_ACCEPT_LABEL"),
+    cookieNoticeBody: requiredVite("VITE_COOKIE_NOTICE_BODY"),
+    cookieNoticeAccept: requiredVite("VITE_COOKIE_NOTICE_ACCEPT"),
+    dataTitle: requiredVite("VITE_DATA_TITLE"),
+    dataHelp: requiredVite("VITE_DATA_HELP"),
+    dataExportTitle: requiredVite("VITE_DATA_EXPORT_TITLE"),
+    dataExportBody: requiredVite("VITE_DATA_EXPORT_BODY"),
+    dataExportLabel: requiredVite("VITE_DATA_EXPORT_LABEL"),
+    dataExportDone: requiredVite("VITE_DATA_EXPORT_DONE"),
+    dataDeleteTitle: requiredVite("VITE_DATA_DELETE_TITLE"),
+    dataDeleteBody: requiredVite("VITE_DATA_DELETE_BODY"),
+    dataDeleteHint: requiredVite("VITE_DATA_DELETE_HINT"),
+    dataDeletePending: requiredVite("VITE_DATA_DELETE_PENDING"),
+    dataConfirmationLabel: requiredVite("VITE_DATA_CONFIRMATION_LABEL"),
+    dataDeleteNowLabel: requiredVite("VITE_DATA_DELETE_NOW_LABEL"),
+    dataRequestLabel: requiredVite("VITE_DATA_REQUEST_LABEL"),
+    dataCancelRequestLabel: requiredVite("VITE_DATA_CANCEL_REQUEST_LABEL"),
+    dataOwnerProtected: requiredVite("VITE_DATA_OWNER_PROTECTED"),
+    deletionsTitle: requiredVite("VITE_DELETIONS_TITLE"),
+    deletionsQueueTitle: requiredVite("VITE_DELETIONS_QUEUE_TITLE"),
+    deletionsHelp: requiredVite("VITE_DELETIONS_HELP"),
+    deletionsCompleteLabel: requiredVite("VITE_DELETIONS_COMPLETE_LABEL"),
+    deletionsCancelLabel: requiredVite("VITE_DELETIONS_CANCEL_LABEL"),
+    deletionsEmptyQueue: requiredVite("VITE_DELETIONS_EMPTY_QUEUE"),
+    deletionsSelectedNone: requiredVite("VITE_DELETIONS_SELECTED_NONE"),
   };
   return cached;
 }

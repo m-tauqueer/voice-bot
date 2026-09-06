@@ -23,6 +23,12 @@ const sessionRecordSchema = z.union([
     email: z.string().min(1),
     status: z.enum([ACCESS_STATUS.DENIED, ACCESS_STATUS.REVOKED]),
   }),
+  z.object({
+    kind: z.literal(SESSION_KIND.CONSENT),
+    google_sub: z.string().min(1),
+    email: z.string().min(1),
+    next: z.string().min(1).optional(),
+  }),
 ]);
 
 export type SessionRecord = z.infer<typeof sessionRecordSchema>;
@@ -154,6 +160,10 @@ export function sessionIdentityEmail(record: SessionRecord): string | null {
 
 export function sessionGoogleSub(record: SessionRecord): string | null {
   return "google_sub" in record ? record.google_sub : null;
+}
+
+export function sessionConsentNext(record: SessionRecord): string | undefined {
+  return record.kind === SESSION_KIND.CONSENT ? record.next : undefined;
 }
 
 export async function readSessionRecord(

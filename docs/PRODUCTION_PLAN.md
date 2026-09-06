@@ -18,7 +18,7 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 
 ## 1. Where the product is today (ground truth from the code)
 
-**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in. The offline test suite (4.3), waitlist access (4.4), daily member quotas and write receipts (4.5), and the post-4.5 live checks are in and signed off. `OWNER_EMAILS` are not capped. The think request log takes `session_id` from `LOG_TURN_FIELDS` only.
+**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in. The offline test suite (4.3), waitlist access (4.4), daily member quotas and write receipts (4.5), the post-4.5 live checks, and data lifecycle (consent, export, delete, retention) are in. `OWNER_EMAILS` are not capped and cannot be deleted from the product. The think request log takes `session_id` from `LOG_TURN_FIELDS` only.
 
 **Not yet built (the gap this plan closes):**
 
@@ -30,7 +30,7 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 | Automated tests | Vitest + pytest with a coverage gate; probes stay as live smoke  | Keep the floor; turn probes into e2e against staging                  |
 | Member access   | Waitlist; owners auto-approved; People queue on `/admin/people`  | Same model on the Azure deploy                                        |
 | Personas        | Exactly one active persona (`resolveActivePersona` throws on >1) | Support many personas cleanly, even if launch ships one               |
-| Data lifecycle  | None                                                             | Delete-my-data, export, retention, consent, privacy/ToS               |
+| Data lifecycle  | Consent at sign-in; export; member delete; owner deletion queue; ended-session retention | Blob delete becomes real when audio archiving is on |
 | Observability   | Logs + budget probe + per-turn correlation id                    | Error tracking, metrics, uptime/synthetic checks, alerts              |
 | Abuse / cost    | Member daily caps, receipts, per-user rate-limit keys            | Cost dashboards; billing only if we charge                            |
 | Resilience      | Single instances                                                 | Backups, restore runbook, horizontal scale, load test                 |
@@ -168,7 +168,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 ### After 4.5 — Manual test backlog
 
-**Complete.** Tauqueer signed the list off. Offline `npm test` / `npm run test:worker` passed. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. Live waitlist, quota, and spoken-think checks are done. A think-handler log that passed `session_id` twice returned 500 to Deepgram (`FAILED_TO_THINK` / "The persona could not answer"); that collision is fixed. Do not start 4.6, 4.7, 4.1–4.2, 4.8–4.9, or Phase 5/6 until Tauqueer names the next part.
+**Complete.** Tauqueer signed the list off. Offline `npm test` / `npm run test:worker` passed. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. Live waitlist, quota, and spoken-think checks are done. A think-handler log that passed `session_id` twice returned 500 to Deepgram (`FAILED_TO_THINK` / "The persona could not answer"); that collision is fixed. Data lifecycle (consent, export, delete, retention) is signed off. Do not start 4.6, 4.1–4.2, 4.8–4.9, or Phase 5/6 until he names the next part.
 
 **4.3 — re-run the suite**
 
@@ -202,9 +202,52 @@ Goal: the product can be put in front of real, external users without a data lea
 
 ### Part 4.7 — Data lifecycle & privacy
 
-- Goal: a user can leave and take/erase their data; we can say what we keep and why.
-- Tasks (per **D-D**): delete-my-data (app rows + the user's Engram **private** pool via the persona admin surface, `forget_user_memory` / per-user purge; audio blobs; sessions/turns) with a confirmation flow; export-my-data (transcripts + memory); a retention policy applied by a scheduled job; consent capture at sign-in; a privacy policy and terms page; cookie/notice copy. Owner tooling to action a deletion request.
-- Manual test: a member deletes their account; their sessions, turns, audio and private memories are gone and a re-sign-in starts empty; export produces a complete archive.
+**Goal.** A user can leave and take or erase their data; we can say what we keep and why (**D-D: GDPR-light**).
+
+**Subparts.**
+
+| Subpart | What |
+| --- | --- |
+| 4.7.1 | `consents` and `deletion_requests` migration. Existing members backfilled as privacy/terms version `1`. |
+| 4.7.2 | Pure consent / confirmation / delete-target / retention units. Redis session kind `consent`. |
+| 4.7.3 | Worker `POST /internal/lifecycle/purge`: org Engram client pages `user_memories`, `forget_user_memory` each gid, then `unsubscribe`. Skips when Engram keys are unset. |
+| 4.7.4 | Sign-in holds a consent cookie until current versions are accepted, then the same admit path as OAuth. Member export and delete; owner deletion queue; ended-session retention (`npm run retain`; optional gateway interval). |
+| 4.7.5 | Public `/privacy` and `/terms`; `/consent`; cookie notice; `/dashboard/data`; admin `/admin/deletions`. Copy and paths from config. |
+| 4.7.6 | Unit tests + logic check. No live Google / Engram / Azure. |
+
+**Files.**
+- `infra/migrations/0009_lifecycle.sql`
+- `gateway/src/lifecycle/*`, `gateway/src/auth/admit.ts`
+- `worker/src/worker/lifecycle/*`, `worker/src/worker/api/lifecycle.py`
+- `frontend/src/app/landing/ConsentPage.tsx`, `LegalPage.tsx`, `CookieBanner.tsx`, `frontend/src/app/dashboard/DataPage.tsx`, `frontend/src/app/admin/DeletionsPage.tsx`
+
+**Logic.**
+- After Google identity, missing or stale `CONSENT_PRIVACY_VERSION` / `CONSENT_TERMS_VERSION` writes a `consent` Redis session and does not provision yet. `POST /api/consent` stores the row and admits (member, waitlist, or refuse).
+- Confirmation is an exact configured phrase after trim, not language understanding.
+- `OWNER_EMAILS` cannot be deleted. Members may delete immediately or file a pending request. Access request stays `active` so a later sign-in provisions a **new empty** user. Consents stay keyed by Google subject.
+- Wipe order: Engram private-pool purge (best-effort) → audio blob delete (best-effort; no-op while archiving is off) → SQL sessions (CASCADE turns/assets/receipts) + subscriptions + user → destroy Redis session.
+- Retention deletes **ended** sessions older than `RETENTION_SESSION_DAYS` (`0` is off). Open sessions are never retained. `RETENTION_SWEEP_SECONDS` `0` is off.
+
+**Config.** Consent/legal/data/deletions paths and versions, delete confirmation phrase, action tokens, retention days/sweep, export filename, `/api/me` consent label, frontend `VITE_*` copy and nav entries.
+
+**Errors.** Version mismatch, confirmation mismatch, owner-protected, illegal deletion transitions, unknown request ids. Product `/api/*` stays member-only except `/api/me` and `/api/consent`.
+
+**Manual test.** A member deletes their account; sessions, turns, audio and private memories are gone and a re-sign-in starts empty; export is a complete archive.
+
+**Done when.** Consent, export, delete, retention, legal pages, and owner deletion tooling are in. **Done.** Live delete/export signed off (see the checklist below).
+
+**Catch.** Blob delete is a no-op until audio archiving is on. Engram purge is skipped when Engram keys are unset, and a partial forget still continues the app wipe.
+
+### After 4.7 — Manual test
+
+- [x] `npm run migrate` applied `0009_lifecycle.sql`. Existing members are not locked out of consent (backfill).
+- [x] New Google sign-in lands on `/consent` until both checkboxes are accepted, then waitlist or dashboard as before.
+- [x] `/privacy` and `/terms` are public. Cookie notice can be dismissed.
+- [x] Member on `/dashboard/data` downloads an export JSON. Typing the configured confirmation and deleting removes sessions/turns/user; `access_requests` stays active; next sign-in is an empty member (after consent if versions still match).
+- [x] Owner account cannot delete itself. Owner on `/admin/deletions` can complete or cancel a pending request.
+- [x] `npm run retain` with `RETENTION_SESSION_DAYS=0` deletes nothing. Ended sessions older than the configured days are removed; open sessions stay.
+
+**Done when.** Every box above is checked with Tauqueer. **Done.** Offline lint/typecheck/tests/smoke passed. Do not start 4.6, 4.1–4.2, 4.8–4.9, or Phase 5/6 until Tauqueer names the next part.
 
 ### Part 4.8 — Backups & disaster recovery
 
@@ -233,8 +276,6 @@ Goal: more than one persona, more than a handful of users, and an experience peo
 - Manual test: a user talks to two different personas; each keeps its own memory of the user; the isolation probe covers per-persona scoping.
 
 ### Part 5.2 — Scale & performance
-
-**with a catch.** Local schema + UI is fine. Engram private-pool purge needs their admin/forget APIs. Blob delete is a no-op until audio is on.
 
 - Goal: hold up under real concurrency.
 - Tasks: load test the voice path; tune DB pool sizes, Engram client cache, and worker concurrency; autoscaling rules for gateway/worker; verify WebSocket scale (the Redis notice channel already decouples worker→gateway); backpressure and graceful shedding under overload.
@@ -306,8 +347,8 @@ Not all of these will ship; they are candidates so we choose deliberately.
 
 **Azure deployment (4.1) comes last — after everything else in Phase 4 is complete.** Everything that can be built and tested locally lands first; the product moves to Azure only once it is fully hardened.
 
-**Now:** 4.3 / 4.4 / 4.5 and the After 4.5 backlog are done. Wait for Tauqueer to name the next part.
+**Now:** 4.3 / 4.4 / 4.5 / 4.7 are signed off. Wait for Tauqueer to name the next part.
 
-Order of the rest: **4.7 data lifecycle → 4.6 observability → 4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
+Order of the rest: **4.6 observability → 4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
 
 Some sub-tasks can only be *finished* against real infra (the live public-think check in 4.9, managed-Postgres backups in 4.8, the deploy step of the pipeline in 4.2); those complete when 4.1 lands. Phase 5 begins once the beta is stable; Phase 6 is pulled by demand.

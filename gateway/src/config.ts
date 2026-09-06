@@ -5,6 +5,7 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import { parseAccessStatus } from "./access/parse.js";
 import { validateInsightsConfig } from "./insights/parse.js";
+import { parseDeletionStatus } from "./lifecycle/parse.js";
 import { validateObserveConfig } from "./observe/fields.js";
 
 const requiredPort = z.preprocess(
@@ -290,6 +291,106 @@ const envFileSchema = z.object({
   ACCESS_ERROR_INVALID_STATUS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("invalid_access_status"),
+  ),
+  ACCESS_ME_CONSENT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("consent"),
+  ),
+  CONSENT_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/consent"),
+  ),
+  PRIVACY_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/privacy"),
+  ),
+  TERMS_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/terms"),
+  ),
+  DATA_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/dashboard/data"),
+  ),
+  ADMIN_DELETIONS_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/admin/deletions"),
+  ),
+  CONSENT_PRIVACY_VERSION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("1"),
+  ),
+  CONSENT_TERMS_VERSION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("1"),
+  ),
+  LIFECYCLE_DELETE_CONFIRMATION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("DELETE MY DATA"),
+  ),
+  LIFECYCLE_ACTION_REQUEST: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("request"),
+  ),
+  LIFECYCLE_ACTION_COMPLETE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("complete"),
+  ),
+  LIFECYCLE_ACTION_CANCEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("cancel"),
+  ),
+  LIFECYCLE_QUEUE_DEFAULT_STATUS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("pending"),
+  ),
+  LIFECYCLE_BATCH_MAX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(100),
+  ),
+  RETENTION_SESSION_DAYS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(365),
+  ),
+  RETENTION_SWEEP_SECONDS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(0),
+  ),
+  LIFECYCLE_EXPORT_FILENAME: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice-bot-export.json"),
+  ),
+  LIFECYCLE_ERROR_CONFIRMATION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("confirmation_mismatch"),
+  ),
+  LIFECYCLE_ERROR_INVALID_ACTION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_deletion_action"),
+  ),
+  LIFECYCLE_ERROR_INVALID_STATUS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_deletion_status"),
+  ),
+  LIFECYCLE_ERROR_INVALID_TRANSITION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("invalid_deletion_transition"),
+  ),
+  LIFECYCLE_ERROR_VERSION: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("consent_version_mismatch"),
+  ),
+  LIFECYCLE_ERROR_ACCEPTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("consent_not_accepted"),
+  ),
+  LIFECYCLE_ERROR_OWNER_PROTECTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("owner_delete_protected"),
+  ),
+  LIFECYCLE_ERROR_UNKNOWN: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("unknown_deletion_request"),
   ),
   OWNER_EMAILS: z.preprocess(
     (val) => (val === undefined ? "" : val),
@@ -928,6 +1029,7 @@ export function loadGatewayConfig(
     validateObserveConfig(parsed.data);
     validateAccessConfig(parsed.data);
     validateQuotaConfig(parsed.data);
+    validateLifecycleConfig(parsed.data);
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",
@@ -948,6 +1050,7 @@ export function validateAccessConfig(config: GatewayConfig): void {
     config.ACCESS_ME_WAITLISTED,
     config.ACCESS_ME_DENIED,
     config.ACCESS_ME_REVOKED,
+    config.ACCESS_ME_CONSENT,
   ];
   if (new Set(labels).size !== labels.length) {
     throw new Error("access /api/me labels must be unique");
@@ -969,6 +1072,45 @@ export function validateAccessConfig(config: GatewayConfig): void {
 
 export function waitlistRedirectUrl(config: GatewayConfig): string {
   return new URL(config.WAITLIST_PATH, config.FRONTEND_ORIGIN).toString();
+}
+
+export function consentRedirectUrl(config: GatewayConfig): string {
+  return new URL(config.CONSENT_PATH, config.FRONTEND_ORIGIN).toString();
+}
+
+export function validateLifecycleConfig(config: GatewayConfig): void {
+  const paths = [
+    config.CONSENT_PATH,
+    config.PRIVACY_PATH,
+    config.TERMS_PATH,
+    config.DATA_PATH,
+    config.ADMIN_DELETIONS_PATH,
+    config.WAITLIST_PATH,
+  ];
+  if (new Set(paths).size !== paths.length) {
+    throw new Error("lifecycle and waitlist paths must be unique");
+  }
+  for (const path of paths) {
+    const redirected = frontendPathRedirect(config, path);
+    if (!redirected || redirected !== path) {
+      throw new Error(
+        "lifecycle paths must be same-origin absolute paths with no query",
+      );
+    }
+  }
+  const actions = [
+    config.LIFECYCLE_ACTION_REQUEST,
+    config.LIFECYCLE_ACTION_COMPLETE,
+    config.LIFECYCLE_ACTION_CANCEL,
+  ];
+  if (new Set(actions).size !== actions.length) {
+    throw new Error("lifecycle deletion actions must be unique");
+  }
+  if (!parseDeletionStatus(config.LIFECYCLE_QUEUE_DEFAULT_STATUS)) {
+    throw new Error(
+      "LIFECYCLE_QUEUE_DEFAULT_STATUS must be a known deletion status",
+    );
+  }
 }
 
 export function validateQuotaConfig(config: GatewayConfig): void {

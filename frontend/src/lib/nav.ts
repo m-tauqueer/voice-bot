@@ -116,6 +116,21 @@ export function loadNavConfig(): NavConfig {
   if (requiredVite("VITE_WAITLIST_PATH") !== ROUTES.waitlist) {
     throw new Error("VITE_WAITLIST_PATH must match the waitlist route");
   }
+  if (requiredVite("VITE_CONSENT_PATH") !== ROUTES.consent) {
+    throw new Error("VITE_CONSENT_PATH must match the consent route");
+  }
+  if (requiredVite("VITE_PRIVACY_PATH") !== ROUTES.privacy) {
+    throw new Error("VITE_PRIVACY_PATH must match the privacy route");
+  }
+  if (requiredVite("VITE_TERMS_PATH") !== ROUTES.terms) {
+    throw new Error("VITE_TERMS_PATH must match the terms route");
+  }
+  if (requiredVite("VITE_DATA_PATH") !== ROUTES.data) {
+    throw new Error("VITE_DATA_PATH must match the data route");
+  }
+  if (requiredVite("VITE_ADMIN_DELETIONS_PATH") !== ROUTES.adminDeletions) {
+    throw new Error("VITE_ADMIN_DELETIONS_PATH must match the deletions route");
+  }
   cached = {
     appName: requiredVite("VITE_APP_NAME"),
     items,
@@ -168,6 +183,7 @@ export function isPersonalPath(path: string): boolean {
     matchPath(path, ROUTES.dashboard) ||
     matchPath(path, ROUTES.chat) ||
     matchPath(path, ROUTES.voice) ||
+    matchPath(path, ROUTES.data) ||
     matchPattern(path, PATTERNS.dashboardSession) !== null
   );
 }
@@ -178,6 +194,14 @@ export function isAdminPath(path: string): boolean {
 
 export function isWaitlistPath(path: string): boolean {
   return matchPath(path, ROUTES.waitlist);
+}
+
+export function isConsentPath(path: string): boolean {
+  return matchPath(path, ROUTES.consent);
+}
+
+export function isLegalPath(path: string): boolean {
+  return matchPath(path, ROUTES.privacy) || matchPath(path, ROUTES.terms);
 }
 
 export function signInCopy(path: string): { title: string; body: string } {
