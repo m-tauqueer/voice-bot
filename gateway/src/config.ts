@@ -7,6 +7,7 @@ import { parseAccessStatus } from "./access/parse.js";
 import { validateInsightsConfig } from "./insights/parse.js";
 import { parseDeletionStatus } from "./lifecycle/parse.js";
 import { validateObserveConfig } from "./observe/fields.js";
+import { validateOpsConfig, validateStatusCopy } from "./ops/decision.js";
 
 const requiredPort = z.preprocess(
   (val) => (val === undefined || val === "" ? undefined : val),
@@ -391,6 +392,102 @@ const envFileSchema = z.object({
   LIFECYCLE_ERROR_UNKNOWN: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("unknown_deletion_request"),
+  ),
+  OPS_SERVICE_GATEWAY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("gateway"),
+  ),
+  OPS_SERVICE_WORKER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("worker"),
+  ),
+  OPS_RECORD_CODES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable,speaking_llm_failed,record_lost",
+      ),
+  ),
+  OPS_FORCE_CODE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ops_forced"),
+  ),
+  OPS_FORCE_MESSAGE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Forced dependency failure for the watch probe."),
+  ),
+  OPS_LIST_LIMIT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(20),
+  ),
+  OPS_HEALTH_OK: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ok"),
+  ),
+  OPS_HEALTH_FAIL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fail"),
+  ),
+  OPS_HEALTH_POSTGRES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("postgres"),
+  ),
+  OPS_HEALTH_REDIS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("redis"),
+  ),
+  OPS_HEALTH_WORKER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("worker"),
+  ),
+  OPS_HEALTH_TIMEOUT_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(2000),
+  ),
+  OPS_LOG_EVENT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("ops event"),
+  ),
+  STATUS_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/status"),
+  ),
+  STATUS_API_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/api/status"),
+  ),
+  STATUS_OVERALL_OK: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("operational"),
+  ),
+  STATUS_OVERALL_FAIL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("disrupted"),
+  ),
+  STATUS_OVERALL_OK_LABEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("All systems operational"),
+  ),
+  STATUS_OVERALL_FAIL_LABEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Some systems are disrupted"),
+  ),
+  STATUS_COMPONENT_OK: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Operational"),
+  ),
+  STATUS_COMPONENT_FAIL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Disrupted"),
+  ),
+  STATUS_COMPONENT_LABELS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("postgres|Conversation record;redis|Live calls;worker|Persona"),
   ),
   OWNER_EMAILS: z.preprocess(
     (val) => (val === undefined ? "" : val),
@@ -1030,6 +1127,9 @@ export function loadGatewayConfig(
     validateAccessConfig(parsed.data);
     validateQuotaConfig(parsed.data);
     validateLifecycleConfig(parsed.data);
+    validateOpsConfig(parsed.data);
+    validateStatusCopy(parsed.data);
+    validateStatusApiPath(parsed.data);
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",
@@ -1086,6 +1186,7 @@ export function validateLifecycleConfig(config: GatewayConfig): void {
     config.DATA_PATH,
     config.ADMIN_DELETIONS_PATH,
     config.WAITLIST_PATH,
+    config.STATUS_PATH,
   ];
   if (new Set(paths).size !== paths.length) {
     throw new Error("lifecycle and waitlist paths must be unique");
@@ -1110,6 +1211,21 @@ export function validateLifecycleConfig(config: GatewayConfig): void {
     throw new Error(
       "LIFECYCLE_QUEUE_DEFAULT_STATUS must be a known deletion status",
     );
+  }
+}
+
+export function validateStatusApiPath(config: GatewayConfig): void {
+  const redirected = frontendPathRedirect(config, config.STATUS_API_PATH);
+  if (!redirected || redirected !== config.STATUS_API_PATH) {
+    throw new Error(
+      "STATUS_API_PATH must be a same-origin absolute path with no query",
+    );
+  }
+  if (
+    !config.STATUS_API_PATH.startsWith("/api/") ||
+    config.STATUS_API_PATH.startsWith("/api/admin")
+  ) {
+    throw new Error("STATUS_API_PATH must be a public /api path");
   }
 }
 

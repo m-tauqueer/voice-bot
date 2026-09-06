@@ -45,6 +45,7 @@ addopts = [
     "--cov=worker.quota.settings",
     "--cov=worker.lifecycle.gids",
     "--cov=worker.lifecycle.purge",
+    "--cov=worker.ops.decision",
     "--cov=worker.ratelimit",
     "--cov=worker.api.internal_auth",
     "--cov=worker.engram.engram_brain",

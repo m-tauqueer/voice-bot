@@ -125,6 +125,9 @@ export function loadNavConfig(): NavConfig {
   if (requiredVite("VITE_TERMS_PATH") !== ROUTES.terms) {
     throw new Error("VITE_TERMS_PATH must match the terms route");
   }
+  if (requiredVite("VITE_STATUS_PATH") !== ROUTES.status) {
+    throw new Error("VITE_STATUS_PATH must match the status route");
+  }
   if (requiredVite("VITE_DATA_PATH") !== ROUTES.data) {
     throw new Error("VITE_DATA_PATH must match the data route");
   }
@@ -202,6 +205,14 @@ export function isConsentPath(path: string): boolean {
 
 export function isLegalPath(path: string): boolean {
   return matchPath(path, ROUTES.privacy) || matchPath(path, ROUTES.terms);
+}
+
+export function isStatusPath(path: string): boolean {
+  return matchPath(path, ROUTES.status);
+}
+
+export function isPublicPath(path: string): boolean {
+  return isLegalPath(path) || isStatusPath(path);
 }
 
 export function signInCopy(path: string): { title: string; body: string } {

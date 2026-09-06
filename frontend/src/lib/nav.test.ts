@@ -5,6 +5,8 @@ import {
   isConsentPath,
   isLegalPath,
   isPersonalPath,
+  isPublicPath,
+  isStatusPath,
   isWaitlistPath,
   loadNavConfig,
   navIdForPath,
@@ -62,6 +64,11 @@ describe("nav config", () => {
     expect(isLegalPath("/privacy")).toBe(true);
     expect(isLegalPath("/terms")).toBe(true);
     expect(isLegalPath("/consent")).toBe(false);
+    expect(isStatusPath("/status")).toBe(true);
+    expect(isPublicPath("/status")).toBe(true);
+    expect(isPublicPath("/privacy")).toBe(true);
+    expect(isPublicPath("/dashboard")).toBe(false);
+    expect(isLegalPath("/status")).toBe(false);
   });
 
   it("picks the nested nav id for a session path", () => {

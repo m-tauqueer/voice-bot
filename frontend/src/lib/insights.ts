@@ -265,6 +265,30 @@ export function saveQuotaSettings(body: QuotaSettingsWrite) {
   });
 }
 
+export type OpsHealthRow = {
+  name: string;
+  status: string;
+  ok: boolean;
+};
+
+export type OpsEvent = {
+  id: string;
+  created_at: string;
+  service: string;
+  code: string;
+  message: string;
+  correlation_id: string | null;
+};
+
+export type OpsSnapshot = {
+  health: OpsHealthRow[];
+  events: OpsEvent[];
+};
+
+export function fetchOpsSnapshot() {
+  return api<OpsSnapshot>("/api/admin/ops");
+}
+
 export function fetchPersonalSessions(params: {
   range?: string;
   cursor?: string;

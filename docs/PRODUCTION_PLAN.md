@@ -18,7 +18,7 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 
 ## 1. Where the product is today (ground truth from the code)
 
-**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in. The offline test suite (4.3), waitlist access (4.4), daily member quotas and write receipts (4.5), the post-4.5 live checks, and data lifecycle (consent, export, delete, retention) are in. `OWNER_EMAILS` are not capped and cannot be deleted from the product. The think request log takes `session_id` from `LOG_TURN_FIELDS` only.
+**Working:** typed chat (`/chat`), spoken calls (`/ws/voice`) with barge-in and streamed replies, the canonical Postgres record, per-turn tracing, the personal app (`/dashboard`) and the owner admin app (`/admin`), failure handling, the read API, latency budgets, and the security/isolation review. Isolation rests on `sessions.user_id` plus the worker `TurnRunner` identity match; the memory panel now re-verifies identity too. Gateway per-IP rate limiting and a worker internal-secret brute-force throttle are in. The offline test suite (4.3), waitlist access (4.4), daily member quotas and write receipts (4.5), the post-4.5 live checks, data lifecycle (consent, export, delete, retention), and local ops alerts (`ops_events`, `npm run observe`) are in. Owner Overview and public `/status` show live health; Overview also shows probe rows and correlation ids. `OWNER_EMAILS` are not capped and cannot be deleted from the product. The think request log takes `session_id` from `LOG_TURN_FIELDS` only. Spoken calls still need a live `BYO_LLM_PUBLIC_URL` (local ngrok); if that tunnel is down, Deepgram returns `FAILED_TO_THINK` and the UI shows the think-failed message.
 
 **Not yet built (the gap this plan closes):**
 
@@ -31,7 +31,7 @@ This document supersedes the tail of Phase 3: **the deployment, multilingual, vo
 | Member access   | Waitlist; owners auto-approved; People queue on `/admin/people`  | Same model on the Azure deploy                                        |
 | Personas        | Exactly one active persona (`resolveActivePersona` throws on >1) | Support many personas cleanly, even if launch ships one               |
 | Data lifecycle  | Consent at sign-in; export; member delete; owner deletion queue; ended-session retention | Blob delete becomes real when audio archiving is on |
-| Observability   | Logs + budget probe + per-turn correlation id                    | Error tracking, metrics, uptime/synthetic checks, alerts              |
+| Observability   | Logs + budget probe + per-turn correlation id + `ops_events` on `/admin` and public `/status` | Error tracking, metrics, uptime/synthetic checks, outbound alerts |
 | Abuse / cost    | Member daily caps, receipts, per-user rate-limit keys            | Cost dashboards; billing only if we charge                            |
 | Resilience      | Single instances                                                 | Backups, restore runbook, horizontal scale, load test                 |
 | UX polish       | Functional                                                       | Onboarding, empty/error states, mobile, accessibility                 |
@@ -168,7 +168,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 ### After 4.5 — Manual test backlog
 
-**Complete.** Tauqueer signed the list off. Offline `npm test` / `npm run test:worker` passed. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. Live waitlist, quota, and spoken-think checks are done. A think-handler log that passed `session_id` twice returned 500 to Deepgram (`FAILED_TO_THINK` / "The persona could not answer"); that collision is fixed. Data lifecycle (consent, export, delete, retention) is signed off. Do not start 4.6, 4.1–4.2, 4.8–4.9, or Phase 5/6 until he names the next part.
+**Complete.** Tauqueer signed the list off. Offline `npm test` / `npm run test:worker` passed. Migrations `0006_access_requests.sql`, `0007_write_receipts.sql`, and `0008_quota_settings.sql` are applied. Live waitlist, quota, and spoken-think checks are done. A think-handler log that passed `session_id` twice returned 500 to Deepgram (`FAILED_TO_THINK` / "The persona could not answer"); that collision is fixed. Data lifecycle (consent, export, delete, retention) is signed off.
 
 **4.3 — re-run the suite**
 
@@ -196,9 +196,50 @@ Goal: the product can be put in front of real, external users without a data lea
 
 ### Part 4.6 — Observability, monitoring & alerting
 
-- Goal: we find out about problems before users tell us.
-- Tasks: error tracking (e.g. Sentry) in gateway, worker and frontend; a metrics surface and dashboards (turn latency, error rate, call volume, dependency health); uptime/synthetic checks that place a scripted call; alerting to a channel/on-call; ship structured logs somewhere queryable. Correlation id (already minted) flows into traces.
-- Manual test: a forced dependency failure raises an alert and appears in the dashboard within the configured window.
+**Goal.** We find out about problems before users tell us. Keep it local and small: no Sentry, no Grafana, no outbound webhooks. Correlation ids and structured logs already exist (3.7); this part stores faults and shows them to the owner.
+
+**Subparts.**
+
+| Subpart | What |
+| --- | --- |
+| 4.6.1 | `ops_events` migration. Service tokens in `schema.ts`. Config for list size, record-code allow-list, force/health labels. |
+| 4.6.2 | Pure units: known service tokens, whether a failure code is recorded, forced-event payload, health ok/fail. |
+| 4.6.3 | Best-effort insert from gateway and worker on recorded failure codes. Owner `GET /api/admin/ops` (live health + recent events) and `POST /api/admin/ops/force`. |
+| 4.6.4 | Admin Overview: live health banner, labeled systems, dated alerts. Public `/status` (unauthenticated `GET /api/status`) with the same health, no correlation ids or probe rows. |
+| 4.6.5 | `npm run observe`: Postgres, Redis, optional gateway/worker `/health`, insert a forced event, read it back. Unit tests. No live vendors. |
+
+**Files.**
+- `infra/migrations/0010_ops_events.sql`
+- `gateway/src/ops/*`, `gateway/src/observe/opsProbe.ts`
+- `worker/src/worker/ops/*`
+- `frontend/src/app/admin/OpsPanel.tsx`
+- `frontend/src/app/landing/StatusPage.tsx`
+- `frontend/src/lib/status.ts`
+
+**Logic.**
+- `ops_events` holds service, code, message, optional `correlation_id`. No user text, no user id.
+- Insert is best-effort and never fails the caller. Only codes in `OPS_RECORD_CODES` are stored; reconnect/restore codes stay off that list. The force path always stores.
+- `/health` stays a liveness ping (no dependencies). Overview and `/status` share the same live Postgres / Redis / worker checks. Public labels come from `STATUS_COMPONENT_LABELS`. Probe rows (`OPS_FORCE_CODE`) stay on Overview only. Unsigned `GET /api/status` omits `correlation_id`, service tokens, and failure codes.
+- Force writes one configured row so a probe and the Overview can see it without taking real dependencies down.
+
+**Config.** `OPS_SERVICE_*`, `OPS_RECORD_CODES`, `OPS_FORCE_CODE` / `OPS_FORCE_MESSAGE`, `OPS_LIST_LIMIT`, `OPS_HEALTH_*` status tokens and names, `OPS_HEALTH_TIMEOUT_MS`, `OPS_LOG_EVENT`, `STATUS_*` public path/copy/labels, frontend `VITE_OVERVIEW_OPS_*` / `VITE_OVERVIEW_HEALTH_*` / `VITE_STATUS_*`.
+
+**Errors.** Owner-only list and force. Non-owners get 403. A down Postgres cannot store an event; the live health row still says so.
+
+**Manual test.** `npm run observe` writes a forced event and reads it back. Owner Overview shows that row and live health. A chat/voice dependency failure with a recorded code also appears.
+
+**Done when.** Faults are stored without extra vendors, the owner can see them on Overview, `/status` is public, and the observe probe passes. **Implemented.**
+
+### After 4.6 — Manual test
+
+- [x] `npm run migrate` applied `0010_ops_events.sql`.
+- [x] `npm run observe` stores a forced event and reads it back. Postgres and Redis are `ok`. Gateway/worker `/health` SKIP when those processes are down.
+- [x] Owner `/admin` Overview shows live health (banner + systems) and Alerts. The forced row is visible after observe.
+- [x] Public `/status` (unsigned) shows overall banner, systems, and past incidents. Landing footer and Overview link to it.
+- [x] Owner `GET /api/admin/ops` returns health and events. Same owner guard as the rest of `/api/admin/*`. Unsigned `GET /api/status` is 200.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:worker`, and `npm run smoke` pass.
+
+**Done when.** Tauqueer has seen Overview and `/status`. **Seen.**
 
 ### Part 4.7 — Data lifecycle & privacy
 
@@ -230,7 +271,7 @@ Goal: the product can be put in front of real, external users without a data lea
 
 **Config.** Consent/legal/data/deletions paths and versions, delete confirmation phrase, action tokens, retention days/sweep, export filename, `/api/me` consent label, frontend `VITE_*` copy and nav entries.
 
-**Errors.** Version mismatch, confirmation mismatch, owner-protected, illegal deletion transitions, unknown request ids. Product `/api/*` stays member-only except `/api/me` and `/api/consent`.
+**Errors.** Version mismatch, confirmation mismatch, owner-protected, illegal deletion transitions, unknown request ids. Product `/api/*` stays member-only except `/api/me`, `/api/consent`, and `/api/status`.
 
 **Manual test.** A member deletes their account; sessions, turns, audio and private memories are gone and a re-sign-in starts empty; export is a complete archive.
 
@@ -247,7 +288,7 @@ Goal: the product can be put in front of real, external users without a data lea
 - [x] Owner account cannot delete itself. Owner on `/admin/deletions` can complete or cancel a pending request.
 - [x] `npm run retain` with `RETENTION_SESSION_DAYS=0` deletes nothing. Ended sessions older than the configured days are removed; open sessions stay.
 
-**Done when.** Every box above is checked with Tauqueer. **Done.** Offline lint/typecheck/tests/smoke passed. Do not start 4.6, 4.1–4.2, 4.8–4.9, or Phase 5/6 until Tauqueer names the next part.
+**Done when.** Every box above is checked with Tauqueer. **Done.** Offline lint/typecheck/tests/smoke passed.
 
 ### Part 4.8 — Backups & disaster recovery
 
@@ -347,8 +388,8 @@ Not all of these will ship; they are candidates so we choose deliberately.
 
 **Azure deployment (4.1) comes last — after everything else in Phase 4 is complete.** Everything that can be built and tested locally lands first; the product moves to Azure only once it is fully hardened.
 
-**Now:** 4.3 / 4.4 / 4.5 / 4.7 are signed off. Wait for Tauqueer to name the next part.
+**Now:** 4.3 / 4.4 / 4.5 / 4.6 / 4.7 are signed off. Next named part when Tauqueer says so.
 
-Order of the rest: **4.6 observability → 4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
+Order of the rest: **4.2 CI/CD → 4.8 backups → 4.9 security 2.0 → 4.1 Azure deploy (last).**
 
 Some sub-tasks can only be *finished* against real infra (the live public-think check in 4.9, managed-Postgres backups in 4.8, the deploy step of the pipeline in 4.2); those complete when 4.1 lands. Phase 5 begins once the beta is stable; Phase 6 is pulled by demand.

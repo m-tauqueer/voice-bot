@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import WebSocket from "ws";
@@ -20,6 +20,7 @@ import {
 } from "../deepgram/agent.js";
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
 import { turnLogFields } from "../observe/fields.js";
+import { noteOpsFailure } from "../ops/record.js";
 import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
 import {
   type Utterance,
@@ -58,6 +59,17 @@ function sendJson(socket: WebSocket, payload: Record<string, unknown>): void {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(payload));
   }
+}
+
+function reportVoiceFailure(
+  sql: Sql,
+  config: GatewayConfig,
+  log: FastifyBaseLogger,
+  code: string,
+): void {
+  noteOpsFailure(sql, config, log, code, {
+    message: failureMessage(config, code),
+  });
 }
 
 function closeClient(socket: WebSocket): void {
@@ -148,6 +160,12 @@ export async function registerVoiceRoutes(
               });
             } else {
               request.log.error({ err: error }, "voice persona lookup failed");
+              reportVoiceFailure(
+                sql,
+                config,
+                request.log,
+                config.FAILURE_CODE_DATABASE,
+              );
               sendJson(
                 socket,
                 voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
@@ -170,6 +188,12 @@ export async function registerVoiceRoutes(
             session = await createVoiceSession(sql, user.id, persona.id);
           } catch (error) {
             request.log.error({ err: error }, "voice session create failed");
+            reportVoiceFailure(
+              sql,
+              config,
+              request.log,
+              config.FAILURE_CODE_DATABASE,
+            );
             sendJson(
               socket,
               voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
@@ -195,6 +219,12 @@ export async function registerVoiceRoutes(
             );
           } catch (error) {
             request.log.error({ err: error }, "deepgram connect failed");
+            reportVoiceFailure(
+              sql,
+              config,
+              request.log,
+              config.FAILURE_CODE_DEEPGRAM,
+            );
             sendJson(
               socket,
               voiceFailurePayload(config, config.FAILURE_CODE_DEEPGRAM),
@@ -244,6 +274,7 @@ export async function registerVoiceRoutes(
           settingsApplied = true;
 
           const sendFailure = (code: string) => {
+            reportVoiceFailure(sql, config, request.log, code);
             sendJson(socket, voiceFailurePayload(config, code));
           };
           let redisWarned = false;
@@ -274,6 +305,12 @@ export async function registerVoiceRoutes(
               { sessionId: session.id, reason: audioError },
               "voice audio will not be stored",
             );
+            reportVoiceFailure(
+              sql,
+              config,
+              request.log,
+              config.FAILURE_CODE_BLOB,
+            );
             sendJson(socket, {
               ...voiceFailurePayload(config, config.FAILURE_CODE_BLOB),
               reason: audioError,
@@ -289,6 +326,12 @@ export async function registerVoiceRoutes(
               request.log.error(
                 { err: error, sessionId: session.id },
                 "voice audio store unavailable",
+              );
+              reportVoiceFailure(
+                sql,
+                config,
+                request.log,
+                config.FAILURE_CODE_BLOB,
               );
               sendJson(socket, {
                 ...voiceFailurePayload(config, config.FAILURE_CODE_BLOB),

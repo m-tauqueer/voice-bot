@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { turnLogFields } from "../observe/fields.js";
+import { noteOpsFailure } from "../ops/record.js";
 import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
 import { quotaAppliesToCaller } from "../quota/decision.js";
 import {
@@ -63,6 +64,21 @@ function parseWorkerBody(text: string): unknown {
   return body;
 }
 
+function sendDatabaseUnavailable(
+  reply: FastifyReply,
+  request: FastifyRequest,
+  sql: Sql,
+  config: GatewayConfig,
+) {
+  noteOpsFailure(sql, config, request.log, config.FAILURE_CODE_DATABASE, {
+    message: config.FAILURE_MESSAGE_DATABASE,
+  });
+  return reply.code(503).send({
+    error: config.FAILURE_MESSAGE_DATABASE,
+    code: config.FAILURE_CODE_DATABASE,
+  });
+}
+
 export async function registerChatRoutes(
   app: FastifyInstance,
   deps: { config: GatewayConfig; sql: Sql; redis: Redis },
@@ -86,10 +102,7 @@ export async function registerChatRoutes(
         return reply.code(409).send({ error: "multiple personas" });
       }
       request.log.error({ err: error }, "chat persona lookup failed");
-      return reply.code(503).send({
-        error: config.FAILURE_MESSAGE_DATABASE,
-        code: config.FAILURE_CODE_DATABASE,
-      });
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
@@ -102,10 +115,7 @@ export async function registerChatRoutes(
       turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
     } catch (error) {
       request.log.error({ err: error }, "chat history lookup failed");
-      return reply.code(503).send({
-        error: config.FAILURE_MESSAGE_DATABASE,
-        code: config.FAILURE_CODE_DATABASE,
-      });
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
     if (turns === null) {
       request.log.info(
@@ -139,10 +149,7 @@ export async function registerChatRoutes(
         return reply.code(409).send({ error: "multiple personas" });
       }
       request.log.error({ err: error }, "chat persona lookup failed");
-      return reply.code(503).send({
-        error: config.FAILURE_MESSAGE_DATABASE,
-        code: config.FAILURE_CODE_DATABASE,
-      });
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
@@ -170,10 +177,7 @@ export async function registerChatRoutes(
       }
     } catch (error) {
       request.log.error({ err: error }, "chat session lookup failed");
-      return reply.code(503).send({
-        error: config.FAILURE_MESSAGE_DATABASE,
-        code: config.FAILURE_CODE_DATABASE,
-      });
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
 
     const activity = await redisQuiet(
@@ -195,10 +199,7 @@ export async function registerChatRoutes(
         usage = await loadQuotaUsage(sql, user.id, limits);
       } catch (error) {
         request.log.error({ err: error }, "chat quota lookup failed");
-        return reply.code(503).send({
-          error: config.FAILURE_MESSAGE_DATABASE,
-          code: config.FAILURE_CODE_DATABASE,
-        });
+        return sendDatabaseUnavailable(reply, request, sql, config);
       }
       const refused = quotaRefusal(config, usage, limits);
       if (refused) {

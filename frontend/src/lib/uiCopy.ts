@@ -67,6 +67,9 @@ export type UiCopy = {
   overviewActivity: string;
   overviewLatency: string;
   overviewBudget: string;
+  overviewHealth: string;
+  overviewOps: string;
+  overviewOpsEmpty: string;
   recentTitle: string;
   quotaTitle: string;
   quotaHelp: string;
@@ -80,6 +83,12 @@ export type UiCopy = {
   privacyBody: string;
   termsTitle: string;
   termsBody: string;
+  statusTitle: string;
+  statusUpdated: string;
+  statusComponents: string;
+  statusIncidents: string;
+  statusEmpty: string;
+  statusLink: string;
   consentTitle: string;
   consentBody: string;
   consentPrivacyLabel: string;
@@ -204,6 +213,9 @@ export function loadUiCopy(): UiCopy {
     overviewActivity: requiredVite("VITE_OVERVIEW_ACTIVITY_TITLE"),
     overviewLatency: requiredVite("VITE_OVERVIEW_LATENCY_TITLE"),
     overviewBudget: requiredVite("VITE_OVERVIEW_BUDGET_LABEL"),
+    overviewHealth: requiredVite("VITE_OVERVIEW_HEALTH_TITLE"),
+    overviewOps: requiredVite("VITE_OVERVIEW_OPS_TITLE"),
+    overviewOpsEmpty: requiredVite("VITE_OVERVIEW_OPS_EMPTY"),
     recentTitle: requiredVite("VITE_RECENT_TITLE"),
     quotaTitle: requiredVite("VITE_QUOTA_TITLE"),
     quotaHelp: requiredVite("VITE_QUOTA_HELP"),
@@ -217,6 +229,12 @@ export function loadUiCopy(): UiCopy {
     privacyBody: requiredVite("VITE_PRIVACY_BODY"),
     termsTitle: requiredVite("VITE_TERMS_TITLE"),
     termsBody: requiredVite("VITE_TERMS_BODY"),
+    statusTitle: requiredVite("VITE_STATUS_TITLE"),
+    statusUpdated: requiredVite("VITE_STATUS_UPDATED"),
+    statusComponents: requiredVite("VITE_STATUS_COMPONENTS"),
+    statusIncidents: requiredVite("VITE_STATUS_INCIDENTS"),
+    statusEmpty: requiredVite("VITE_STATUS_EMPTY"),
+    statusLink: requiredVite("VITE_STATUS_LINK"),
     consentTitle: requiredVite("VITE_CONSENT_TITLE"),
     consentBody: requiredVite("VITE_CONSENT_BODY"),
     consentPrivacyLabel: requiredVite("VITE_CONSENT_PRIVACY_LABEL"),

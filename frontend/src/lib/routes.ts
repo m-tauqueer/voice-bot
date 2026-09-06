@@ -7,6 +7,7 @@ export const ROUTES = {
   consent: "/consent",
   privacy: "/privacy",
   terms: "/terms",
+  status: "/status",
   data: "/dashboard/data",
   admin: "/admin",
   adminConversations: "/admin/conversations",

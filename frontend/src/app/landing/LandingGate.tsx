@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { isLegalPath, loadNavConfig } from "../../lib/nav";
+import { isLegalPath, isPublicPath, isStatusPath, loadNavConfig } from "../../lib/nav";
 import { matchPath, replace, useRoute } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
 import {
@@ -12,15 +12,16 @@ import { GateLayout } from "../shell/SignInCard";
 import { ConsentPage } from "./ConsentPage";
 import { LandingPage } from "./LandingPage";
 import { LegalPage } from "./LegalPage";
+import { StatusPage } from "./StatusPage";
 
 export function LandingGate() {
   const path = useRoute();
   const session = useSession();
   const { loadingLabel } = loadNavConfig();
-  const legal = isLegalPath(path);
+  const publicPage = isPublicPath(path);
 
   useEffect(() => {
-    if (legal) {
+    if (publicPage) {
       return;
     }
     if (session.status === "ready") {
@@ -42,9 +43,13 @@ export function LandingGate() {
     if (session.status === "signed_out" && !matchPath(path, ROUTES.home)) {
       replace(ROUTES.home);
     }
-  }, [legal, path, session.status]);
+  }, [publicPage, path, session.status]);
 
-  if (legal) {
+  if (isStatusPath(path)) {
+    return <StatusPage />;
+  }
+
+  if (isLegalPath(path)) {
     return <LegalPage />;
   }
 

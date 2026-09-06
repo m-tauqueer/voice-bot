@@ -67,9 +67,9 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan work for the test suite, waitlist, quotas, the post-quota live checks, and data lifecycle (consent, export, delete, retention) is done. **Do not start 4.6 or anything later until Tauqueer names the next part** from [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md). Remaining Phase 3 parts start when he names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
+**Phases 0, 1 and 2 are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, and the security review are in. Production-plan work for the test suite, waitlist, quotas, the post-quota live checks, data lifecycle (consent, export, delete, retention), local ops alerts, and the public `/status` page is done. **Do not start 4.2 or anything later until Tauqueer names the next part** from [`docs/PRODUCTION_PLAN.md`](docs/PRODUCTION_PLAN.md). Remaining Phase 3 parts start when he names one from [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md).
 
-Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
+Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. See [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) §7–§9 for the measured numbers and what the code taught us that the plan had wrong.
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -100,6 +100,7 @@ npm run failures     # Failure taxonomy and reconnect rules (no live outages)
 npm run isolation    # Two signed-in users cannot reach each other's conversation
 npm run nav          # Personal vs admin nav lists (from frontend/)
 npm run budgets      # First-word p50/p90 vs budget, plus Engram request-log review
+npm run observe      # Postgres/Redis health, optional gateway/worker ping, forced alert row
 npm run security     # Cookie/CORS/secrets, think-endpoint unauth, OpenAPI hidden, then isolation
 npm run admin -- show
 
@@ -120,7 +121,7 @@ npm run infra:reset
 `npm run lint` checks gateway + `frontend/vite.config.ts`. The copied component-library sources under `frontend/src` are excluded so Biome does not rewrite that tree.
 
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
-- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Signed-in members use `/dashboard` (Home, Chat, Voice); unapproved Google accounts land on `/waitlist` with no `users` row. `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
+- `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Public `/status` shows live health (no sign-in). Signed-in members use `/dashboard` (Home, Chat, Voice); unapproved Google accounts land on `/waitlist` with no `users` row. `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
 - `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/TRD.md) §1.2.
 - `infra/` — Docker Compose, migrations, scripts.

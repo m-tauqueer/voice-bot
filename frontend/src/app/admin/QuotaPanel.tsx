@@ -58,7 +58,7 @@ export function QuotaPanel() {
   }
 
   return (
-    <Section title={copy.quotaTitle} first>
+    <Section title={copy.quotaTitle}>
       <p style={{ color: "var(--text-mid)", marginBottom: 16 }}>{copy.quotaHelp}</p>
       {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
       {!form && !error ? (

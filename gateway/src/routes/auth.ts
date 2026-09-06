@@ -150,7 +150,11 @@ export async function registerAuthRoutes(
     if (path !== "/api" && !path.startsWith("/api/")) {
       return;
     }
-    if (path === "/api/me" || path === "/api/consent") {
+    if (
+      path === "/api/me" ||
+      path === "/api/consent" ||
+      path === config.STATUS_API_PATH
+    ) {
       return;
     }
     await requireAppUser(request, reply);

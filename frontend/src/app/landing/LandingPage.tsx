@@ -10,40 +10,29 @@ export function LandingPage() {
   return (
     <>
       <SignInCard title={appName} body={signIn.appBody} next={ROUTES.dashboard} />
-      <p
-        style={{
-          position: "relative",
-          zIndex: 1,
-          textAlign: "center",
-          color: "var(--text-mid)",
-        }}
-      >
+      <p className="st__foot" style={{ position: "relative", zIndex: 1, marginTop: 0 }}>
         <button
           type="button"
-          style={{
-            background: "none",
-            border: 0,
-            color: "inherit",
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
+          className="st-link"
           onClick={() => navigate(ROUTES.privacy)}
         >
           {copy.privacyTitle}
         </button>
-        {" · "}
+        <span aria-hidden="true">·</span>
         <button
           type="button"
-          style={{
-            background: "none",
-            border: 0,
-            color: "inherit",
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
+          className="st-link"
           onClick={() => navigate(ROUTES.terms)}
         >
           {copy.termsTitle}
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          className="st-link"
+          onClick={() => navigate(ROUTES.status)}
+        >
+          {copy.statusLink}
         </button>
       </p>
     </>

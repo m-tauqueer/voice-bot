@@ -100,6 +100,15 @@ class WorkerSettings(BaseSettings):
         ),
         min_length=1,
     )
+    ops_service_worker: str = Field(default="worker", min_length=1)
+    ops_record_codes: str = Field(
+        default=(
+            "engram_unavailable,deepgram_unavailable,think_failed,"
+            "database_unavailable,speaking_llm_failed,record_lost"
+        ),
+        min_length=1,
+    )
+    ops_log_event: str = Field(default="ops event", min_length=1)
     internal_secret_header: str = Field(default="x-internal-secret")
     worker_openapi_enabled: bool = Field(default=False)
     correlation_id_header: str = Field(default="x-correlation-id")
@@ -259,6 +268,13 @@ class WorkerSettings(BaseSettings):
             return "gpt-4o-mini"
         if isinstance(value, str) and value.strip() == "":
             return "gpt-4o-mini"
+        return value
+
+    @field_validator("ops_service_worker")
+    @classmethod
+    def ops_service_is_known(cls, value: str) -> str:
+        if value not in {"gateway", "worker"}:
+            raise ValueError("OPS_SERVICE_WORKER must be gateway or worker")
         return value
 
     @field_validator("byo_llm_chat_completions_path")

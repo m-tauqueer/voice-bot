@@ -23,6 +23,7 @@
     "isolation": "tsx src/voice/isolationProbe.ts",
     "failures": "tsx src/voice/failureProbe.ts",
     "budgets": "tsx src/observe/budgetProbe.ts",
+    "observe": "tsx src/observe/opsProbe.ts",
     "security": "tsx src/observe/securityProbe.ts"
   },
   "dependencies": {

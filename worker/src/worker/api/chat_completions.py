@@ -15,6 +15,7 @@ from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
 from worker.notices import publish_notice
 from worker.observe.fields import turn_log_fields
+from worker.ops.record import record_ops_event, record_turn_error
 from worker.turn.errors import TurnError
 from worker.turn.openai_completion import (
     chunk_line,
@@ -82,6 +83,12 @@ def build_chat_completions_router(
                 settings.failure_code_record,
                 settings.failure_message_record,
             )
+            record_ops_event(
+                settings,
+                code=settings.failure_code_record,
+                message=settings.failure_message_record,
+                correlation_id=plan.correlation_id,
+            )
 
     @router.post(path, response_model=None)
     def chat_completions(
@@ -110,6 +117,7 @@ def build_chat_completions_router(
                 correlation_id=correlation_id,
             )
         except TurnError as exc:
+            record_turn_error(settings, exc, correlation_id)
             raise_turn(exc)
 
         log.info(
@@ -146,6 +154,7 @@ def build_chat_completions_router(
             try:
                 runner.speak(plan)
             except TurnError as exc:
+                record_turn_error(settings, exc, correlation_id)
                 raise_turn(exc)
         result = runner.finish(plan)
         if not result.recorded:
@@ -154,6 +163,12 @@ def build_chat_completions_router(
                 plan.session_id,
                 settings.failure_code_record,
                 settings.failure_message_record,
+            )
+            record_ops_event(
+                settings,
+                code=settings.failure_code_record,
+                message=settings.failure_message_record,
+                correlation_id=plan.correlation_id,
             )
         return completion_payload(
             settings,
@@ -198,6 +213,12 @@ def build_chat_completions_router(
                     plan.session_id,
                     settings.failure_code_speaking_llm,
                     settings.failure_message_speaking_llm,
+                )
+                record_ops_event(
+                    settings,
+                    code=settings.failure_code_speaking_llm,
+                    message=settings.failure_message_speaking_llm,
+                    correlation_id=plan.correlation_id,
                 )
         yield chunk_line(
             settings,

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarMeter } from "../../components/ui/Meter";
+import { Button } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/Segmented";
 import { Section } from "../../components/Section";
 import { KpiStrip, type KpiTileData } from "../../components/KpiStrip";
 import { ActivityGraph } from "../../components/viz/ActivityGraph";
 import { loadNavConfig } from "../../lib/nav";
+import { navigate } from "../../lib/router";
 import { ROUTES } from "../../lib/routes";
 import {
   fetchOwnerActivity,
@@ -21,6 +23,7 @@ import {
   stageLabel,
 } from "../../lib/uiCopy";
 import { EmptyNote, FetchError } from "../dashboard/FetchState";
+import { OpsPanel } from "./OpsPanel";
 import { QuotaPanel } from "./QuotaPanel";
 
 export function OverviewPage() {
@@ -121,15 +124,26 @@ export function OverviewPage() {
         <div>
           <h1 className="mc-pagehead__title">{title}</h1>
         </div>
-        <Segmented
-          options={copy.ranges.map((item) => ({
-            value: item.id,
-            label: item.label,
-          }))}
-          value={range}
-          onChange={setRange}
-        />
+        <div className="mc-pagehead__actions">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(ROUTES.status)}
+          >
+            {copy.statusLink}
+          </Button>
+          <Segmented
+            options={copy.ranges.map((item) => ({
+              value: item.id,
+              label: item.label,
+            }))}
+            value={range}
+            onChange={setRange}
+          />
+        </div>
       </div>
+      <OpsPanel />
       <QuotaPanel />
       {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
       {loading && !overview ? <p>{nav.loadingLabel}</p> : null}

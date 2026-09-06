@@ -323,7 +323,7 @@ The parts below were **renumbered from the original Phase 3 list** after Tauquee
 
 Goal: take the product from "works for 2–3 testers on a laptop" to "safe to launch for many real users, and good enough that they return." Detailed roadmap: [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md).
 
-- **Phase 4 — Launch readiness.** Azure deployment (retires the tunnel, turns Blob on), CI/CD, an automated test suite, waitlist access, quotas + write idempotency, observability + alerting, data lifecycle (delete/export/consent/privacy), backups + DR, and a second security pass. Test suite, waitlist, quotas, the post-quota live checks, and data lifecycle are done. This is the "safe to invite strangers" gate.
+- **Phase 4 — Launch readiness.** Azure deployment (retires the tunnel, turns Blob on), CI/CD, an automated test suite, waitlist access, quotas + write idempotency, observability + alerting, data lifecycle (delete/export/consent/privacy), backups + DR, and a second security pass. Test suite, waitlist, quotas, the post-quota live checks, data lifecycle, local ops alerts, and the public `/status` page are done. This is the "safe to invite strangers" gate.
 - **Phase 5 — Multi-tenant, scale & growth.** Multi-persona, load/scale tuning, onboarding + UX polish (mobile, accessibility, error states), accounts/preferences, optional billing, and growth loops.
 - **Phase 6 — Advanced capabilities.** Multilingual code-switch (was 3.10), voice cloning (was 3.11), a richer controller, more channels, owner analytics, and user-shaped personas.
 

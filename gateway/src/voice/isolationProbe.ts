@@ -133,6 +133,33 @@ try {
     anonymousAdmin.statusCode === 401,
     `${anonymousAdmin.statusCode}`,
   );
+  const anonymousStatus = await get(config.STATUS_API_PATH);
+  check(
+    "anonymous_status_ok",
+    anonymousStatus.statusCode === 200,
+    `${anonymousStatus.statusCode}`,
+  );
+  if (anonymousStatus.statusCode === 200) {
+    const body = anonymousStatus.json() as {
+      overall?: { label?: unknown };
+      components?: unknown;
+      incidents?: unknown;
+      checked_at?: unknown;
+    };
+    check("anonymous_status_overall", typeof body.overall?.label === "string");
+    check("anonymous_status_components", Array.isArray(body.components));
+    check("anonymous_status_incidents", Array.isArray(body.incidents));
+    check("anonymous_status_checked_at", typeof body.checked_at === "string");
+    const first = Array.isArray(body.incidents) ? body.incidents[0] : null;
+    if (first && typeof first === "object") {
+      check(
+        "anonymous_status_incident_public",
+        !("correlation_id" in first) &&
+          !("service" in first) &&
+          !("code" in first),
+      );
+    }
+  }
 
   if (rateLimitEnabled(config)) {
     check(
@@ -358,6 +385,7 @@ try {
       "/api/admin/users",
       "/api/admin/persona",
       "/api/admin/quota",
+      "/api/admin/ops",
     ];
     for (const path of adminPaths) {
       const refused = await get(path, otherCookie);
@@ -429,6 +457,27 @@ try {
         "owner_latency_ok",
         latencyHttp.statusCode === 200,
         `${latencyHttp.statusCode}`,
+      );
+
+      const opsHttp = await get("/api/admin/ops", ownerCookie);
+      check(
+        "owner_ops_ok",
+        opsHttp.statusCode === 200,
+        `${opsHttp.statusCode}`,
+      );
+      if (opsHttp.statusCode === 200) {
+        const ops = opsHttp.json() as {
+          health?: unknown;
+          events?: unknown;
+        };
+        check("owner_ops_health_list", Array.isArray(ops.health));
+        check("owner_ops_events_list", Array.isArray(ops.events));
+      }
+      const otherForce = await post("/api/admin/ops/force", otherCookie, {});
+      check(
+        "other_user_forbidden_ops_force",
+        otherForce.statusCode === 403,
+        `${otherForce.statusCode}`,
       );
 
       const badRange = await get(

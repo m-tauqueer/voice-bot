@@ -33,6 +33,7 @@ export default defineConfig({
         "src/lifecycle/decision.ts",
         "src/lifecycle/parse.ts",
         "src/lifecycle/blobs.ts",
+        "src/ops/decision.ts",
         "src/insights/parse.ts",
         "src/insights/scope.ts",
         "src/chat/sessions.ts",

@@ -11,6 +11,7 @@ import "./styles/dial.css";
 import "./styles/ui.css";
 import "./app/styles/app-shell.css";
 import "./app/styles/dashboard.css";
+import "./app/styles/status.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

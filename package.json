@@ -41,6 +41,7 @@
     "bargein": "npm run bargein -w gateway",
     "failures": "npm run failures -w gateway && uv run --directory worker python -m worker.failure_probe",
     "budgets": "npm run budgets -w gateway && uv run --directory worker python -m worker.observe.probe",
+    "observe": "npm run observe -w gateway",
     "security": "npm run isolation && npm run security -w gateway && uv run --directory worker python -m worker.observe.security"
   },
   "devDependencies": {
