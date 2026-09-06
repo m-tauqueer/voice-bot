@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import { z } from "zod";
@@ -6,14 +7,26 @@ import { touchChatActivity } from "../chat/activity.js";
 import { createTextSession, getSessionForUser } from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker } from "../clients/worker.js";
-import type { GatewayConfig } from "../config.js";
-import { resolveActivePersona } from "../personas.js";
+import { type GatewayConfig, isOwnerEmail } from "../config.js";
+import { turnLogFields } from "../observe/fields.js";
+import { noteOpsFailure } from "../ops/record.js";
+import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { quotaAppliesToCaller } from "../quota/decision.js";
+import {
+  type QuotaUsage,
+  loadQuotaUsage,
+  quotaRefusal,
+  quotaWarnKinds,
+  resolveLiveQuotaLimits,
+} from "../quota/store.js";
+import { redisQuiet } from "../voice/redisSafe.js";
 
 type Sql = ReturnType<typeof postgres>;
 
 const chatBodySchema = z.object({
   text: z.string().min(1),
   session_id: z.string().uuid().optional(),
+  correlation_id: z.string().uuid().optional(),
 });
 
 const chatQuerySchema = z.object({
@@ -31,8 +44,7 @@ function personaPayload(
   };
 }
 
-async function sendWorker(reply: FastifyReply, response: Response) {
-  const text = await response.text();
+function parseWorkerBody(text: string): unknown {
   let body: unknown = null;
   if (text.length > 0) {
     try {
@@ -49,7 +61,22 @@ async function sendWorker(reply: FastifyReply, response: Response) {
       body = { error: detail };
     }
   }
-  return reply.code(response.status).send(body);
+  return body;
+}
+
+function sendDatabaseUnavailable(
+  reply: FastifyReply,
+  request: FastifyRequest,
+  sql: Sql,
+  config: GatewayConfig,
+) {
+  noteOpsFailure(sql, config, request.log, config.FAILURE_CODE_DATABASE, {
+    message: config.FAILURE_MESSAGE_DATABASE,
+  });
+  return reply.code(503).send({
+    error: config.FAILURE_MESSAGE_DATABASE,
+    code: config.FAILURE_CODE_DATABASE,
+  });
 }
 
 export async function registerChatRoutes(
@@ -70,8 +97,12 @@ export async function registerChatRoutes(
     let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
     try {
       persona = await resolveActivePersona(sql, config);
-    } catch {
-      return reply.code(409).send({ error: "multiple personas" });
+    } catch (error) {
+      if (error instanceof MultiplePersonasError) {
+        return reply.code(409).send({ error: "multiple personas" });
+      }
+      request.log.error({ err: error }, "chat persona lookup failed");
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
@@ -79,8 +110,18 @@ export async function registerChatRoutes(
     if (!parsed.data.session_id) {
       return { persona: personaPayload(persona), turns: [] as const };
     }
-    const turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+    let turns: Awaited<ReturnType<typeof listTurnsForUser>>;
+    try {
+      turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+    } catch (error) {
+      request.log.error({ err: error }, "chat history lookup failed");
+      return sendDatabaseUnavailable(reply, request, sql, config);
+    }
     if (turns === null) {
+      request.log.info(
+        { sessionId: parsed.data.session_id, userId: user.id },
+        "chat session not found",
+      );
       return reply.code(404).send({ error: "session not found" });
     }
     return {
@@ -103,34 +144,87 @@ export async function registerChatRoutes(
     let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
     try {
       persona = await resolveActivePersona(sql, config);
-    } catch {
-      return reply.code(409).send({ error: "multiple personas" });
+    } catch (error) {
+      if (error instanceof MultiplePersonasError) {
+        return reply.code(409).send({ error: "multiple personas" });
+      }
+      request.log.error({ err: error }, "chat persona lookup failed");
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
     if (!persona) {
       return reply.code(404).send({ error: "persona not recorded" });
     }
 
     let session: Awaited<ReturnType<typeof getSessionForUser>>;
-    if (parsed.data.session_id) {
-      session = await getSessionForUser(sql, parsed.data.session_id, user.id);
-      if (!session) {
-        return reply.code(404).send({ error: "session not found" });
+    try {
+      if (parsed.data.session_id) {
+        session = await getSessionForUser(sql, parsed.data.session_id, user.id);
+        if (!session) {
+          request.log.info(
+            { sessionId: parsed.data.session_id, userId: user.id },
+            "chat session not found",
+          );
+          return reply.code(404).send({ error: "session not found" });
+        }
+        if (session.endedAt) {
+          return reply.code(409).send({ error: "session has ended" });
+        }
+        if (session.personaId !== persona.id) {
+          return reply.code(409).send({ error: "session persona mismatch" });
+        }
+      } else {
+        session = await createTextSession(sql, user.id, persona.id);
       }
-      if (session.endedAt) {
-        return reply.code(409).send({ error: "session has ended" });
-      }
-      if (session.personaId !== persona.id) {
-        return reply.code(409).send({ error: "session persona mismatch" });
-      }
-    } else {
-      session = await createTextSession(sql, user.id, persona.id);
+    } catch (error) {
+      request.log.error({ err: error }, "chat session lookup failed");
+      return sendDatabaseUnavailable(reply, request, sql, config);
     }
 
-    await touchChatActivity(redis, config, session.id);
+    const activity = await redisQuiet(
+      request.log,
+      config,
+      "touchChatActivity",
+      session.id,
+      () => touchChatActivity(redis, config, session.id),
+    );
+    if (activity === null) {
+      request.log.error({ sessionId: session.id }, "chat activity not stored");
+    }
 
+    if (quotaAppliesToCaller(isOwnerEmail(user.email, config))) {
+      let usage: QuotaUsage;
+      let limits: Awaited<ReturnType<typeof resolveLiveQuotaLimits>>;
+      try {
+        limits = await resolveLiveQuotaLimits(sql, config);
+        usage = await loadQuotaUsage(sql, user.id, limits);
+      } catch (error) {
+        request.log.error({ err: error }, "chat quota lookup failed");
+        return sendDatabaseUnavailable(reply, request, sql, config);
+      }
+      const refused = quotaRefusal(config, usage, limits);
+      if (refused) {
+        request.log.warn(
+          {
+            userId: user.id,
+            code: refused.code,
+            reset_at: refused.reset_at,
+          },
+          config.QUOTA_LOG_REFUSED,
+        );
+        return reply.code(429).send(refused);
+      }
+      for (const kind of quotaWarnKinds(config, usage, limits)) {
+        request.log.warn({ userId: user.id, kind }, config.QUOTA_LOG_WARN);
+      }
+    }
+
+    const correlationId = parsed.data.correlation_id ?? randomUUID();
     const response = await callWorker(config, "/internal/turn", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        [config.CORRELATION_ID_HEADER]: correlationId,
+      },
       body: JSON.stringify({
         app_user_id: user.id,
         engram_user_id: user.engramUserId,
@@ -139,6 +233,25 @@ export async function registerChatRoutes(
         text: parsed.data.text,
       }),
     });
-    return sendWorker(reply, response);
+    const payload = parseWorkerBody(await response.text());
+    const fields =
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>)
+        : {};
+    request.log.info(
+      turnLogFields(config, {
+        correlation_id:
+          typeof fields.correlation_id === "string"
+            ? fields.correlation_id
+            : correlationId,
+        session_id: session.id,
+        turn_ids: fields.turn_ids,
+        action: fields.action,
+        reasons: fields.reasons,
+        recorded: fields.recorded,
+      }),
+      config.LOG_TURN_EVENT,
+    );
+    return reply.code(response.status).send(payload);
   });
 }

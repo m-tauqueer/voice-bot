@@ -23,3 +23,12 @@ def create_engram(settings: WorkerSettings, user_id: str) -> EngramClient:
         timeout=float(settings.engram_timeout_seconds),
         max_retries=0,
     )
+
+
+def create_org_engram(settings: WorkerSettings) -> EngramClient:
+    """Org-scoped client (`EngramClient(org)`, user_id defaults to empty).
+
+    Used for `insights.logs` (`GET /orgs/{org}/logs`). Never a three-segment
+    persona tenant.
+    """
+    return create_engram(settings, "")

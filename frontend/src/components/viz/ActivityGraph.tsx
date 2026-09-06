@@ -1,4 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { closeArea, easeInOutCubic, monotonePath, resample } from "./curve";
 
 export interface ActivityPoint {
@@ -175,7 +183,7 @@ export function ActivityGraph({
     return Math.max(0, Math.min(n - 1, Math.round((x - PAD.left) / (stepX || 1))));
   };
 
-  const onMove = (e: React.PointerEvent) => {
+  const onMove = (e: PointerEvent<SVGSVGElement>) => {
     if (morphing.current || !w) return;
     const i = locate(e.clientX);
     if (i === hot) return;

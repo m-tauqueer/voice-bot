@@ -1,6 +1,6 @@
-# `/components` styles
+# Token styles
 
-Styles for the component library at [`src/pages/optimized-components/`](../../pages/optimized-components/),
+Styles for the product UI (tokens used by the shell, chat, voice, and dashboard),
 split into two layers that are loaded together:
 
 ```

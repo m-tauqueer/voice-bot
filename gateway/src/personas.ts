@@ -3,6 +3,13 @@ import type { GatewayConfig } from "./config.js";
 
 type Sql = ReturnType<typeof postgres>;
 
+export class MultiplePersonasError extends Error {
+  constructor() {
+    super("multiple personas are stored; set ENGRAM_PERSONA_ID");
+    this.name = "MultiplePersonasError";
+  }
+}
+
 export type ActivePersona = {
   id: string;
   engramPersonaId: string;
@@ -58,5 +65,5 @@ export async function resolveActivePersona(
       return mapPersona(matches[0]);
     }
   }
-  throw new Error("multiple personas are stored; set ENGRAM_PERSONA_ID");
+  throw new MultiplePersonasError();
 }

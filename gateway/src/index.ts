@@ -1,52 +1,34 @@
-import cookie from "@fastify/cookie";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import websocket from "@fastify/websocket";
-import Fastify from "fastify";
+import { createGatewayApp } from "./app.js";
 import { createPostgres, createRedis } from "./clients.js";
-import { corsAllowedMethods, loadGatewayConfig } from "./config.js";
-import { registerAdminRoutes } from "./routes/admin.js";
-import { registerAuthRoutes } from "./routes/auth.js";
-import { registerChatRoutes } from "./routes/chat.js";
+import { loadGatewayConfig } from "./config.js";
+import { applySessionRetention } from "./lifecycle/retain.js";
 
 const config = loadGatewayConfig();
 const sql = createPostgres(config);
 const redis = createRedis(config);
-
-const app = Fastify({
-  logger: {
-    level: config.LOG_LEVEL,
-    ...(config.NODE_ENV === "development"
-      ? { transport: { target: "pino-pretty" } }
-      : {}),
-  },
-});
-
-await app.register(cors, {
-  origin: config.FRONTEND_ORIGIN,
-  credentials: true,
-  methods: corsAllowedMethods(config),
-});
-await app.register(cookie, {
-  secret: config.SESSION_SECRET,
-});
-await app.register(multipart, {
-  limits: { fileSize: config.ADMIN_INGEST_MAX_BYTES },
-});
-await app.register(websocket);
-await registerAuthRoutes(app, { config, sql, redis });
-await registerAdminRoutes(app, { config });
-await registerChatRoutes(app, { config, sql, redis });
-
-app.get("/health", async () => ({
-  ok: true,
-  service: "gateway",
-}));
+const app = await createGatewayApp({ config, sql, redis });
 
 app.addHook("onClose", async () => {
   await redis.quit();
   await sql.end({ timeout: 5 });
 });
+
+if (config.RETENTION_SWEEP_SECONDS > 0) {
+  const sweepMs = config.RETENTION_SWEEP_SECONDS * 1000;
+  const sweep = () => {
+    applySessionRetention(sql, config, app.log)
+      .then((result) => {
+        if (result.sessions > 0) {
+          app.log.info(result, "session retention");
+        }
+      })
+      .catch((error: unknown) => {
+        app.log.error({ err: error }, "session retention failed");
+      });
+  };
+  sweep();
+  setInterval(sweep, sweepMs);
+}
 
 await app.listen({
   host: config.GATEWAY_HOST,

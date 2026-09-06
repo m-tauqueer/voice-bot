@@ -1,26 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { navigate } from "../../lib/router";
-import { ROUTES } from "../../lib/routes";
 import { MemoryIcon } from "../../lib/memory-icons";
 import { Menu } from "../../components/icons";
-
-export type NavId = "dashboard" | "chat" | "workspaces" | "users" | "connectors" | "logs";
-
-interface NavItem {
-  id: NavId;
-  label: string;
-  icon: string;
-  to?: string;
-}
-
-const NAV: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard", to: ROUTES.dashboard },
-  { id: "chat", label: "Chat", icon: "chat" },
-  { id: "workspaces", label: "Workspaces", icon: "spaces" },
-  { id: "users", label: "Manage Users", icon: "users" },
-  { id: "connectors", label: "Connectors", icon: "connector" },
-  { id: "logs", label: "Logs", icon: "history" },
-];
+import type { NavItem } from "../../lib/nav";
 
 const PREFERRED_ABOVE_NOTCH = 3;
 
@@ -129,8 +111,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   return (
     <button
       className={"mc-nav__item" + (isActive ? " is-active" : "")}
-      onClick={item.to ? () => navigate(item.to!) : undefined}
-      aria-disabled={item.to ? undefined : true}
+      onClick={() => navigate(item.to)}
       title={item.label}
       aria-current={isActive ? "page" : undefined}
     >
@@ -140,8 +121,18 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   );
 }
 
-export function Sidebar({ active, onToggle, onOpenDial }: {
-  active: NavId;
+export function Sidebar({
+  active,
+  items,
+  brand,
+  homeTo,
+  onToggle,
+  onOpenDial,
+}: {
+  active: string;
+  items: NavItem[];
+  brand: string;
+  homeTo: string;
   collapsed: boolean;
   onToggle: () => void;
   onOpenDial: () => void;
@@ -156,9 +147,9 @@ export function Sidebar({ active, onToggle, onOpenDial }: {
         style={{ clipPath: silhouette.clip ? `path('${silhouette.clip}')` : undefined }}
       >
         <div className="mc-sidebar__head">
-          <button className="mc-brand" onClick={() => navigate(ROUTES.components)} aria-label="Metacognition home">
+          <button className="mc-brand" onClick={() => navigate(homeTo)} aria-label={brand}>
             <span className="mc-brand__mark"><img src="/Logo-white.svg" alt="" width={20} height={20} /></span>
-            <span className="mc-brand__word">Metacognition</span>
+            <span className="mc-brand__word">{brand}</span>
           </button>
           <button className="mc-menu" aria-label="Toggle menu" onClick={onToggle}>
             <Menu size={18} />
@@ -167,7 +158,7 @@ export function Sidebar({ active, onToggle, onOpenDial }: {
 
         <nav className="mc-nav" ref={silhouette.navRef} aria-label="Primary">
           <div className="mc-nav__group" style={{ minHeight: silhouette.headroom }}>
-            {NAV.slice(0, silhouette.aboveCount).map((item) => (
+            {items.slice(0, silhouette.aboveCount).map((item) => (
               <NavButton key={item.id} item={item} isActive={active === item.id} />
             ))}
           </div>
@@ -175,7 +166,7 @@ export function Sidebar({ active, onToggle, onOpenDial }: {
           <div className="mc-nav__notch" style={{ height: silhouette.notch }} aria-hidden />
 
           <div className="mc-nav__group mc-nav__group--tail">
-            {NAV.slice(silhouette.aboveCount).map((item) => (
+            {items.slice(silhouette.aboveCount).map((item) => (
               <NavButton key={item.id} item={item} isActive={active === item.id} />
             ))}
           </div>

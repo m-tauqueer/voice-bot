@@ -10,10 +10,11 @@ export type ChatSession = {
   endedAt: Date | null;
 };
 
-export async function createTextSession(
+async function insertSession(
   sql: Sql,
   userId: string,
   personaId: string,
+  channel: (typeof SESSION_CHANNEL)[keyof typeof SESSION_CHANNEL],
 ): Promise<ChatSession> {
   const rows = await sql<
     {
@@ -24,7 +25,7 @@ export async function createTextSession(
     }[]
   >`
     INSERT INTO sessions (user_id, persona_id, channel)
-    VALUES (${userId}, ${personaId}, ${SESSION_CHANNEL.TEXT})
+    VALUES (${userId}, ${personaId}, ${channel})
     RETURNING id, user_id, persona_id, ended_at
   `;
   const row = rows[0];
@@ -37,6 +38,22 @@ export async function createTextSession(
     personaId: row.persona_id,
     endedAt: row.ended_at,
   };
+}
+
+export async function createTextSession(
+  sql: Sql,
+  userId: string,
+  personaId: string,
+): Promise<ChatSession> {
+  return insertSession(sql, userId, personaId, SESSION_CHANNEL.TEXT);
+}
+
+export async function createVoiceSession(
+  sql: Sql,
+  userId: string,
+  personaId: string,
+): Promise<ChatSession> {
+  return insertSession(sql, userId, personaId, SESSION_CHANNEL.VOICE);
 }
 
 export async function getSessionForUser(

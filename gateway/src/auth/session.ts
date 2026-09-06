@@ -1,12 +1,37 @@
+import { sign as signCookie } from "@fastify/cookie";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import { z } from "zod";
 import { type GatewayConfig, sessionCookieSecure } from "../config.js";
+import { ACCESS_STATUS, SESSION_KIND } from "../schema.js";
 import { randomUrlToken } from "./random.js";
 
-const sessionRecordSchema = z.object({
-  app_user_id: z.string().uuid(),
-});
+const sessionRecordSchema = z.union([
+  z.object({
+    kind: z.literal(SESSION_KIND.MEMBER).optional(),
+    app_user_id: z.string().uuid(),
+  }),
+  z.object({
+    kind: z.literal(SESSION_KIND.WAITLIST),
+    google_sub: z.string().min(1),
+    email: z.string().min(1),
+    status: z.literal(ACCESS_STATUS.REQUESTED),
+  }),
+  z.object({
+    kind: z.literal(SESSION_KIND.REFUSED),
+    google_sub: z.string().min(1),
+    email: z.string().min(1),
+    status: z.enum([ACCESS_STATUS.DENIED, ACCESS_STATUS.REVOKED]),
+  }),
+  z.object({
+    kind: z.literal(SESSION_KIND.CONSENT),
+    google_sub: z.string().min(1),
+    email: z.string().min(1),
+    next: z.string().min(1).optional(),
+  }),
+]);
+
+export type SessionRecord = z.infer<typeof sessionRecordSchema>;
 
 const oauthPendingSchema = z.object({
   nonce: z.string().min(1),
@@ -66,19 +91,46 @@ export async function takeOauthPending(
   }
 }
 
-export async function createSession(
+export async function persistSessionRecord(
   redis: Redis,
-  reply: FastifyReply,
   config: GatewayConfig,
-  appUserId: string,
-): Promise<void> {
+  record: SessionRecord,
+): Promise<string> {
   const sessionId = randomUrlToken(config.SESSION_ID_BYTES);
   await redis.set(
     sessionRedisKey(config, sessionId),
-    JSON.stringify({ app_user_id: appUserId }),
+    JSON.stringify(record),
     "EX",
     config.SESSION_TTL_SECONDS,
   );
+  return sessionId;
+}
+
+export async function persistAuthSession(
+  redis: Redis,
+  config: GatewayConfig,
+  appUserId: string,
+): Promise<string> {
+  return persistSessionRecord(redis, config, {
+    kind: SESSION_KIND.MEMBER,
+    app_user_id: appUserId,
+  });
+}
+
+export function signSessionCookieValue(
+  config: GatewayConfig,
+  sessionId: string,
+): string {
+  return signCookie(sessionId, config.SESSION_SECRET);
+}
+
+export async function createSessionFromRecord(
+  redis: Redis,
+  reply: FastifyReply,
+  config: GatewayConfig,
+  record: SessionRecord,
+): Promise<void> {
+  const sessionId = await persistSessionRecord(redis, config, record);
   reply.setCookie(
     config.SESSION_COOKIE_NAME,
     sessionId,
@@ -86,11 +138,39 @@ export async function createSession(
   );
 }
 
-export async function readSessionAppUserId(
+export async function createSession(
+  redis: Redis,
+  reply: FastifyReply,
+  config: GatewayConfig,
+  appUserId: string,
+): Promise<void> {
+  await createSessionFromRecord(redis, reply, config, {
+    kind: SESSION_KIND.MEMBER,
+    app_user_id: appUserId,
+  });
+}
+
+export function sessionAppUserId(record: SessionRecord): string | null {
+  return "app_user_id" in record ? record.app_user_id : null;
+}
+
+export function sessionIdentityEmail(record: SessionRecord): string | null {
+  return "email" in record ? record.email : null;
+}
+
+export function sessionGoogleSub(record: SessionRecord): string | null {
+  return "google_sub" in record ? record.google_sub : null;
+}
+
+export function sessionConsentNext(record: SessionRecord): string | undefined {
+  return record.kind === SESSION_KIND.CONSENT ? record.next : undefined;
+}
+
+export async function readSessionRecord(
   redis: Redis,
   request: FastifyRequest,
   config: GatewayConfig,
-): Promise<string | null> {
+): Promise<SessionRecord | null> {
   const raw = request.cookies[config.SESSION_COOKIE_NAME];
   if (!raw) {
     return null;
@@ -116,7 +196,16 @@ export async function readSessionAppUserId(
     sessionRedisKey(config, unsigned.value),
     config.SESSION_TTL_SECONDS,
   );
-  return parsed.data.app_user_id;
+  return parsed.data;
+}
+
+export async function readSessionAppUserId(
+  redis: Redis,
+  request: FastifyRequest,
+  config: GatewayConfig,
+): Promise<string | null> {
+  const record = await readSessionRecord(redis, request, config);
+  return record ? sessionAppUserId(record) : null;
 }
 
 export async function destroySession(

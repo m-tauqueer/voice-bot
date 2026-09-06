@@ -3,8 +3,10 @@ import { join } from "node:path";
 import type { createPostgres } from "./clients.js";
 import { repoRootFromHere } from "./config.js";
 import {
+  ACCESS_STATUS,
   AUDIO_DIRECTION,
   CONTROLLER_ACTION,
+  DELETION_STATUS,
   SESSION_CHANNEL,
   SUBSCRIPTION_STATUS,
   TURN_SPEAKER,
@@ -12,6 +14,8 @@ import {
 
 const SCHEMA_SQL_VALUES = [
   ...Object.values(SUBSCRIPTION_STATUS),
+  ...Object.values(ACCESS_STATUS),
+  ...Object.values(DELETION_STATUS),
   ...Object.values(SESSION_CHANNEL),
   ...Object.values(TURN_SPEAKER),
   ...Object.values(CONTROLLER_ACTION),

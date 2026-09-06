@@ -40,6 +40,7 @@ class IngestOutcome:
 @dataclass(frozen=True)
 class RetrieveHit:
     tenant: str | None
+    text: str | None
     raw: dict[str, Any]
 
 
@@ -128,6 +129,18 @@ class PersonaBrain(ABC):
         *,
         top_k: int = 10,
     ) -> RetrieveOutcome:
+        raise NotImplementedError
+
+    @abstractmethod
+    def converse(
+        self,
+        persona_id: str,
+        text: str,
+        *,
+        session_id: str | None = None,
+        speaker: str | None = None,
+    ) -> Any:
+        """Record a turn in the caller's private pool without asking for a reply."""
         raise NotImplementedError
 
     @abstractmethod

@@ -2,43 +2,31 @@ import { useEffect, useRef, useState } from "react";
 import { MemoryIcon } from "../lib/memory-icons";
 import { Close, ArrowUpRight } from "./icons";
 import { navigate } from "../lib/router";
-import { ROUTES } from "../lib/routes";
 
-interface DialSegment {
+export type DialSegment = {
   icon: string;
   name: string;
   items: string[];
   to?: string;
-}
+};
 
-const SEGMENTS: DialSegment[] = [
-  { icon: "memory", name: "Memories", to: ROUTES.dashboard, items: ["All memories", "Recently added", "Top recalled", "Saved"] },
-  { icon: "spaces", name: "Workspaces", items: ["Sales", "Product", "Engineering", "Design"] },
-  { icon: "chat", name: "Chat", items: ["New chat", "Ask your second brain", "Recent threads"] },
-  { icon: "connector", name: "Connectors", items: ["Slack", "Notion", "Google Drive", "Add a connector"] },
-  { icon: "search", name: "Search", to: ROUTES.dashboard, items: ["Search memories", "Find people", "Browse tags"] },
-  { icon: "upload", name: "Capture", to: ROUTES.dashboard, items: ["Add resource", "Web clip", "Paste a URL", "Infer notes"] },
-  { icon: "users", name: "People", items: ["All people", "Teams", "Companies"] },
-  { icon: "settings", name: "Settings", items: ["Preferences", "Members", "Billing"] },
-];
-
-const SEGMENT_COUNT = SEGMENTS.length;
-const SEGMENT_STEP = 360 / SEGMENT_COUNT;
 const ORBIT_RADIUS = 158;
 const KNOB_RADIUS = 72;
 
-const segmentAngle = (index: number) => -90 + index * SEGMENT_STEP;
-
-function shortestStep(from: number, to: number) {
-  const forward = (((to - from) % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
-  return forward > SEGMENT_COUNT / 2 ? forward - SEGMENT_COUNT : forward;
+function segmentAngle(index: number, count: number) {
+  return -90 + index * (360 / count);
 }
 
-function nearestSegment(angleDeg: number, fallback: number) {
+function shortestStep(from: number, to: number, count: number) {
+  const forward = (((to - from) % count) + count) % count;
+  return forward > count / 2 ? forward - count : forward;
+}
+
+function nearestSegment(angleDeg: number, fallback: number, count: number) {
   let smallest = Infinity;
   let nearest = fallback;
-  for (let i = 0; i < SEGMENT_COUNT; i++) {
-    const delta = Math.abs(((angleDeg - segmentAngle(i) + 540) % 360) - 180);
+  for (let i = 0; i < count; i++) {
+    const delta = Math.abs(((angleDeg - segmentAngle(i, count) + 540) % 360) - 180);
     if (delta < smallest) {
       smallest = delta;
       nearest = i;
@@ -47,29 +35,52 @@ function nearestSegment(angleDeg: number, fallback: number) {
   return nearest;
 }
 
-export function RadialMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [active, setActive] = useState(1);
+export function RadialMenu({
+  open,
+  onClose,
+  items,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: DialSegment[];
+}) {
+  const count = items.length;
+  const step = count > 0 ? 360 / count : 0;
+  const [active, setActive] = useState(0);
   const dialRef = useRef<HTMLDivElement>(null);
-
-  const [rotation, setRotation] = useState(active * SEGMENT_STEP);
-  const previousActive = useRef(active);
+  const [rotation, setRotation] = useState(0);
+  const previousActive = useRef(0);
 
   useEffect(() => {
-    const step = shortestStep(previousActive.current, active);
+    if (active >= count) {
+      setActive(0);
+    }
+  }, [active, count]);
+
+  useEffect(() => {
+    if (count === 0) return;
+    const delta = shortestStep(previousActive.current, active, count);
     previousActive.current = active;
-    setRotation((current) => current + step * SEGMENT_STEP);
-  }, [active]);
+    setRotation((current) => current + delta * step);
+  }, [active, count, step]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || count === 0) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") setActive((i) => (i - 1 + SEGMENT_COUNT) % SEGMENT_COUNT);
-      else if (e.key === "ArrowDown" || e.key === "ArrowRight") setActive((i) => (i + 1) % SEGMENT_COUNT);
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        setActive((i) => (i - 1 + count) % count);
+      } else if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        setActive((i) => (i + 1) % count);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, count]);
+
+  if (count === 0) {
+    return null;
+  }
 
   const trackPointer = (e: React.PointerEvent) => {
     const el = dialRef.current;
@@ -79,14 +90,14 @@ export function RadialMenu({ open, onClose }: { open: boolean; onClose: () => vo
     const dy = e.clientY - (box.top + box.height / 2);
     if (Math.hypot(dx, dy) < KNOB_RADIUS) return;
 
-    const next = nearestSegment((Math.atan2(dy, dx) * 180) / Math.PI, active);
+    const next = nearestSegment((Math.atan2(dy, dx) * 180) / Math.PI, active, count);
     if (next !== active) setActive(next);
   };
 
-  const segment = SEGMENTS[active];
+  const segment = items[active] ?? items[0];
 
   const followSegment = () => {
-    if (!segment.to) return;
+    if (!segment?.to) return;
     navigate(segment.to);
     onClose();
   };
@@ -103,8 +114,8 @@ export function RadialMenu({ open, onClose }: { open: boolean; onClose: () => vo
           <div className="dial__dividers" />
           <div className="dial__hi" style={{ transform: `rotate(${rotation}deg)` }} />
 
-          {SEGMENTS.map((s, i) => {
-            const radians = (segmentAngle(i) * Math.PI) / 180;
+          {items.map((s, i) => {
+            const radians = (segmentAngle(i, count) * Math.PI) / 180;
             const x = Math.cos(radians) * ORBIT_RADIUS;
             const y = Math.sin(radians) * ORBIT_RADIUS;
             return (

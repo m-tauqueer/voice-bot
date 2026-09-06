@@ -52,6 +52,18 @@ export async function getUserById(
   return rows[0] ? mapUser(rows[0]) : null;
 }
 
+export async function getUserByGoogleSub(
+  sql: Sql,
+  googleSub: string,
+): Promise<AppUser | null> {
+  const rows = await sql<UserRow[]>`
+    SELECT id, google_sub, email, engram_user_id
+    FROM users
+    WHERE google_sub = ${googleSub}
+  `;
+  return rows[0] ? mapUser(rows[0]) : null;
+}
+
 export async function findPersonaIdByEngramId(
   sql: Sql,
   engramPersonaId: string,
