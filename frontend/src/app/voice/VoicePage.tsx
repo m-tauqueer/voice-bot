@@ -16,6 +16,7 @@ import {
   parsePublishedDirectory,
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
+import { PersonaPicker } from "../PersonaPicker";
 import { useSession } from "../session";
 
 type CallPhase =
@@ -119,20 +120,6 @@ function eventContent(event: Record<string, unknown>): string | null {
   return null;
 }
 
-const listButtonStyle: CSSProperties = {
-  width: "100%",
-  textAlign: "left",
-  background: "transparent",
-  border: 0,
-  color: "var(--text-hi)",
-  cursor: "pointer",
-  padding: "10px 0",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
 export function VoicePage() {
   const identity = useSession();
   const copy = loadUiCopy();
@@ -207,7 +194,7 @@ export function VoicePage() {
   }, []);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    bottom.current?.scrollIntoView?.({ block: "end" });
   }, [turns, phase]);
 
   function publishLevel(level: number) {
@@ -434,37 +421,15 @@ export function VoicePage() {
           </Card>
         )}
 
-        <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
-            {copy.personaPickerTitle}
-          </h2>
-          {directory.length === 0 ? (
-            <p style={{ color: "var(--text-mid)" }}>{copy.personaPickerEmpty}</p>
-          ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-              {directory.map((row) => (
-                <li key={row.id} style={{ borderTop: "1px solid var(--line, #333)" }}>
-                  <button
-                    type="button"
-                    style={{
-                      ...listButtonStyle,
-                      cursor: pickingLocked ? "not-allowed" : "pointer",
-                      opacity: pickingLocked ? 0.55 : 1,
-                    }}
-                    aria-pressed={row.id === pickedId}
-                    disabled={pickingLocked}
-                    onClick={() => setPickedId(row.id)}
-                  >
-                    <span>
-                      {row.display_name}{" "}
-                      <span style={{ color: "var(--text-mid)" }}>@{row.handle}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <PersonaPicker
+          directory={directory}
+          pickedId={pickedId}
+          locked={pickingLocked}
+          title={copy.personaPickerTitle}
+          empty={copy.personaPickerEmpty}
+          help={copy.personaPickerHelp}
+          onPick={setPickedId}
+        />
 
         <Card>
           <div style={{ display: "grid", gap: 14 }}>

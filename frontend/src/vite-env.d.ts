@@ -256,6 +256,10 @@ interface ImportMetaEnv {
   readonly VITE_PERSONA_PICKER_TITLE: string;
   readonly VITE_PERSONA_PICKER_EMPTY: string;
   readonly VITE_PERSONA_PICKER_HELP: string;
+  readonly VITE_PERSONA_PICKER_CHAT_HELP: string;
+  readonly VITE_PERSONA_PICKER_HISTORY_HELP: string;
+  readonly VITE_PERSONA_NEED_PICK: string;
+  readonly VITE_PERSONA_CHAT_READY: string;
 }
 
 interface ImportMeta {

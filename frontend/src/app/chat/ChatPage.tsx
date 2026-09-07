@@ -7,22 +7,23 @@ import {
   ApiError,
   api,
   chatSilenceStatus,
-  clearStoredChatSessionId,
-  readStoredChatSessionId,
   turnSpeakerPersona,
   turnSpeakerUser,
-  writeStoredChatSessionId,
 } from "../../lib/gateway";
-import { requiredVite } from "../../lib/env";
+import {
+  clearStoredChatSessionId,
+  readStoredChatSessionId,
+  writeStoredChatSessionId,
+} from "../../lib/chatSession";
+import { personaPinField } from "../../lib/personaVoice";
+import {
+  parsePublishedDirectory,
+  type PublishedPersona,
+} from "../../lib/publishedPersonas";
 import { loadNavConfig } from "../../lib/nav";
+import { loadUiCopy } from "../../lib/uiCopy";
+import { PersonaPicker } from "../PersonaPicker";
 import { useSession } from "../session";
-
-type Persona = {
-  id: string;
-  handle: string;
-  display_name: string;
-  description: string | null;
-};
 
 type TranscriptTurn = {
   ordinal: number;
@@ -31,7 +32,7 @@ type TranscriptTurn = {
 };
 
 type ChatGetResponse = {
-  persona: Persona;
+  persona: PublishedPersona;
   session_id?: string;
   turns: TranscriptTurn[];
 };
@@ -87,23 +88,29 @@ function errorMessage(error: unknown): string {
 
 export function ChatPage() {
   const session = useSession();
-  const { loadingLabel, appName } = loadNavConfig();
+  const copy = loadUiCopy();
+  const { loadingLabel } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
-  const [persona, setPersona] = useState<Persona | null>(
-    session.status === "ready" ? session.persona : null,
-  );
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
+  const [directory, setDirectory] = useState<PublishedPersona[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sittingLoad, setSittingLoad] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
+  const picked = directory.find((row) => row.id === pickedId) ?? null;
+  const pickerLocked = busy || sittingLoad;
 
-  const applySession = useCallback((userId: string, next: string) => {
-    setSessionId(next);
-    writeStoredChatSessionId(userId, next);
-  }, []);
+  const applySession = useCallback(
+    (userId: string, personaId: string, next: string) => {
+      setSessionId(next);
+      writeStoredChatSessionId(userId, personaId, next);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!me) {
@@ -111,42 +118,81 @@ export function ChatPage() {
     }
     let cancelled = false;
     (async () => {
-      const stored = readStoredChatSessionId(me.id);
-      if (stored) {
-        try {
-          const history = await api<ChatGetResponse>(
-            `/api/chat?session_id=${encodeURIComponent(stored)}`,
-          );
-          if (cancelled) return;
-          setPersona(history.persona);
-          setTurns(history.turns);
-          applySession(me.id, stored);
-        } catch (error) {
-          if (cancelled) return;
-          if (error instanceof ApiError && error.status === 404) {
-            clearStoredChatSessionId(me.id);
-          } else {
-            setBanner({ tone: "error", text: errorMessage(error) });
-          }
+      try {
+        const payload = await api<{ personas?: unknown }>("/api/personas");
+        if (!cancelled) {
+          setDirectory(parsePublishedDirectory(payload));
         }
-      }
-      if (!cancelled) {
-        setBoot("ready");
+      } catch (error) {
+        if (!cancelled) {
+          setBanner({ tone: "error", text: errorMessage(error) });
+        }
+      } finally {
+        if (!cancelled) {
+          setBoot("ready");
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [applySession, me]);
+  }, [me]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    bottom.current?.scrollIntoView?.({ block: "end" });
   }, [turns, busy]);
+
+  async function loadSitting(userId: string, personaId: string) {
+    const stored = readStoredChatSessionId(userId, personaId);
+    if (!stored) {
+      setSessionId(null);
+      setTurns([]);
+      return;
+    }
+    try {
+      const history = await api<ChatGetResponse>(
+        `/api/chat?session_id=${encodeURIComponent(stored)}`,
+      );
+      if (history.persona.id !== personaId) {
+        clearStoredChatSessionId(userId, personaId);
+        setSessionId(null);
+        setTurns([]);
+        return;
+      }
+      setTurns(history.turns);
+      applySession(userId, personaId, stored);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        clearStoredChatSessionId(userId, personaId);
+        setSessionId(null);
+        setTurns([]);
+        return;
+      }
+      setBanner({ tone: "error", text: errorMessage(error) });
+    }
+  }
+
+  async function pickPersona(id: string) {
+    if (!me || id === pickedId || pickerLocked) {
+      return;
+    }
+    setPickedId(id);
+    setBanner(null);
+    setDraft("");
+    setTurns([]);
+    setSessionId(null);
+    setSittingLoad(true);
+    try {
+      await loadSitting(me.id, id);
+    } finally {
+      setSittingLoad(false);
+    }
+  }
 
   async function send(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!me || !text || busy || (!sessionId && !persona)) {
+    if (!me || !picked || !text || busy || sittingLoad) {
       return;
     }
     setBusy(true);
@@ -156,14 +202,14 @@ export function ChatPage() {
       const payload: Record<string, string> = { text };
       if (sessionId) {
         payload.session_id = sessionId;
-      } else if (persona) {
-        payload[requiredVite("VITE_PERSONA_ID_QUERY")] = persona.id;
+      } else {
+        payload[personaPinField()] = picked.id;
       }
       const result = await api<ChatPostResponse>("/api/chat", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      applySession(me.id, result.session_id);
+      applySession(me.id, picked.id, result.session_id);
       if (result.recorded === false) {
         const userSpeaker = turnSpeakerUser();
         const personaSpeaker = turnSpeakerPersona();
@@ -204,8 +250,10 @@ export function ChatPage() {
   }
 
   function startFresh() {
-    if (!me) return;
-    clearStoredChatSessionId(me.id);
+    if (!me || !picked || pickerLocked) {
+      return;
+    }
+    clearStoredChatSessionId(me.id, picked.id);
     setSessionId(null);
     setTurns([]);
     setBanner(null);
@@ -219,18 +267,21 @@ export function ChatPage() {
     );
   }
 
-  const canTalk = Boolean(sessionId || persona);
+  const canTalk = Boolean(picked);
+  const userSpeaker = turnSpeakerUser();
 
   return (
     <div style={wrapStyle}>
         <div style={headStyle}>
           <div>
-            <h1 className="mc-pagehead__title">{persona?.display_name ?? appName}</h1>
+            <h1 className="mc-pagehead__title">
+              {picked?.display_name ?? copy.personaPickerTitle}
+            </h1>
             <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-              {persona?.handle ? `@${persona.handle}` : null}
+              {picked?.handle ? `@${picked.handle}` : copy.personaPickerChatHelp}
             </p>
           </div>
-          <Button type="button" onClick={startFresh} disabled={busy}>
+          <Button type="button" onClick={startFresh} disabled={pickerLocked || !picked}>
             New conversation
           </Button>
         </div>
@@ -250,15 +301,27 @@ export function ChatPage() {
           </Card>
         )}
 
+        <PersonaPicker
+          directory={directory}
+          pickedId={pickedId}
+          locked={pickerLocked}
+          title={copy.personaPickerTitle}
+          empty={copy.personaPickerEmpty}
+          help={copy.personaPickerChatHelp}
+          onPick={(id) => {
+            void pickPersona(id);
+          }}
+        />
+
         <Card>
           <div style={{ display: "grid", gap: 10, minHeight: 280 }}>
-            {turns.length === 0 && !busy && (
+            {turns.length === 0 && !busy && !sittingLoad && (
               <p style={{ color: "var(--text-mid)" }}>
-                Say something. Memory is kept on the server, so it survives a restart.
+                {picked ? copy.personaChatReady : copy.personaNeedPick}
               </p>
             )}
             {turns.map((turn) => (
-              <div key={turn.ordinal} style={bubbleStyle(turn.speaker, turnSpeakerUser())}>
+              <div key={turn.ordinal} style={bubbleStyle(turn.speaker, userSpeaker)}>
                 {turn.text}
               </div>
             ))}
@@ -275,7 +338,7 @@ export function ChatPage() {
               label="Message"
               rows={3}
               value={draft}
-              disabled={busy || !canTalk}
+              disabled={busy || sittingLoad || !canTalk}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -288,7 +351,7 @@ export function ChatPage() {
               <Button
                 type="submit"
                 variant="solid"
-                disabled={busy || !canTalk || draft.trim().length === 0}
+                disabled={busy || sittingLoad || !canTalk || draft.trim().length === 0}
               >
                 {busy ? "Sending…" : "Send"}
               </Button>

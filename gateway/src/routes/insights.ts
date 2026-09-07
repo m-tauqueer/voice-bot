@@ -23,6 +23,11 @@ import {
   personalSessionDetail,
   personalSessions,
 } from "../insights/queries.js";
+import { emptySessionList } from "../insights/scope.js";
+import {
+  getPublishedPersonaById,
+  parseOptionalPersonaId,
+} from "../personas.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -36,6 +41,29 @@ const listQuerySchema = z.object({
   channel: z.string().optional(),
   bucket: z.string().optional(),
 });
+
+async function publishedPersonaPin(
+  sql: Sql,
+  config: GatewayConfig,
+  query: unknown,
+): Promise<
+  | { ok: true; id: string }
+  | { ok: true; id: null }
+  | { ok: false; status: 400 | 404 }
+> {
+  const pin = parseOptionalPersonaId(query, config.PERSONA_ID_QUERY);
+  if (!pin.ok) {
+    return { ok: false, status: 400 };
+  }
+  if (typeof pin.id !== "string") {
+    return { ok: true, id: null };
+  }
+  const persona = await getPublishedPersonaById(sql, pin.id);
+  if (!persona) {
+    return { ok: false, status: 404 };
+  }
+  return { ok: true, id: persona.id };
+}
 
 export async function registerInsightRoutes(
   app: FastifyInstance,
@@ -75,6 +103,27 @@ export async function registerInsightRoutes(
         .code(400)
         .send({ error: config.INSIGHTS_ERROR_INVALID_LIMIT });
     }
+    let pin: Awaited<ReturnType<typeof publishedPersonaPin>>;
+    try {
+      pin = await publishedPersonaPin(sql, config, request.query);
+    } catch (error) {
+      request.log.error(
+        { err: error },
+        "personal session persona lookup failed",
+      );
+      return reply.code(503).send({
+        error: config.FAILURE_MESSAGE_DATABASE,
+        code: config.FAILURE_CODE_DATABASE,
+      });
+    }
+    if (!pin.ok) {
+      return reply
+        .code(pin.status)
+        .send({ error: config.INSIGHTS_ERROR_NOT_FOUND });
+    }
+    if (pin.id === null) {
+      return emptySessionList(range.id);
+    }
     let cursor = null;
     if (query.data.cursor) {
       cursor = decodeSessionCursor(query.data.cursor);
@@ -88,6 +137,7 @@ export async function registerInsightRoutes(
       rangeId: range.id,
       limit: limit.limit,
       cursor,
+      personaId: pin.id,
     });
   });
 
@@ -202,6 +252,27 @@ export async function registerInsightRoutes(
             .code(400)
             .send({ error: config.INSIGHTS_ERROR_INVALID_USER });
         }
+        let pin: Awaited<ReturnType<typeof publishedPersonaPin>>;
+        try {
+          pin = await publishedPersonaPin(sql, config, request.query);
+        } catch (error) {
+          request.log.error(
+            { err: error },
+            "owner session persona lookup failed",
+          );
+          return reply.code(503).send({
+            error: config.FAILURE_MESSAGE_DATABASE,
+            code: config.FAILURE_CODE_DATABASE,
+          });
+        }
+        if (!pin.ok) {
+          return reply
+            .code(pin.status)
+            .send({ error: config.INSIGHTS_ERROR_NOT_FOUND });
+        }
+        if (pin.id === null) {
+          return emptySessionList(range.id);
+        }
         let cursor = null;
         if (query.data.cursor) {
           cursor = decodeSessionCursor(query.data.cursor);
@@ -217,6 +288,7 @@ export async function registerInsightRoutes(
           cursor,
           userId: user.userId,
           channel: channel.channel,
+          personaId: pin.id,
         });
       });
 

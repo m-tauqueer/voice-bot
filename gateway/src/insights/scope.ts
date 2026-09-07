@@ -1,3 +1,11 @@
+export function emptySessionList(rangeId: string): {
+  range: string;
+  sessions: [];
+  next_cursor: null;
+} {
+  return { range: rangeId, sessions: [], next_cursor: null };
+}
+
 export function sessionListScope(args: {
   viewerUserId: string;
   ownerView: boolean;

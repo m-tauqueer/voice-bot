@@ -179,6 +179,10 @@ export type UiCopy = {
   personaPickerTitle: string;
   personaPickerEmpty: string;
   personaPickerHelp: string;
+  personaPickerChatHelp: string;
+  personaPickerHistoryHelp: string;
+  personaNeedPick: string;
+  personaChatReady: string;
 };
 
 let cached: UiCopy | null = null;
@@ -386,6 +390,10 @@ export function loadUiCopy(): UiCopy {
     personaPickerTitle: requiredVite("VITE_PERSONA_PICKER_TITLE"),
     personaPickerEmpty: requiredVite("VITE_PERSONA_PICKER_EMPTY"),
     personaPickerHelp: requiredVite("VITE_PERSONA_PICKER_HELP"),
+    personaPickerChatHelp: requiredVite("VITE_PERSONA_PICKER_CHAT_HELP"),
+    personaPickerHistoryHelp: requiredVite("VITE_PERSONA_PICKER_HISTORY_HELP"),
+    personaNeedPick: requiredVite("VITE_PERSONA_NEED_PICK"),
+    personaChatReady: requiredVite("VITE_PERSONA_CHAT_READY"),
   };
   return cached;
 }

@@ -46,7 +46,7 @@ describe("MemoryPanel", () => {
   });
 
   it("loads memories for the pinned persona", async () => {
-    render(<MemoryPanel />);
+    render(<MemoryPanel personaId="persona-a" />);
     await waitFor(() => {
       expect(fetchPersonalMemories).toHaveBeenCalledWith("persona-a");
     });
@@ -54,21 +54,20 @@ describe("MemoryPanel", () => {
   });
 
   it("does not fetch when no persona is pinned", async () => {
-    sessionState.persona = null;
-    render(<MemoryPanel />);
-    expect(await screen.findByText("Nothing stored about you yet.")).toBeTruthy();
+    render(<MemoryPanel personaId={null} />);
+    expect(await screen.findByText("Pick someone first.")).toBeTruthy();
     expect(fetchPersonalMemories).not.toHaveBeenCalled();
   });
 
   it("shows the empty copy when there are no memories", async () => {
     fetchPersonalMemories.mockResolvedValue({ memories: [] });
-    render(<MemoryPanel />);
+    render(<MemoryPanel personaId="persona-a" />);
     expect(await screen.findByText("Nothing stored about you yet.")).toBeTruthy();
   });
 
   it("shows unavailable copy when the fetch fails", async () => {
     fetchPersonalMemories.mockRejectedValue(new Error("down"));
-    render(<MemoryPanel />);
+    render(<MemoryPanel personaId="persona-a" />);
     expect(
       await screen.findByText(
         "Memory is unavailable right now. Your history is still here.",
@@ -77,7 +76,7 @@ describe("MemoryPanel", () => {
   });
 
   it("refetches when the signed-in user id changes", async () => {
-    const { rerender } = render(<MemoryPanel />);
+    const { rerender } = render(<MemoryPanel personaId="persona-a" />);
     await waitFor(() => {
       expect(fetchPersonalMemories).toHaveBeenCalledTimes(1);
     });
@@ -85,10 +84,25 @@ describe("MemoryPanel", () => {
       memories: [{ text: "private fact for b", tenant: "org:p:b" }],
     });
     sessionState.me = { id: "user-b", email: "b@example.com", owner: false };
-    rerender(<MemoryPanel />);
+    rerender(<MemoryPanel personaId="persona-a" />);
     await waitFor(() => {
       expect(fetchPersonalMemories).toHaveBeenCalledTimes(2);
     });
     expect(await screen.findByText("private fact for b")).toBeTruthy();
+  });
+
+  it("refetches when the picked persona changes", async () => {
+    const { rerender } = render(<MemoryPanel personaId="persona-a" />);
+    await waitFor(() => {
+      expect(fetchPersonalMemories).toHaveBeenCalledWith("persona-a");
+    });
+    fetchPersonalMemories.mockResolvedValue({
+      memories: [{ text: "nova private", tenant: "org:p:n" }],
+    });
+    rerender(<MemoryPanel personaId="persona-n" />);
+    await waitFor(() => {
+      expect(fetchPersonalMemories).toHaveBeenCalledWith("persona-n");
+    });
+    expect(await screen.findByText("nova private")).toBeTruthy();
   });
 });

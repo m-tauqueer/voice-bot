@@ -316,6 +316,7 @@ async function listSessions(
     userId: string | null;
     channel: string | null;
     scopeUserId: string | null;
+    personaId: string;
   },
 ): Promise<SessionList> {
   const inRange = sessionInRange(sql, config, args.rangeId);
@@ -326,6 +327,7 @@ async function listSessions(
   const channelFilter = args.channel
     ? sql`AND s.channel = ${args.channel}`
     : sql``;
+  const personaFilter = sql`AND s.persona_id = ${args.personaId}`;
   const cursorFilter = args.cursor
     ? sql`AND (s.started_at, s.id) < (${args.cursor.startedAt}, ${args.cursor.id}::uuid)`
     : sql``;
@@ -351,6 +353,7 @@ async function listSessions(
       ${ownerScope}
       ${userFilter}
       ${channelFilter}
+      ${personaFilter}
       ${cursorFilter}
     GROUP BY s.id, u.email
     ORDER BY s.started_at DESC, s.id DESC
@@ -370,7 +373,12 @@ export async function personalSessions(
   sql: Sql,
   config: GatewayConfig,
   userId: string,
-  args: { rangeId: string; limit: number; cursor: SessionCursor | null },
+  args: {
+    rangeId: string;
+    limit: number;
+    cursor: SessionCursor | null;
+    personaId: string;
+  },
 ): Promise<SessionList> {
   return listSessions(sql, config, {
     ...args,
@@ -388,6 +396,7 @@ export async function ownerSessions(
     cursor: SessionCursor | null;
     userId: string | null;
     channel: string | null;
+    personaId: string;
   },
 ): Promise<SessionList> {
   return listSessions(sql, config, {

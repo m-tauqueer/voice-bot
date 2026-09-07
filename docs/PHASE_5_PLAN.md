@@ -65,7 +65,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Parts 5.1–5.3 are done. Part 5.4 is named and in progress** — do not mark it done until its manual test passes. Do not start 5.5–5.7 until Tauqueer names one. The same picker on chat is 5.5.
+**Parts 5.1–5.3 are done. The voice picker is in the product. Part 5.5 is named and in progress** — do not mark it done until its manual tests pass. Do not start 5.6–5.7 until Tauqueer names one.
 
 Engram **subscribers** are not a later part in this file. First-talk subscribe code is in. Filling Engram’s audience list needs a credential that can actually subscribe (`org:manage` on this alpha), or an add in their dashboard. See [ENGRAM.md](ENGRAM.md) §4.
 
@@ -79,7 +79,7 @@ Engram **subscribers** are not a later part in this file. First-talk subscribe c
 
 - Goal: `/admin/persona` creates **or links**, lists, teaches, ingests, publishes, and sets voice on more than one persona.
 - Tasks: try Engram `personas.create`; on 403, link an existing Engram persona id; local row + `voice_config` (including TTS voice id); teach/questions/shared ingest aimed at the selected persona; publish/unpublish; do not call Engram `delete` here.
-- Manual test: owner creates or links a second persona, teaches a fact, publishes it, sets a TTS voice; members still cannot see the unpublished draft. **Passed.** Live create 403 → link; teach and shared ingest on the selected row; local publish. Engram subscribe still 403s `org:manage` with this key (record locally). `/voice` and `/chat` still have no picker — that is 5.4 / 5.5, not a miss in this part.
+- Manual test: owner creates or links a second persona, teaches a fact, publishes it, sets a TTS voice; members still cannot see the unpublished draft. **Passed.** Live create 403 → link; teach and shared ingest on the selected row; local publish. Engram subscribe still 403s `org:manage` with this key (record locally). Member talk pickers came in later parts, not a miss here.
 
 ### Part 5.3 — Subscribe on first talk (done)
 
@@ -91,13 +91,13 @@ Engram **subscribers** are not a later part in this file. First-talk subscribe c
 
 - Goal: on `/voice` the member must pick a published persona before talking; switching ends the call.
 - Tasks: list published personas; start call with that `persona_id`; Deepgram Settings use that row’s TTS id (`voice_config`, env fallback); hang up to switch; two tabs allowed.
-- Manual test: member A talks to Ada, hangs up, talks to Nova; each call’s transcript is only that persona; Ada’s shared fact is not Nova’s; Ada and Nova can sound different if their TTS ids differ.
+- Manual test: member A talks to Ada, hangs up, talks to Nova; each call’s transcript is only that persona; Ada’s shared fact is not Nova’s; Ada and Nova can sound different if their TTS ids differ. Picker and TTS-from-row are in the product; confirm hang-up → switch on a live call if that sitting is still open.
 
 ### Part 5.5 — Chat, history, memory follow the persona
 
 - Goal: typed chat uses the **same picker**; history and memory never mix personas.
 - Tasks: chat sitting pin; no talk until pick; history and memory filter by the persona you are on; owner conversation list filters by persona. New sitting = new Engram `session_id`; private-pool recall still works.
-- Manual test: Ada chat does not list Nova turns; memory panel for Ada does not show Nova private hits; opening chat with no pick shows the empty state, not a guessed persona.
+- Manual test: Ada chat does not list Nova turns; memory panel for Ada does not show Nova private hits; opening chat with no pick shows the empty state, not a guessed persona. **Code is in; do not mark done until the sitting below passes.**
 
 ### Part 5.6 — Isolation and delete-my-data for many personas
 

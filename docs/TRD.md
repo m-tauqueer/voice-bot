@@ -10,7 +10,7 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 ### 1.1 Product
 
-- Custom persona bot; **the local catalog can store many personas**. Members see published rows and must pin one to talk (picker UI is later Phase 5 work). Memory is per (user, persona). Persona content and TTS voice are owner-chosen. User-created personas stay parked.
+- Custom persona bot; **the local catalog can store many personas**. Members see published rows and must pin one to talk (same picker on chat, voice, dashboard history, and the owner conversation list). Memory is per (user, persona). Persona content and TTS voice are owner-chosen. User-created personas stay parked.
 - **Many independent, isolated users** (2-3 testers now, productionize later).
 - Channel: **browser mic** (WebRTC/MediaRecorder), playback in browser.
 - **Full-duplex with barge-in from Phase 2** (interruptions on).

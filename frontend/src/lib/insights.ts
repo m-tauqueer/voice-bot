@@ -1,4 +1,4 @@
-import { requiredVite } from "./env";
+import { personaPinField } from "./personaVoice";
 import { api } from "./gateway";
 
 export type PersonalOverview = {
@@ -205,6 +205,7 @@ export function fetchOwnerSessions(params: {
   cursor?: string;
   channel?: string;
   userId?: string;
+  personaId: string;
 }) {
   return api<SessionList>(
     withQuery("/api/admin/sessions", {
@@ -212,6 +213,7 @@ export function fetchOwnerSessions(params: {
       cursor: params.cursor,
       channel: params.channel,
       user_id: params.userId,
+      [personaPinField()]: params.personaId,
     }),
   );
 }
@@ -294,12 +296,14 @@ export function fetchPersonalSessions(params: {
   range?: string;
   cursor?: string;
   channel?: string;
+  personaId: string;
 }) {
   return api<SessionList>(
     withQuery("/api/me/sessions", {
       range: params.range,
       cursor: params.cursor,
       channel: params.channel,
+      [personaPinField()]: params.personaId,
     }),
   );
 }
@@ -309,8 +313,7 @@ export function fetchPersonalSession(id: string) {
 }
 
 export function fetchPersonalMemories(personaId: string) {
-  const query = requiredVite("VITE_PERSONA_ID_QUERY");
-  const params = new URLSearchParams({ [query]: personaId });
+  const params = new URLSearchParams({ [personaPinField()]: personaId });
   return api<MemoryPanel>(`/api/me/memories?${params.toString()}`);
 }
 

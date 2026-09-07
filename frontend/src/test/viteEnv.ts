@@ -3,6 +3,8 @@ export const viteTestEnv: Record<string, string> = {
   VITE_CHAT_SESSION_STORAGE_KEY: "vb-chat-session",
   VITE_VOICE_WS_PATH: "/ws/voice",
   VITE_PERSONA_ID_QUERY: "persona_id",
+  VITE_TURN_SPEAKER_USER: "user",
+  VITE_TURN_SPEAKER_PERSONA: "persona",
   VITE_APP_NAME: "Voice",
   VITE_NAV_ITEMS: "home|Home|home|dashboard;chat|Chat|chat|chat;voice|Voice|ai-spark|voice;data|Your data|shield|data",
   VITE_NAV_OWNER_ITEMS: "admin|Admin|settings|admin",
@@ -230,4 +232,8 @@ export const viteTestEnv: Record<string, string> = {
   VITE_PERSONA_PICKER_TITLE: "Who do you want to talk to?",
   VITE_PERSONA_PICKER_EMPTY: "No published personas yet.",
   VITE_PERSONA_PICKER_HELP: "Pick one, then start the call. Hang up to switch.",
+  VITE_PERSONA_PICKER_CHAT_HELP: "Pick one, then send a message. Start a new conversation to switch.",
+  VITE_PERSONA_PICKER_HISTORY_HELP: "Pick one to see sittings and memory for that persona.",
+  VITE_PERSONA_NEED_PICK: "Pick someone first.",
+  VITE_PERSONA_CHAT_READY: "Say something. Memory stays with this persona.",
 };
