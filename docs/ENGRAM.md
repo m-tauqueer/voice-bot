@@ -144,7 +144,7 @@ For this product:
 | Draft / hide from members | local `published = false` | leave pools alone; optional `status=archived` |
 | Stop one member using it | unpublished already covers all members; do not build per-member assign | optional `unsubscribe` (private pool remains) |
 | Destroy the persona | delete local row after confirm | `personas.delete` — **all members lose that private history** |
-| Member deletes their account | already: `user_memories` + `forget_user_memory` + `unsubscribe` | must run **for every persona they used**, not “the active one” |
+| Member deletes their account | local sessions ∪ subscriptions, then `user_memories` + `forget_user_memory` + `unsubscribe` per Engram persona id | every persona that member used, not one active row |
 
 Admin-only (member naming anyone else → `ForbiddenError: cannot access another user's private memory`): `users`, `user_memories`, `forget_user_memory`, `node(..., user_id=)`, `conversations(..., user_id=)`, `compress(..., user_id=)`, `private(pid, user_id=)`, `compress_all`.
 

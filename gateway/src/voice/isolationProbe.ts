@@ -37,6 +37,13 @@ function check(name: string, ok: boolean, detail = ""): void {
   failed += 1;
 }
 
+function tenantMentionsPersona(
+  tenant: unknown,
+  engramPersonaId: string,
+): boolean {
+  return typeof tenant === "string" && tenant.includes(engramPersonaId);
+}
+
 const config = loadGatewayConfig();
 const sql = createPostgres(config);
 const redis = createRedis(config);
@@ -392,6 +399,172 @@ try {
       }
     }
 
+    const publishedRows = await sql<
+      { id: string; engram_persona_id: string }[]
+    >`
+      SELECT id, engram_persona_id
+      FROM personas
+      WHERE published = true
+      ORDER BY created_at
+    `;
+    const firstPersona = publishedRows[0];
+    const secondPersona = publishedRows[1];
+    if (!firstPersona || !secondPersona) {
+      console.log("two_persona_isolation=SKIP (need two published personas)");
+    } else {
+      const inserted: string[] = [];
+      try {
+        const pairs: Array<{
+          userId: string;
+          personaId: string;
+          name: string;
+        }> = [
+          { userId: owner.id, personaId: firstPersona.id, name: "owner_first" },
+          {
+            userId: owner.id,
+            personaId: secondPersona.id,
+            name: "owner_second",
+          },
+          { userId: other.id, personaId: firstPersona.id, name: "other_first" },
+          {
+            userId: other.id,
+            personaId: secondPersona.id,
+            name: "other_second",
+          },
+        ];
+        const byName: Record<string, string> = {};
+        for (const pair of pairs) {
+          const [row] = await sql<{ id: string }[]>`
+            INSERT INTO sessions (user_id, persona_id, channel)
+            VALUES (${pair.userId}, ${pair.personaId}, ${SESSION_CHANNEL.TEXT})
+            RETURNING id
+          `;
+          if (row) {
+            inserted.push(row.id);
+            byName[pair.name] = row.id;
+          }
+        }
+        const pin = (personaId: string) =>
+          `${config.PERSONA_ID_QUERY}=${encodeURIComponent(personaId)}`;
+        const ownerFirstList = await get(
+          `/api/me/sessions?${pin(firstPersona.id)}`,
+          ownerCookie,
+        );
+        const ownerFirstBody = ownerFirstList.json() as {
+          sessions?: { id?: string; user_id?: string }[];
+        };
+        const ownerFirstIds = new Set(
+          (ownerFirstBody.sessions ?? [])
+            .map((row) => row.id)
+            .filter((id): id is string => typeof id === "string"),
+        );
+        check(
+          "owner_first_list_includes_own_sitting",
+          ownerFirstList.statusCode === 200 &&
+            typeof byName.owner_first === "string" &&
+            ownerFirstIds.has(byName.owner_first),
+          `${ownerFirstList.statusCode}`,
+        );
+        check(
+          "owner_first_list_excludes_second_persona",
+          typeof byName.owner_second === "string" &&
+            !ownerFirstIds.has(byName.owner_second),
+        );
+        check(
+          "owner_first_list_excludes_other_user",
+          typeof byName.other_first === "string" &&
+            !ownerFirstIds.has(byName.other_first),
+        );
+
+        const otherFirstList = await get(
+          `/api/me/sessions?${pin(firstPersona.id)}`,
+          otherCookie,
+        );
+        const otherFirstBody = otherFirstList.json() as {
+          sessions?: { id?: string }[];
+        };
+        const otherFirstIds = new Set(
+          (otherFirstBody.sessions ?? [])
+            .map((row) => row.id)
+            .filter((id): id is string => typeof id === "string"),
+        );
+        check(
+          "other_first_list_excludes_owner_sitting",
+          otherFirstList.statusCode === 200 &&
+            typeof byName.owner_first === "string" &&
+            !otherFirstIds.has(byName.owner_first),
+          `${otherFirstList.statusCode}`,
+        );
+
+        if (byName.owner_first) {
+          const stolenPinned = await get(
+            `/api/me/sessions/${byName.owner_first}`,
+            otherCookie,
+          );
+          check(
+            "other_user_cannot_read_owner_first_session",
+            stolenPinned.statusCode === 404,
+            `${stolenPinned.statusCode}`,
+          );
+          const stolenChat = await get(
+            `/api/chat?session_id=${byName.owner_first}`,
+            otherCookie,
+          );
+          check(
+            "other_user_cannot_read_owner_first_chat",
+            stolenChat.statusCode === 404,
+            `${stolenChat.statusCode}`,
+          );
+          const mismatched = await post("/api/chat", ownerCookie, {
+            text: "persona pin must match the sitting",
+            session_id: byName.owner_first,
+            [config.PERSONA_ID_QUERY]: secondPersona.id,
+          });
+          check(
+            "sitting_pin_mismatch_is_409",
+            mismatched.statusCode === 409,
+            `${mismatched.statusCode}`,
+          );
+        }
+
+        if (config.MEMORY_PANEL_ENABLED === "true") {
+          const firstMem = await get(
+            `/api/me/memories?${pin(firstPersona.id)}`,
+            ownerCookie,
+          );
+          const secondMem = await get(
+            `/api/me/memories?${pin(secondPersona.id)}`,
+            ownerCookie,
+          );
+          if (firstMem.statusCode === 200 && secondMem.statusCode === 200) {
+            const firstHits = firstMem.json() as {
+              memories?: { tenant?: string | null }[];
+            };
+            const secondHits = secondMem.json() as {
+              memories?: { tenant?: string | null }[];
+            };
+            const firstLeaksSecond = (firstHits.memories ?? []).some((hit) =>
+              tenantMentionsPersona(
+                hit.tenant,
+                secondPersona.engram_persona_id,
+              ),
+            );
+            const secondLeaksFirst = (secondHits.memories ?? []).some((hit) =>
+              tenantMentionsPersona(hit.tenant, firstPersona.engram_persona_id),
+            );
+            check("first_persona_memory_omits_second_pool", !firstLeaksSecond);
+            check("second_persona_memory_omits_first_pool", !secondLeaksFirst);
+          } else {
+            console.log("two_persona_memory=SKIP (memory panel non-200)");
+          }
+        }
+      } finally {
+        for (const id of inserted) {
+          await sql`DELETE FROM sessions WHERE id = ${id}`;
+        }
+      }
+    }
+
     const [ownerSession] = await sql<{ id: string }[]>`
       SELECT s.id FROM sessions s
       WHERE s.user_id = ${owner.id}
@@ -518,10 +691,35 @@ try {
     check("other_user_lists_own_sessions", meSessions.statusCode === 200);
     if (meSessions.statusCode === 200) {
       const listed = meSessions.json() as { sessions?: { user_id?: string }[] };
+      check(
+        "session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
       const leakedList = (listed.sessions ?? []).some(
         (session) => session.user_id !== other.id,
       );
       check("other_user_session_list_scoped", !leakedList);
+    }
+
+    const ownerUnpinned = await get("/api/me/sessions", ownerCookie);
+    if (ownerUnpinned.statusCode === 200) {
+      const listed = ownerUnpinned.json() as { sessions?: unknown[] };
+      check(
+        "owner_session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
+    }
+
+    const adminUnpinned = await get("/api/admin/sessions", ownerCookie);
+    if (adminUnpinned.statusCode === 200) {
+      const listed = adminUnpinned.json() as { sessions?: unknown[] };
+      check(
+        "owner_admin_session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
     }
 
     const meOverview = await get("/api/me/overview", otherCookie);

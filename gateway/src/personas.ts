@@ -105,6 +105,24 @@ export async function listPublishedPersonas(
   return rows.map(mapPersona);
 }
 
+export async function listPersonasUsedByMember(
+  sql: Sql,
+  userId: string,
+): Promise<CatalogPersona[]> {
+  const rows = await sql<PersonaRow[]>`
+    SELECT DISTINCT p.id, p.engram_persona_id, p.handle, p.display_name,
+           p.description, p.published
+    FROM personas p
+    WHERE p.id IN (
+      SELECT s.persona_id FROM sessions s WHERE s.user_id = ${userId}
+      UNION
+      SELECT sub.persona_id FROM subscriptions sub WHERE sub.user_id = ${userId}
+    )
+    ORDER BY p.handle
+  `;
+  return rows.map(mapPersona);
+}
+
 export async function getPersonaById(
   sql: Sql,
   personaId: string,

@@ -65,7 +65,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Parts 5.1–5.3 are done. The voice picker is in the product. Part 5.5 is named and in progress** — do not mark it done until its manual tests pass. Do not start 5.6–5.7 until Tauqueer names one.
+**Parts 5.1–5.3 are done. The voice picker is in the product. Chat, history, and memory follow a published pick (manual sitting still open). Part 5.6 is named and in progress** — do not mark it done until its manual tests pass. Do not start 5.7 until Tauqueer names it.
 
 Engram **subscribers** are not a later part in this file. First-talk subscribe code is in. Filling Engram’s audience list needs a credential that can actually subscribe (`org:manage` on this alpha), or an add in their dashboard. See [ENGRAM.md](ENGRAM.md) §4.
 
@@ -103,7 +103,7 @@ Engram **subscribers** are not a later part in this file. First-talk subscribe c
 
 - Goal: two users × two personas cannot leak; account delete clears every private pool.
 - Tasks: extend `npm run isolation`; lifecycle purge loops personas used, not one active row; quotas unchanged (per member).
-- Manual test: user A cannot read user B’s Ada session; user A’s Ada memory is not in their Nova retrieve; delete-my-data unsubscribes both personas.
+- Manual test: user A cannot read user B’s sitting for the same published persona; user A’s first-persona memory tenants are not the second persona’s private pool; delete-my-data forgets and unsubscribes every persona that member used. **Code is in; do not mark done until the sitting below passes.**
 
 ### Part 5.7 — Unpublish and destroy
 

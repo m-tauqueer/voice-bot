@@ -3,7 +3,7 @@ import type postgres from "postgres";
 import type { AppUser } from "../auth/types.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
-import { listLocalPersonas } from "../personas.js";
+import { listPersonasUsedByMember } from "../personas.js";
 import { deleteAudioBlobs } from "./blobs.js";
 import { listUserAudioUrls, wipeMemberRows } from "./wipe.js";
 
@@ -33,7 +33,7 @@ export async function eraseMemberAccount(
 ): Promise<{ sessions: number; engram: string }> {
   let engram = "skipped";
   try {
-    const personas = await listLocalPersonas(sql);
+    const personas = await listPersonasUsedByMember(sql, user.id);
     for (const persona of personas) {
       try {
         const response = await callWorker(config, "/internal/lifecycle/purge", {

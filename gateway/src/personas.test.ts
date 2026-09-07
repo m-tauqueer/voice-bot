@@ -3,6 +3,7 @@ import {
   getPersonaById,
   getPublishedPersonaById,
   listLocalPersonas,
+  listPersonasUsedByMember,
   listPublishedPersonas,
   parseOptionalPersonaId,
   personaPublicPayload,
@@ -114,5 +115,22 @@ describe("persona catalog", () => {
       display_name: "Ada",
       description: "first",
     });
+  });
+
+  it("lists every persona a member used, not a single active row", async () => {
+    const rows = await listPersonasUsedByMember(
+      queuedSql([[published, draft]]) as never,
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    );
+    expect(rows.map((row) => row.handle)).toEqual(["ada", "nova"]);
+  });
+
+  it("returns no purge targets when the member never used a persona", async () => {
+    await expect(
+      listPersonasUsedByMember(
+        queuedSql([[]]) as never,
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      ),
+    ).resolves.toEqual([]);
   });
 });
