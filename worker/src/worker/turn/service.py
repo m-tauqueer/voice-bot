@@ -44,6 +44,10 @@ from worker.persistence.sessions import (
     user_email,
     user_engram_id,
 )
+from worker.persistence.subscriptions import (
+    has_active_subscription,
+    upsert_active_subscription,
+)
 from worker.persistence.turns import (
     insert_latency_spans,
     insert_memory_refs,
@@ -64,6 +68,7 @@ from worker.reframe.reframer import Reframer
 from worker.reframe.types import HistoryTurn
 from worker.schema import TURN_SPEAKER_PERSONA, TURN_SPEAKER_USER
 from worker.turn.errors import TurnError
+from worker.turn.grant import grant_persona_access, should_attempt_grant
 from worker.turn.identity import session_identity_reason, stored_engram_matches
 
 log = structlog.get_logger(__name__)
@@ -165,6 +170,7 @@ class TurnRunner:
         self._openai: Any | None = None
         self._reframer: Reframer | None = None
         self._answerer: Answerer | None = None
+        self._grant_tried: set[tuple[str, str]] = set()
 
     def _llm(self) -> Any:
         if self._openai is None:
@@ -249,6 +255,7 @@ class TurnRunner:
         started: float,
         correlation_id: UUID,
     ) -> TurnPlan:
+        mirrored = False
         try:
             with borrow(self._settings) as conn:
                 # Locked only for these local reads: it makes two turns that start
@@ -332,6 +339,11 @@ class TurnRunner:
                     session_id,
                     self._settings.reframe_history_turns,
                 )
+                mirrored = has_active_subscription(
+                    conn,
+                    app_user_id,
+                    persona_id,
+                )
         except TurnError:
             raise
         except Exception as exc:
@@ -359,6 +371,33 @@ class TurnRunner:
             )
 
         brain = self._brains.get(engram_user_id)
+        pair = (str(app_user_id), str(persona_id))
+        if should_attempt_grant(
+            mirrored=mirrored,
+            already_tried=pair in self._grant_tried,
+        ):
+            self._grant_tried.add(pair)
+            granted = grant_persona_access(
+                brain,
+                self._settings,
+                engram_persona_id=engram_persona_id,
+                engram_user_id=engram_user_id,
+            )
+            if granted.mirror:
+                try:
+                    with borrow(self._settings) as conn:
+                        upsert_active_subscription(
+                            conn,
+                            app_user_id,
+                            persona_id,
+                        )
+                        conn.commit()
+                except Exception:
+                    log.warning(
+                        self._settings.log_subscribe_failed,
+                        session_id=str(session_id),
+                    )
+
         mode = self._settings.brain_mode
         memories: list[str] = []
         outcome: ChatOutcome | BrainError

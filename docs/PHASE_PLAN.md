@@ -12,4 +12,4 @@ Owner: Tauqueer. **He names a phase and a part. Do only that part.** Commit only
 | Already shipped | [SHIPPED.md](SHIPPED.md) |
 | Later (Phase 6, parked, Plan X / Azure last) | [FUTURE.md](FUTURE.md) |
 
-Phases 0–4 product work are done. **Parts 5.1 and 5.2 are done** (lookup by published id; owner catalog create/link/teach/ingest/publish). Chat and voice still have no picker. Tauqueer names the next part from [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Do not start FUTURE until he names it.
+Phases 0–4 product work are done. **Parts 5.1–5.3 are done** (catalog, owner create/link/publish, subscribe on first talk). Live first-talk check is after the voice picker. Tauqueer names the next part from [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Do not start FUTURE until he names it.

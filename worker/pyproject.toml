@@ -41,6 +41,7 @@ pythonpath = ["src"]
 addopts = [
     "--cov=worker.controller",
     "--cov=worker.turn.identity",
+    "--cov=worker.turn.grant",
     "--cov=worker.quota.decision",
     "--cov=worker.quota.settings",
     "--cov=worker.lifecycle.gids",

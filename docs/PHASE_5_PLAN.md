@@ -65,7 +65,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Parts 5.1 and 5.2 are done.** Do not start 5.3–5.7 until Tauqueer names one. Next in this file is 5.3 (subscribe on first talk). The `/voice` picker is 5.4; the same picker on chat is 5.5.
+**Parts 5.1–5.3 are done.** Live first-talk subscribe is checked on a real sitting after the voice picker exists. Do not start 5.4–5.7 until Tauqueer names one. The `/voice` picker is 5.4; the same picker on chat is 5.5.
 
 ### Part 5.1 — Stop assuming one persona (done)
 
@@ -79,11 +79,11 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 - Tasks: try Engram `personas.create`; on 403, link an existing Engram persona id; local row + `voice_config` (including TTS voice id); teach/questions/shared ingest aimed at the selected persona; publish/unpublish; do not call Engram `delete` here.
 - Manual test: owner creates or links a second persona, teaches a fact, publishes it, sets a TTS voice; members still cannot see the unpublished draft. **Passed.** Live create 403 → link; teach and shared ingest on the selected row; local publish. Engram subscribe still 403s `org:manage` with this key (record locally). `/voice` and `/chat` still have no picker — that is 5.4 / 5.5, not a miss in this part.
 
-### Part 5.3 — Subscribe on first talk
+### Part 5.3 — Subscribe on first talk (done)
 
 - Goal: talking to a published persona grants Engram access without subscribing the world at admit time.
 - Tasks: drop admit-time subscribe to `ENGRAM_PERSONA_ID` only; on first turn/call for (user, persona), `subscribe` then proceed; log 403 `org:manage` without failing the member if retrieve still works; if retrieve/chat 403 not-subscribed, fail closed. Mirror `subscriptions` when subscribe succeeds.
-- Manual test: new member is not subscribed to every persona; first voice or chat turn to Ada records a subscribe attempt; a second persona first-talk does the same.
+- Manual test: new member is not subscribed to every persona; first voice or chat turn to Ada records a subscribe attempt; a second persona first-talk does the same. **Local gates passed.** Live sitting check waits for the voice picker (5.4); do not use a console workaround.
 
 ### Part 5.4 — Voice picker
 

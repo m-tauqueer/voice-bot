@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import structlog
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from worker.api.internal_auth import require_internal_secret
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
-from worker.engram.errors import BrainError, ConflictError, ForbiddenError
-
-log = structlog.get_logger("worker.subscribe")
+from worker.turn.grant import grant_persona_access
 
 
 class SubscribeIn(BaseModel):
@@ -37,19 +34,15 @@ def build_subscribe_router(settings: WorkerSettings) -> APIRouter:
 
         brain = EngramBrain(settings, "")
         try:
-            brain.subscribe(body.persona_id, body.engram_user_id)
-            return SubscribeOut(subscribed=True)
-        except ConflictError:
-            return SubscribeOut(subscribed=True, reason="already")
-        except ForbiddenError:
-            log.warning("subscribe_forbidden")
-            return SubscribeOut(subscribed=False, reason="forbidden")
-        except BrainError as exc:
-            log.warning("subscribe_failed", status=exc.status)
-            return SubscribeOut(subscribed=False, reason="brain_error")
-        except Exception:
-            log.exception("subscribe_unexpected")
-            return SubscribeOut(subscribed=False, reason="error")
+            granted = grant_persona_access(
+                brain,
+                settings,
+                engram_persona_id=body.persona_id,
+                engram_user_id=body.engram_user_id,
+            )
+            if granted.subscribed:
+                return SubscribeOut(subscribed=True, reason=granted.reason)
+            return SubscribeOut(subscribed=False, reason=granted.reason)
         finally:
             brain.close()
 

@@ -120,6 +120,11 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     log_turn_event: str = Field(default="turn", min_length=1)
+    log_subscribe_forbidden: str = Field(
+        default="subscribe_forbidden",
+        min_length=1,
+    )
+    log_subscribe_failed: str = Field(default="subscribe_failed", min_length=1)
     voice_notice_kind_trace: str = Field(default="trace", min_length=1)
     voice_notice_trace_code: str = Field(default="turn_traced", min_length=1)
     voice_notice_trace_message: str = Field(default="Turn recorded.", min_length=1)

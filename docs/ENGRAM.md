@@ -229,4 +229,4 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, and publish or unpublish locally (Engram `delete` is a later destroy step). The gateway does not guess one local row.
 
-The remaining gap is **member picker and first-talk subscribe**: members still need a picker on chat and voice; admit still subscribes `ENGRAM_PERSONA_ID` only. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+The remaining gap is **member picker**: members still need a picker on chat and voice. Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting calls `personas.subscribe` for that persona, mirrors `subscriptions` on success, logs `org:manage` 403 and continues, and fails closed if retrieve/chat return not-subscribed. Live first-talk check is after the voice picker. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).

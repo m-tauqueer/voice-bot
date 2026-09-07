@@ -16,7 +16,6 @@ import {
 } from "../config.js";
 import { ACCESS_STATUS, SESSION_KIND } from "../schema.js";
 import { createSession, createSessionFromRecord } from "./session.js";
-import { subscribeUserToActivePersona } from "./subscribe.js";
 import { getUserByGoogleSub, upsertGoogleUser } from "./users.js";
 
 type Sql = ReturnType<typeof postgres>;
@@ -37,7 +36,7 @@ export async function admitGoogleIdentity(
   identity: GoogleIdentity,
   pendingNext: string | undefined,
   reply: FastifyReply,
-  log: FastifyBaseLogger,
+  _log: FastifyBaseLogger,
 ): Promise<AdmitResult> {
   const { sql, config, redis } = deps;
   const existing = await getUserByGoogleSub(sql, identity.sub);
@@ -51,7 +50,6 @@ export async function admitGoogleIdentity(
   if (action.type === "provision") {
     const user = await upsertGoogleUser(sql, identity);
     await upsertActiveAccess(sql, identity, user.id);
-    await subscribeUserToActivePersona(sql, config, user, log);
     await createSession(redis, reply, config, user.id);
     const redirect = next
       ? new URL(next, config.FRONTEND_ORIGIN).toString()
