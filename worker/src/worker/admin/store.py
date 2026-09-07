@@ -56,6 +56,41 @@ def require_single_persona(
     )
 
 
+def get_persona(conn: psycopg.Connection, persona_id: str) -> PersonaRow | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, engram_persona_id, handle, display_name, description,
+                   voice_config, published, created_at, updated_at
+            FROM personas
+            WHERE id = %s
+            """,
+            (str(persona_id),),
+        )
+        return cur.fetchone()
+
+
+def set_persona_published(
+    conn: psycopg.Connection,
+    persona_id: str,
+    published: bool,
+) -> PersonaRow | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE personas
+            SET published = %s, updated_at = now()
+            WHERE id = %s
+            RETURNING id, engram_persona_id, handle, display_name, description,
+                      voice_config, published, created_at, updated_at
+            """,
+            (published, str(persona_id)),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    return row
+
+
 def upsert_persona(
     conn: psycopg.Connection,
     *,
@@ -64,20 +99,28 @@ def upsert_persona(
     display_name: str,
     description: str | None,
     voice_config: dict[str, Any],
+    published: bool | None = None,
 ) -> PersonaRow:
+    insert_published = False if published is None else published
+    update_published = published is not None
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO personas (
-                  engram_persona_id, handle, display_name, description, voice_config
+                  engram_persona_id, handle, display_name, description,
+                  voice_config, published
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (engram_persona_id) DO UPDATE
                 SET handle = EXCLUDED.handle,
                     display_name = EXCLUDED.display_name,
                     description = EXCLUDED.description,
                     voice_config = EXCLUDED.voice_config,
+                    published = CASE
+                      WHEN %s THEN EXCLUDED.published
+                      ELSE personas.published
+                    END,
                     updated_at = now()
                 RETURNING id, engram_persona_id, handle, display_name, description,
                           voice_config, published, created_at, updated_at
@@ -88,6 +131,8 @@ def upsert_persona(
                     display_name,
                     description,
                     Json(voice_config),
+                    insert_published,
+                    update_published,
                 ),
             )
             row = cur.fetchone()

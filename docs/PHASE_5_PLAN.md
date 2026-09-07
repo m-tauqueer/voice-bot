@@ -65,7 +65,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Part 5.1 is done.** `npm run isolation` passed with one published persona (directory, unpublished 404s, chat without a pin is the same 404 as a missing session). Do not start 5.2–5.7 until Tauqueer names one.
+**Parts 5.1 and 5.2 are done.** Do not start 5.3–5.7 until Tauqueer names one. Next in this file is 5.3 (subscribe on first talk). The `/voice` picker is 5.4; the same picker on chat is 5.5.
 
 ### Part 5.1 — Stop assuming one persona (done)
 
@@ -73,11 +73,11 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 - Tasks: replace `resolveActivePersona` with lookup by id; `published` on `personas` (existing rows published so today’s single persona still works); session create requires `persona_id`; chat/voice/memory/lifecycle 404 on missing or unpublished the same way as a missing session; `ENGRAM_PERSONA_ID` is seed-only when the table is empty, never the resolver. Config, no magic ids. Member directory read of published rows (API; picker UI is later parts).
 - Manual test: two local rows do not 500/409 the app; unpublished id 404s; isolation probe still passes with one published persona. **Passed.**
 
-### Part 5.2 — Owner: many personas
+### Part 5.2 — Owner: many personas (done)
 
 - Goal: `/admin/persona` creates **or links**, lists, teaches, ingests, publishes, and sets voice on more than one persona.
 - Tasks: try Engram `personas.create`; on 403, link an existing Engram persona id; local row + `voice_config` (including TTS voice id); teach/questions/shared ingest aimed at the selected persona; publish/unpublish; do not call Engram `delete` here.
-- Manual test: owner creates or links a second persona, teaches a fact, publishes it, sets a TTS voice; members still cannot see the unpublished draft.
+- Manual test: owner creates or links a second persona, teaches a fact, publishes it, sets a TTS voice; members still cannot see the unpublished draft. **Passed.** Live create 403 → link; teach and shared ingest on the selected row; local publish. Engram subscribe still 403s `org:manage` with this key (record locally). `/voice` and `/chat` still have no picker — that is 5.4 / 5.5, not a miss in this part.
 
 ### Part 5.3 — Subscribe on first talk
 

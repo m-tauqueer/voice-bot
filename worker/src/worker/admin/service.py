@@ -12,12 +12,15 @@ from worker.admin.errors import AdminError
 from worker.admin.store import (
     connect,
     find_user,
+    get_persona,
     list_personas,
     list_subscriptions,
-    require_single_persona,
+    pick_single_persona,
+    set_persona_published,
     upsert_persona,
     upsert_subscription,
 )
+from worker.admin.voice import as_voice_config, merge_tts_voice
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
 from worker.engram.errors import BrainError, ConflictError, ForbiddenError
@@ -61,6 +64,12 @@ def _require_handle(handle: str | None, fallback: str | None) -> str:
     return resolved
 
 
+def _pin(persona_id: str | UUID | None) -> str | None:
+    if persona_id is None:
+        return None
+    return str(persona_id)
+
+
 class PersonaAdmin:
     def __init__(
         self,
@@ -83,21 +92,51 @@ class PersonaAdmin:
 
         return _open()
 
-    def _require_active(self) -> dict[str, Any]:
+    def _with_tts(
+        self,
+        voice_config: dict[str, Any] | None,
+        tts_voice: str | None,
+    ) -> dict[str, Any]:
+        return merge_tts_voice(
+            as_voice_config(voice_config),
+            tts_voice=tts_voice,
+            key=self._settings.persona_voice_tts_key,
+        )
+
+    def _require_active(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
+        pin = _pin(persona_id)
         with connect(self._settings) as conn:
-            row = require_single_persona(conn, self._settings)
+            if pin is not None:
+                row = get_persona(conn, pin)
+            else:
+                row = pick_single_persona(
+                    list_personas(conn),
+                    error=self._settings.admin_error_persona_pin_required,
+                )
         if row is None:
             raise AdminError(
-                "no persona is recorded yet",
+                self._settings.persona_error_not_found,
                 status=404,
                 reason="persona_missing",
             )
         return row
 
-    def show(self) -> dict[str, Any]:
+    def show(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
+        pin = _pin(persona_id)
         with connect(self._settings) as conn:
             rows = list_personas(conn)
-            local = rows[0] if len(rows) == 1 else None
+            if pin is not None:
+                local = get_persona(conn, pin)
+                if local is None:
+                    raise AdminError(
+                        self._settings.persona_error_not_found,
+                        status=404,
+                        reason="persona_missing",
+                    )
+            elif len(rows) == 1:
+                local = rows[0]
+            else:
+                local = None
             subscriptions: list[dict[str, Any]] = []
             if local is not None:
                 subscriptions = list_subscriptions(conn, str(local["id"]))
@@ -123,6 +162,7 @@ class PersonaAdmin:
         display_name: str | None,
         description: str | None,
         voice_config: dict[str, Any],
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -141,7 +181,7 @@ class PersonaAdmin:
                 handle=resolved_handle,
                 display_name=resolved_name,
                 description=resolved_description,
-                voice_config=voice_config,
+                voice_config=self._with_tts(voice_config, tts_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -152,13 +192,14 @@ class PersonaAdmin:
         handle: str,
         description: str,
         voice_config: dict[str, Any],
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
                 remote = brain.create_persona(name, handle, description)
         except ForbiddenError as exc:
             raise AdminError(
-                "Engram refused create; record a dashboard persona id instead",
+                self._settings.admin_error_create_forbidden,
                 status=403,
                 reason="create_forbidden",
             ) from exc
@@ -171,19 +212,26 @@ class PersonaAdmin:
                 handle=handle,
                 display_name=name,
                 description=description,
-                voice_config=voice_config,
+                voice_config=self._with_tts(voice_config, tts_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
     def update_local(
         self,
         *,
+        persona_id: str | UUID | None = None,
         handle: str | None,
         display_name: str | None,
         description: str | None,
         voice_config: dict[str, Any] | None,
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
-        current = self._require_active()
+        current = self._require_active(persona_id)
+        merged_voice = (
+            as_voice_config(current["voice_config"])
+            if voice_config is None
+            else as_voice_config(voice_config)
+        )
         with connect(self._settings) as conn:
             local = upsert_persona(
                 conn,
@@ -193,16 +241,34 @@ class PersonaAdmin:
                 description=(
                     current["description"] if description is None else description
                 ),
-                voice_config=(
-                    current["voice_config"]
-                    if voice_config is None
-                    else voice_config
-                ),
+                voice_config=self._with_tts(merged_voice, tts_voice),
             )
         return {"persona": _row(local)}
 
-    def teach(self, text: str) -> dict[str, Any]:
-        persona = self._require_active()
+    def publish(
+        self,
+        *,
+        published: bool,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        current = self._require_active(persona_id)
+        with connect(self._settings) as conn:
+            local = set_persona_published(conn, str(current["id"]), published)
+        if local is None:
+            raise AdminError(
+                self._settings.persona_error_not_found,
+                status=404,
+                reason="persona_missing",
+            )
+        return {"persona": _row(local)}
+
+    def teach(
+        self,
+        text: str,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.teach(persona["engram_persona_id"], text)
@@ -210,8 +276,12 @@ class PersonaAdmin:
             raise _brain_error(exc) from exc
         return {"ok": True, "result": _jsonable(result)}
 
-    def questions(self) -> dict[str, Any]:
-        persona = self._require_active()
+    def questions(
+        self,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.questions(persona["engram_persona_id"])
@@ -225,8 +295,14 @@ class PersonaAdmin:
             "raw": _jsonable(payload),
         }
 
-    def answer(self, question_key: str, text: str) -> dict[str, Any]:
-        persona = self._require_active()
+    def answer(
+        self,
+        question_key: str,
+        text: str,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.answer(
@@ -242,8 +318,10 @@ class PersonaAdmin:
         self,
         source: Any,
         metadata: dict[str, Any] | None = None,
+        *,
+        persona_id: str | UUID | None = None,
     ) -> dict[str, Any]:
-        persona = self._require_active()
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.ingest_shared_document(
@@ -260,8 +338,9 @@ class PersonaAdmin:
         identifier: str,
         *,
         record_local: bool = False,
+        persona_id: str | UUID | None = None,
     ) -> dict[str, Any]:
-        persona = self._require_active()
+        persona = self._require_active(persona_id)
         with connect(self._settings) as conn:
             user = find_user(conn, identifier)
         if user is None:

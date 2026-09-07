@@ -151,6 +151,11 @@ class WorkerSettings(BaseSettings):
         default="persona_id is required when several personas exist",
         min_length=1,
     )
+    admin_error_create_forbidden: str = Field(
+        default="Engram refused create; record a dashboard persona id instead",
+        min_length=1,
+    )
+    persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)
