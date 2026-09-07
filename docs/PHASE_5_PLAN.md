@@ -65,11 +65,13 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-### Part 5.1 — Stop assuming one persona
+**Part 5.1 is done.** `npm run isolation` passed with one published persona (directory, unpublished 404s, chat without a pin is the same 404 as a missing session). Do not start 5.2–5.7 until Tauqueer names one.
+
+### Part 5.1 — Stop assuming one persona (done)
 
 - Goal: the backend can store and address many local personas without throwing.
 - Tasks: replace `resolveActivePersona` with lookup by id; `published` on `personas` (existing rows published so today’s single persona still works); session create requires `persona_id`; chat/voice/memory/lifecycle 404 on missing or unpublished the same way as a missing session; `ENGRAM_PERSONA_ID` is seed-only when the table is empty, never the resolver. Config, no magic ids. Member directory read of published rows (API; picker UI is later parts).
-- Manual test: two local rows do not 500/409 the app; unpublished id 404s; isolation probe still passes with one published persona.
+- Manual test: two local rows do not 500/409 the app; unpublished id 404s; isolation probe still passes with one published persona. **Passed.**
 
 ### Part 5.2 — Owner: many personas
 

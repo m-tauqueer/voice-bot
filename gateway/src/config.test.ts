@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  clientVoiceWsUrl,
   frontendPathRedirect,
   isOwnerEmail,
   ownerEmails,
   postLoginRedirectUrl,
+  readPersonaIdQuery,
 } from "./config.js";
 import { testConfig } from "./test/config.js";
 
@@ -39,5 +41,19 @@ describe("config helpers", () => {
         }),
       ),
     ).toBe("http://localhost:5188/dashboard");
+  });
+
+  it("pins a sitting with a configurable persona query field", () => {
+    const config = testConfig();
+    expect(config.PERSONA_ID_QUERY).toBe("persona_id");
+    expect(config.MEMORY_PANEL_NO_PERSONA).toBe(
+      config.INSIGHTS_ERROR_NOT_FOUND,
+    );
+    expect(readPersonaIdQuery({ persona_id: "abc" }, config)).toBe("abc");
+    expect(
+      clientVoiceWsUrl(config, "11111111-1111-1111-1111-111111111111"),
+    ).toBe(
+      "ws://localhost:5188/ws/voice?persona_id=11111111-1111-1111-1111-111111111111",
+    );
   });
 });

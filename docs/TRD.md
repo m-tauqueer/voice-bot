@@ -10,7 +10,7 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 ### 1.1 Product
 
-- Custom persona bot; **one seeded persona in the running app today**. Several owner-created personas are the next product work ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)): a member picks one on chat and on voice, talks to one sitting at a time, memory is per (user, persona). Persona content and TTS voice are owner-chosen. User-created personas stay parked.
+- Custom persona bot; **the local catalog can store many personas**. Members see published rows and must pin one to talk (picker UI is later Phase 5 work). Memory is per (user, persona). Persona content and TTS voice are owner-chosen. User-created personas stay parked.
 - **Many independent, isolated users** (2-3 testers now, productionize later).
 - Channel: **browser mic** (WebRTC/MediaRecorder), playback in browser.
 - **Full-duplex with barge-in from Phase 2** (interruptions on).
@@ -188,7 +188,7 @@ Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurabl
 
 - `users` — app user id, Google subject, email, mapped Engram `user_id`, timestamps. A `users` row is membership; it is created only after owner approval (or for `OWNER_EMAILS`).
 - `access_requests` — Google subject + email admission queue: `requested` → `approved` → `active`, plus `denied` / `revoked`. Unapproved sign-in writes or refreshes a `requested` row and does not create a `users` row or an Engram pool.
-- `personas` — local catalog of an Engram persona (Engram `persona_id`, handle, display name, voice config including TTS id, **published**). Today the running app still resolves a single active row; the next work pins an explicit `persona_id` on every session ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)).
+- `personas` — local catalog of an Engram persona (Engram `persona_id`, handle, display name, voice config including TTS id, **published**). Talk, memory, and history look up a published row by id; missing or unpublished is the same 404 as a missing session. `ENGRAM_PERSONA_ID` is seed-only when the table is empty.
 - `subscriptions` — mirror of Engram subscribe for admin visibility. Not the isolation control. Subscribe on first talk.
 - `sessions` — a voice/chat session: app session id, user id, persona id, **Engram `session_id`**, channel, started/ended.
 - `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), `correlation_id` (the same id as the gateway and worker log lines for that turn; added in `infra/migrations/0005_correlation_id.sql`; nullable on rows written before that), created_at.

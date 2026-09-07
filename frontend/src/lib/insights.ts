@@ -1,3 +1,4 @@
+import { requiredVite } from "./env";
 import { api } from "./gateway";
 
 export type PersonalOverview = {
@@ -307,8 +308,10 @@ export function fetchPersonalSession(id: string) {
   return api<SessionDetail>(`/api/me/sessions/${id}`);
 }
 
-export function fetchPersonalMemories() {
-  return api<MemoryPanel>("/api/me/memories");
+export function fetchPersonalMemories(personaId: string) {
+  const query = requiredVite("VITE_PERSONA_ID_QUERY");
+  const params = new URLSearchParams({ [query]: personaId });
+  return api<MemoryPanel>(`/api/me/memories?${params.toString()}`);
 }
 
 export type DeletionStatus = {

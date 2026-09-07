@@ -3,11 +3,27 @@ import type postgres from "postgres";
 import type { AppUser } from "../auth/types.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { listLocalPersonas } from "../personas.js";
 import { deleteAudioBlobs } from "./blobs.js";
 import { listUserAudioUrls, wipeMemberRows } from "./wipe.js";
 
 type Sql = ReturnType<typeof postgres>;
+
+export function mergeEngramStatus(current: string, next: string): string {
+  if (current === "skipped") {
+    return next;
+  }
+  if (next === "skipped") {
+    return current;
+  }
+  if (current === "ok" && next === "ok") {
+    return "ok";
+  }
+  if (current === "failed" && next === "failed") {
+    return "failed";
+  }
+  return "partial";
+}
 
 export async function eraseMemberAccount(
   sql: Sql,
@@ -17,8 +33,8 @@ export async function eraseMemberAccount(
 ): Promise<{ sessions: number; engram: string }> {
   let engram = "skipped";
   try {
-    const persona = await resolveActivePersona(sql, config);
-    if (persona) {
+    const personas = await listLocalPersonas(sql);
+    for (const persona of personas) {
       try {
         const response = await callWorker(config, "/internal/lifecycle/purge", {
           method: "POST",
@@ -30,28 +46,32 @@ export async function eraseMemberAccount(
         });
         if (response.ok) {
           const body = (await response.json()) as { engram?: string };
-          engram = typeof body.engram === "string" ? body.engram : "ok";
+          const next = typeof body.engram === "string" ? body.engram : "ok";
+          engram = mergeEngramStatus(engram, next);
         } else {
           log.warn(
-            { status: response.status, userId: user.id },
+            {
+              status: response.status,
+              userId: user.id,
+              personaId: persona.id,
+            },
             "engram purge request failed",
           );
-          engram = "failed";
+          engram = mergeEngramStatus(engram, "failed");
         }
       } catch (error) {
-        log.warn({ err: error, userId: user.id }, "engram purge unavailable");
-        engram = "failed";
+        log.warn(
+          { err: error, userId: user.id, personaId: persona.id },
+          "engram purge unavailable",
+        );
+        engram = mergeEngramStatus(engram, "failed");
       }
     }
   } catch (error) {
-    if (error instanceof MultiplePersonasError) {
-      log.warn({ userId: user.id }, "engram purge skipped: multiple personas");
-    } else {
-      log.warn(
-        { err: error, userId: user.id },
-        "engram purge persona lookup failed",
-      );
-    }
+    log.warn(
+      { err: error, userId: user.id },
+      "engram purge persona lookup failed",
+    );
   }
   const urls = await listUserAudioUrls(sql, user.id);
   await deleteAudioBlobs(config, urls, log);

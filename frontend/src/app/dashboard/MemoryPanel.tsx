@@ -15,7 +15,9 @@ export function MemoryPanel() {
   const [unavailable, setUnavailable] = useState(false);
 
   const userId = session.status === "ready" ? session.me.id : undefined;
-  const reloadKey = memoryPanelReloadKey(userId, session.status);
+  const personaId =
+    session.status === "ready" ? session.persona?.id : undefined;
+  const reloadKey = memoryPanelReloadKey(userId, session.status, personaId);
 
   const load = useCallback(async () => {
     if (session.status !== "ready") {
@@ -25,15 +27,20 @@ export function MemoryPanel() {
       setHits([]);
       return;
     }
+    if (!personaId) {
+      setHits([]);
+      setUnavailable(false);
+      return;
+    }
     try {
-      const panel = await fetchPersonalMemories();
+      const panel = await fetchPersonalMemories(personaId);
       setHits(panel.memories);
       setUnavailable(false);
     } catch (error) {
       setHits([]);
       setUnavailable(!(error instanceof ApiError && error.status === 404));
     }
-  }, [copy.memoryEnabled, reloadKey, session.status]);
+  }, [copy.memoryEnabled, personaId, reloadKey, session.status]);
 
   useEffect(() => {
     void load();

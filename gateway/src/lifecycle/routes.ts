@@ -15,7 +15,7 @@ import { getUserById } from "../auth/users.js";
 import { callWorker } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { resolvePageSize } from "../insights/parse.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { listLocalPersonas } from "../personas.js";
 import { SESSION_KIND } from "../schema.js";
 import {
   canDeleteAccount,
@@ -147,10 +147,15 @@ export async function registerLifecycleRoutes(
     if (!archive) {
       return reply.code(404).send({ error: config.ACCESS_ERROR_UNAUTHORIZED });
     }
-    let memories: unknown = null;
+    let memories: unknown = [];
     try {
-      const persona = await resolveActivePersona(sql, config);
-      if (persona) {
+      const personas = await listLocalPersonas(sql);
+      const collected: {
+        persona_id: string;
+        handle: string;
+        memories: unknown;
+      }[] = [];
+      for (const persona of personas) {
         const response = await callWorker(config, "/internal/memories", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -161,18 +166,21 @@ export async function registerLifecycleRoutes(
           }),
         });
         if (response.ok) {
-          memories = await response.json();
+          collected.push({
+            persona_id: persona.id,
+            handle: persona.handle,
+            memories: await response.json(),
+          });
         } else {
           request.log.warn(
-            { status: response.status },
+            { status: response.status, personaId: persona.id },
             "export memories unavailable",
           );
         }
       }
+      memories = collected;
     } catch (error) {
-      if (!(error instanceof MultiplePersonasError)) {
-        request.log.warn({ err: error }, "export memories lookup failed");
-      }
+      request.log.warn({ err: error }, "export memories lookup failed");
     }
     const body = { ...archive, memories };
     return reply

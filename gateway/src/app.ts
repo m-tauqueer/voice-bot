@@ -20,6 +20,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerInsightRoutes } from "./routes/insights.js";
 import { registerMemoryRoutes } from "./routes/memories.js";
+import { registerPersonaRoutes } from "./routes/personas.js";
 import { registerQuotaRoutes } from "./routes/quota.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 
@@ -72,6 +73,7 @@ export async function createGatewayApp(deps: {
   await app.register(websocket);
   await registerAuthRoutes(app, { config, sql, redis });
   await registerAdminRoutes(app, { config });
+  await registerPersonaRoutes(app, { config, sql });
   await registerChatRoutes(app, { config, sql, redis });
   await registerInsightRoutes(app, { config, sql });
   await registerAccessRoutes(app, { config, sql });

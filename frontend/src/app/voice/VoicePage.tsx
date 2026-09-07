@@ -3,26 +3,15 @@ import { Badge, type BadgeTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { BarMeter } from "../../components/ui/Meter";
-import { ApiError, api } from "../../lib/gateway";
+import { ApiError } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
-import { loadVoiceClientConfig, type VoiceClientConfig } from "../../lib/voiceConfig";
+import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
 import { useSession } from "../session";
-
-type Persona = {
-  id: string;
-  handle: string;
-  display_name: string;
-  description: string | null;
-};
-
-type ChatGetResponse = {
-  persona: Persona;
-};
 
 type CallPhase =
   | "idle"
@@ -129,9 +118,7 @@ export function VoicePage() {
   const identity = useSession();
   const { loadingLabel, appName } = loadNavConfig();
   const me = identity.status === "ready" ? identity.me : null;
-  const [persona, setPersona] = useState<Persona | null>(
-    identity.status === "ready" ? identity.persona : null,
-  );
+  const persona = identity.status === "ready" ? identity.persona : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
@@ -164,24 +151,7 @@ export function VoicePage() {
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!me) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const context = await api<ChatGetResponse>("/api/chat");
-        if (cancelled) return;
-        setPersona(context.persona);
-      } catch (error) {
-        if (cancelled) return;
-        setBanner({ tone: "error", text: errorMessage(error) });
-      }
-      setBoot("ready");
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setBoot("ready");
   }, [me]);
 
   useEffect(() => {
@@ -296,7 +266,7 @@ export function VoicePage() {
   }
 
   async function startCall() {
-    if (phase !== "idle" && phase !== "error") {
+    if ((phase !== "idle" && phase !== "error") || !persona) {
       return;
     }
     setPhase("starting");
@@ -324,7 +294,9 @@ export function VoicePage() {
         onLevel: publishLevel,
       });
       session.current.mic = mic;
-      const socket = openVoiceSocket(config, {
+      const socket = openVoiceSocket(
+        { ...config, wsUrl: voiceSocketUrl(config, persona.id) },
+        {
         onReady: (ready) => {
           live.current = true;
           setSessionId(ready.sessionId);
@@ -422,7 +394,7 @@ export function VoicePage() {
                 <Button
                   type="button"
                   variant="solid"
-                  disabled={starting}
+                  disabled={starting || !persona}
                   onClick={() => void startCall()}
                 >
                   {starting ? "Starting…" : "Start call"}

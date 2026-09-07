@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiError, api } from "../lib/gateway";
+import { api } from "../lib/gateway";
 import {
   sessionFromMeFetch,
   type HeldMe,
@@ -39,15 +39,7 @@ type SessionContextValue = SessionState & {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 async function fetchPersona(): Promise<AppPersona | null> {
-  try {
-    const context = await api<{ persona: AppPersona }>("/api/chat");
-    return context.persona;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return null;
-    }
-    throw error;
-  }
+  return null;
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {

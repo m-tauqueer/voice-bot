@@ -227,4 +227,4 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 `worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), converse. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
 
-The gap is the **app**: `resolveActivePersona` throws on >1 row; chat/voice/memory/lifecycle all call it; admit subscribe uses `ENGRAM_PERSONA_ID`; purge forgets one persona. Engram is already multi-persona. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+The remaining gap is **product UI and first-talk subscribe**: members still need a picker on chat and voice; admit still subscribes `ENGRAM_PERSONA_ID` only; owner create/link of a second persona is later. The gateway no longer guesses one local row. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).

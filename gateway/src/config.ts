@@ -634,6 +634,10 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("session not found"),
   ),
+  PERSONA_ID_QUERY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("persona_id"),
+  ),
   MEMORY_PANEL_ENABLED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.enum(["true", "false"]).default("true"),
@@ -644,7 +648,7 @@ const envFileSchema = z.object({
   ),
   MEMORY_PANEL_NO_PERSONA: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.string().min(1).default("persona not found"),
+    z.string().min(1).default("session not found"),
   ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
@@ -1364,10 +1368,27 @@ export function thinkEndpointHeaders(
   };
 }
 
-export function clientVoiceWsUrl(config: GatewayConfig): string {
+export function clientVoiceWsUrl(
+  config: GatewayConfig,
+  personaId?: string,
+): string {
   const base = new URL(config.GATEWAY_PUBLIC_URL);
   const protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${base.host}${config.VOICE_WS_PATH}`;
+  const url = new URL(`${protocol}//${base.host}${config.VOICE_WS_PATH}`);
+  if (personaId) {
+    url.searchParams.set(config.PERSONA_ID_QUERY, personaId);
+  }
+  return url.toString();
+}
+
+export function readPersonaIdQuery(
+  query: unknown,
+  config: GatewayConfig,
+): unknown {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) {
+    return undefined;
+  }
+  return (query as Record<string, unknown>)[config.PERSONA_ID_QUERY];
 }
 
 export function voiceTunnelCommand(config: GatewayConfig): string {

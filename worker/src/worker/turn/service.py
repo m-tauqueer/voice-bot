@@ -31,7 +31,7 @@ from worker.engram.registry import BrainRegistry
 from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
 from worker.persistence.db import borrow
-from worker.persistence.personas import get_persona
+from worker.persistence.personas import get_persona, visible_to_members
 from worker.persistence.receipts import (
     claim_write_receipt,
     claim_writeback,
@@ -306,10 +306,10 @@ class TurnRunner:
                         )
                     log_quota_warn(self._settings, app_user_id, usage, limits)
 
-                persona = get_persona(conn, persona_id)
+                persona = visible_to_members(get_persona(conn, persona_id))
                 if persona is None:
                     raise TurnError(
-                        "persona not found",
+                        self._settings.persona_error_not_found,
                         status=404,
                         reason="persona_not_found",
                     )

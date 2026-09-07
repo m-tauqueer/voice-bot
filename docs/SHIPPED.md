@@ -8,7 +8,7 @@ This digest replaces the completed task lists that used to live in `PHASE_PLAN.m
 
 ## Product today
 
-Typed chat at `/chat`. Spoken call at `/voice` (Deepgram Voice Agent + BYO-LLM shim). Personal app at `/dashboard`. Owner app at `/admin`. Public `/status`. Waitlist Google sign-in. Daily member quotas (owners uncapped). Consent, export, delete-my-data, ended-session retention. Local ops alerts (`ops_events`). Isolation: `sessions.user_id` + worker identity match. **One active persona in the running app** (`resolveActivePersona` throws if more than one local row unless `ENGRAM_PERSONA_ID` pins one). Several personas is locked in [PHASE_5_PLAN.md](PHASE_5_PLAN.md) and is not built yet.
+Typed chat at `/chat`. Spoken call at `/voice` (Deepgram Voice Agent + BYO-LLM shim). Personal app at `/dashboard`. Owner app at `/admin`. Public `/status`. Waitlist Google sign-in. Daily member quotas (owners uncapped). Consent, export, delete-my-data, ended-session retention. Local ops alerts (`ops_events`). Isolation: `sessions.user_id` + worker identity match. **Local catalog can store many personas.** Chat, voice, and memory look up a published row by id; missing or unpublished is the same 404 as a missing session. `GET /api/personas` lists published rows. Talk still requires a pin (picker UI is later). `ENGRAM_PERSONA_ID` is seed-only when the table is empty. Remaining persona work: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
 Blob audio archiving is off (`VOICE_AUDIO_PERSIST_ENABLED=false`) until there is a storage account. `BRAIN_MODE=chat` is the slow switch; default is `retrieve`. Spoken calls need a live `BYO_LLM_PUBLIC_URL` (ngrok in local dev).
 
@@ -64,6 +64,6 @@ Not done (parked as Plan X in [FUTURE.md](FUTURE.md)): CI/CD, backups, security 
 
 ## Decisions that still hold
 
-Waitlist access (D-A). One persona **today**, many in Phase 5 (D-B). Free for now (D-C). GDPR-light (D-D). Azure later (D-E). Google-only (D-F). Single region (D-G).
+Waitlist access (D-A). Catalog can store many personas; talk still needs a pin (picker later) (D-B). Free for now (D-C). GDPR-light (D-D). Azure later (D-E). Google-only (D-F). Single region (D-G).
 
 Hard rules: config not magic values; no keyword/intent heuristics; never hand-build Engram tenant strings; carry persona `session_id`; text-only into Engram.

@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_GATEWAY_URL: string;
   readonly VITE_CHAT_SESSION_STORAGE_KEY: string;
   readonly VITE_VOICE_WS_PATH: string;
+  readonly VITE_PERSONA_ID_QUERY: string;
   readonly VITE_DEEPGRAM_AUDIO_INPUT_ENCODING: string;
   readonly VITE_DEEPGRAM_AUDIO_INPUT_SAMPLE_RATE: string;
   readonly VITE_DEEPGRAM_AUDIO_OUTPUT_ENCODING: string;

@@ -12,8 +12,9 @@ from worker.admin.errors import AdminError
 from worker.admin.store import (
     connect,
     find_user,
+    list_personas,
     list_subscriptions,
-    resolve_active_persona,
+    require_single_persona,
     upsert_persona,
     upsert_subscription,
 )
@@ -84,7 +85,7 @@ class PersonaAdmin:
 
     def _require_active(self) -> dict[str, Any]:
         with connect(self._settings) as conn:
-            row = resolve_active_persona(conn, self._settings)
+            row = require_single_persona(conn, self._settings)
         if row is None:
             raise AdminError(
                 "no persona is recorded yet",
@@ -95,7 +96,8 @@ class PersonaAdmin:
 
     def show(self) -> dict[str, Any]:
         with connect(self._settings) as conn:
-            local = resolve_active_persona(conn, self._settings)
+            rows = list_personas(conn)
+            local = rows[0] if len(rows) == 1 else None
             subscriptions: list[dict[str, Any]] = []
             if local is not None:
                 subscriptions = list_subscriptions(conn, str(local["id"]))
@@ -108,6 +110,7 @@ class PersonaAdmin:
                 raise _brain_error(exc) from exc
         return {
             "persona": _row(local) if local else None,
+            "personas": [_row(row) for row in rows],
             "engram": _jsonable(remote) if remote else None,
             "subscriptions": _jsonable(subscriptions),
         }

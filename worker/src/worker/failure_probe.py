@@ -11,7 +11,7 @@ import sys
 from unittest.mock import patch
 from uuid import UUID
 
-from worker.admin.store import connect, resolve_active_persona
+from worker.admin.store import connect, require_single_persona
 from worker.config import load_settings
 from worker.engram.errors import ServerError
 from worker.engram.interface import ChatOutcome, RetrieveHit, RetrieveOutcome
@@ -76,7 +76,7 @@ class GroundedBrain:
 def _session(settings):  # noqa: ANN001
     conn = connect(settings)
     try:
-        persona = resolve_active_persona(conn, settings)
+        persona = require_single_persona(conn, settings)
         if persona is None:
             raise SystemExit("FAIL: no persona recorded locally")
         with conn.cursor() as cur:

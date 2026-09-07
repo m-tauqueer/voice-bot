@@ -1,6 +1,8 @@
 export const viteTestEnv: Record<string, string> = {
   VITE_GATEWAY_URL: "http://localhost:5188",
   VITE_CHAT_SESSION_STORAGE_KEY: "vb-chat-session",
+  VITE_VOICE_WS_PATH: "/ws/voice",
+  VITE_PERSONA_ID_QUERY: "persona_id",
   VITE_APP_NAME: "Voice",
   VITE_NAV_ITEMS: "home|Home|home|dashboard;chat|Chat|chat|chat;voice|Voice|ai-spark|voice;data|Your data|shield|data",
   VITE_NAV_OWNER_ITEMS: "admin|Admin|settings|admin",

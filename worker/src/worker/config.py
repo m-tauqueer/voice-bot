@@ -146,6 +146,11 @@ class WorkerSettings(BaseSettings):
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
+    persona_error_not_found: str = Field(default="persona not found", min_length=1)
+    admin_error_persona_pin_required: str = Field(
+        default="persona_id is required when several personas exist",
+        min_length=1,
+    )
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)

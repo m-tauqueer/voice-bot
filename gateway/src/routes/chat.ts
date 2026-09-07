@@ -10,7 +10,12 @@ import { callWorker } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import {
+  type CatalogPersona,
+  getPublishedPersonaById,
+  parseOptionalPersonaId,
+  personaPublicPayload,
+} from "../personas.js";
 import { quotaAppliesToCaller } from "../quota/decision.js";
 import {
   type QuotaUsage,
@@ -23,25 +28,18 @@ import { redisQuiet } from "../voice/redisSafe.js";
 
 type Sql = ReturnType<typeof postgres>;
 
-const chatBodySchema = z.object({
-  text: z.string().min(1),
-  session_id: z.string().uuid().optional(),
-  correlation_id: z.string().uuid().optional(),
-});
+function chatQuerySchema() {
+  return z.object({
+    session_id: z.string().uuid().optional(),
+  });
+}
 
-const chatQuerySchema = z.object({
-  session_id: z.string().uuid().optional(),
-});
-
-function personaPayload(
-  persona: NonNullable<Awaited<ReturnType<typeof resolveActivePersona>>>,
-) {
-  return {
-    id: persona.id,
-    handle: persona.handle,
-    display_name: persona.displayName,
-    description: persona.description,
-  };
+function chatBodySchema() {
+  return z.object({
+    text: z.string().min(1),
+    session_id: z.string().uuid().optional(),
+    correlation_id: z.string().uuid().optional(),
+  });
 }
 
 function parseWorkerBody(text: string): unknown {
@@ -79,6 +77,17 @@ function sendDatabaseUnavailable(
   });
 }
 
+function notFound(config: GatewayConfig) {
+  return { error: config.INSIGHTS_ERROR_NOT_FOUND };
+}
+
+async function publishedForSession(
+  sql: Sql,
+  personaId: string,
+): Promise<CatalogPersona | null> {
+  return getPublishedPersonaById(sql, personaId);
+}
+
 export async function registerChatRoutes(
   app: FastifyInstance,
   deps: { config: GatewayConfig; sql: Sql; redis: Redis },
@@ -90,45 +99,63 @@ export async function registerChatRoutes(
     if (!user) {
       return reply.code(401).send({ error: "unauthorized" });
     }
-    const parsed = chatQuerySchema.safeParse(request.query);
+    const parsed = chatQuerySchema().safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid query" });
     }
-    let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
+    const pin = parseOptionalPersonaId(request.query, config.PERSONA_ID_QUERY);
+    if (!pin.ok) {
+      return reply.code(400).send({ error: "invalid query" });
+    }
+    const sessionId = parsed.data.session_id;
+    const personaId = pin.id;
+
     try {
-      persona = await resolveActivePersona(sql, config);
-    } catch (error) {
-      if (error instanceof MultiplePersonasError) {
-        return reply.code(409).send({ error: "multiple personas" });
+      if (sessionId) {
+        const session = await getSessionForUser(sql, sessionId, user.id);
+        if (!session) {
+          request.log.info(
+            { sessionId, userId: user.id },
+            "chat session not found",
+          );
+          return reply.code(404).send(notFound(config));
+        }
+        const persona = await publishedForSession(sql, session.personaId);
+        if (!persona) {
+          request.log.info(
+            { sessionId, userId: user.id },
+            "chat session not found",
+          );
+          return reply.code(404).send(notFound(config));
+        }
+        const turns = await listTurnsForUser(sql, sessionId, user.id);
+        if (turns === null) {
+          request.log.info(
+            { sessionId, userId: user.id },
+            "chat session not found",
+          );
+          return reply.code(404).send(notFound(config));
+        }
+        return {
+          persona: personaPublicPayload(persona),
+          session_id: sessionId,
+          turns,
+        };
       }
-      request.log.error({ err: error }, "chat persona lookup failed");
-      return sendDatabaseUnavailable(reply, request, sql, config);
-    }
-    if (!persona) {
-      return reply.code(404).send({ error: "persona not recorded" });
-    }
-    if (!parsed.data.session_id) {
-      return { persona: personaPayload(persona), turns: [] as const };
-    }
-    let turns: Awaited<ReturnType<typeof listTurnsForUser>>;
-    try {
-      turns = await listTurnsForUser(sql, parsed.data.session_id, user.id);
+
+      if (typeof personaId === "string") {
+        const persona = await getPublishedPersonaById(sql, personaId);
+        if (!persona) {
+          return reply.code(404).send(notFound(config));
+        }
+        return { persona: personaPublicPayload(persona), turns: [] as const };
+      }
+
+      return reply.code(404).send(notFound(config));
     } catch (error) {
-      request.log.error({ err: error }, "chat history lookup failed");
+      request.log.error({ err: error }, "chat lookup failed");
       return sendDatabaseUnavailable(reply, request, sql, config);
     }
-    if (turns === null) {
-      request.log.info(
-        { sessionId: parsed.data.session_id, userId: user.id },
-        "chat session not found",
-      );
-      return reply.code(404).send({ error: "session not found" });
-    }
-    return {
-      persona: personaPayload(persona),
-      session_id: parsed.data.session_id,
-      turns,
-    };
   });
 
   app.post("/api/chat", async (request, reply) => {
@@ -136,26 +163,19 @@ export async function registerChatRoutes(
     if (!user) {
       return reply.code(401).send({ error: "unauthorized" });
     }
-    const parsed = chatBodySchema.safeParse(request.body);
+    const parsed = chatBodySchema().safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid body" });
     }
-
-    let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
-    try {
-      persona = await resolveActivePersona(sql, config);
-    } catch (error) {
-      if (error instanceof MultiplePersonasError) {
-        return reply.code(409).send({ error: "multiple personas" });
-      }
-      request.log.error({ err: error }, "chat persona lookup failed");
-      return sendDatabaseUnavailable(reply, request, sql, config);
-    }
-    if (!persona) {
-      return reply.code(404).send({ error: "persona not recorded" });
+    const pin = parseOptionalPersonaId(request.body, config.PERSONA_ID_QUERY);
+    if (!pin.ok) {
+      return reply.code(400).send({ error: "invalid body" });
     }
 
+    const pinnedId = pin.id;
+    let persona: CatalogPersona;
     let session: Awaited<ReturnType<typeof getSessionForUser>>;
+
     try {
       if (parsed.data.session_id) {
         session = await getSessionForUser(sql, parsed.data.session_id, user.id);
@@ -164,15 +184,32 @@ export async function registerChatRoutes(
             { sessionId: parsed.data.session_id, userId: user.id },
             "chat session not found",
           );
-          return reply.code(404).send({ error: "session not found" });
+          return reply.code(404).send(notFound(config));
         }
         if (session.endedAt) {
           return reply.code(409).send({ error: "session has ended" });
         }
-        if (session.personaId !== persona.id) {
+        const sitting = await publishedForSession(sql, session.personaId);
+        if (!sitting) {
+          request.log.info(
+            { sessionId: session.id, userId: user.id },
+            "chat session not found",
+          );
+          return reply.code(404).send(notFound(config));
+        }
+        if (typeof pinnedId === "string" && pinnedId !== session.personaId) {
           return reply.code(409).send({ error: "session persona mismatch" });
         }
+        persona = sitting;
       } else {
+        if (!pinnedId) {
+          return reply.code(404).send(notFound(config));
+        }
+        const sitting = await getPublishedPersonaById(sql, pinnedId);
+        if (!sitting) {
+          return reply.code(404).send(notFound(config));
+        }
+        persona = sitting;
         session = await createTextSession(sql, user.id, persona.id);
       }
     } catch (error) {

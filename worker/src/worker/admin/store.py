@@ -22,7 +22,7 @@ def list_personas(conn: psycopg.Connection) -> list[PersonaRow]:
         cur.execute(
             """
             SELECT id, engram_persona_id, handle, display_name, description,
-                   voice_config, created_at, updated_at
+                   voice_config, published, created_at, updated_at
             FROM personas
             ORDER BY created_at
             """,
@@ -30,27 +30,29 @@ def list_personas(conn: psycopg.Connection) -> list[PersonaRow]:
         return list(cur.fetchall())
 
 
-def resolve_active_persona(
-    conn: psycopg.Connection,
-    settings: WorkerSettings,
+def pick_single_persona(
+    rows: list[PersonaRow],
+    *,
+    error: str,
 ) -> PersonaRow | None:
-    rows = list_personas(conn)
     if len(rows) == 0:
         return None
     if len(rows) == 1:
         return rows[0]
-    if settings.engram_persona_id:
-        matches = [
-            row
-            for row in rows
-            if row["engram_persona_id"] == settings.engram_persona_id
-        ]
-        if len(matches) == 1:
-            return matches[0]
     raise AdminError(
-        "multiple personas are stored; set ENGRAM_PERSONA_ID to select one",
+        error,
         status=409,
-        reason="multiple_personas",
+        reason="persona_pin_required",
+    )
+
+
+def require_single_persona(
+    conn: psycopg.Connection,
+    settings: WorkerSettings,
+) -> PersonaRow | None:
+    return pick_single_persona(
+        list_personas(conn),
+        error=settings.admin_error_persona_pin_required,
     )
 
 
@@ -78,7 +80,7 @@ def upsert_persona(
                     voice_config = EXCLUDED.voice_config,
                     updated_at = now()
                 RETURNING id, engram_persona_id, handle, display_name, description,
-                          voice_config, created_at, updated_at
+                          voice_config, published, created_at, updated_at
                 """,
                 (
                     engram_persona_id,

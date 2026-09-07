@@ -2,7 +2,10 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type postgres from "postgres";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import {
+  getPublishedPersonaById,
+  parseOptionalPersonaId,
+} from "../personas.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -41,20 +44,21 @@ export async function registerMemoryRoutes(
     if (config.MEMORY_PANEL_ENABLED !== "true") {
       return reply.code(404).send({ error: config.MEMORY_PANEL_DISABLED });
     }
-    let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
+    const pin = parseOptionalPersonaId(request.query, config.PERSONA_ID_QUERY);
+    if (!pin.ok || !pin.id) {
+      return reply.code(404).send({ error: config.INSIGHTS_ERROR_NOT_FOUND });
+    }
+    let persona: Awaited<ReturnType<typeof getPublishedPersonaById>>;
     try {
-      persona = await resolveActivePersona(sql, config);
+      persona = await getPublishedPersonaById(sql, pin.id);
     } catch (error) {
-      if (error instanceof MultiplePersonasError) {
-        return reply.code(409).send({ error: "multiple personas" });
-      }
       request.log.error({ err: error }, "memory persona lookup failed");
       return reply.code(503).send({
         error: config.FAILURE_MESSAGE_DATABASE,
       });
     }
     if (!persona) {
-      return reply.code(404).send({ error: config.MEMORY_PANEL_NO_PERSONA });
+      return reply.code(404).send({ error: config.INSIGHTS_ERROR_NOT_FOUND });
     }
     const response = await callWorker(config, "/internal/memories", {
       method: "POST",

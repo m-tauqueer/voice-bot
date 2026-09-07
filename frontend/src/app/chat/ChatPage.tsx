@@ -13,6 +13,7 @@ import {
   turnSpeakerUser,
   writeStoredChatSessionId,
 } from "../../lib/gateway";
+import { requiredVite } from "../../lib/env";
 import { loadNavConfig } from "../../lib/nav";
 import { useSession } from "../session";
 
@@ -110,32 +111,28 @@ export function ChatPage() {
     }
     let cancelled = false;
     (async () => {
-      try {
-        const context = await api<ChatGetResponse>("/api/chat");
-        if (cancelled) return;
-        setPersona(context.persona);
-        const stored = readStoredChatSessionId(me.id);
-        if (stored) {
-          try {
-            const history = await api<ChatGetResponse>(
-              `/api/chat?session_id=${encodeURIComponent(stored)}`,
-            );
-            if (cancelled) return;
-            setTurns(history.turns);
-            applySession(me.id, stored);
-          } catch (error) {
-            if (error instanceof ApiError && error.status === 404) {
-              clearStoredChatSessionId(me.id);
-            } else {
-              setBanner({ tone: "error", text: errorMessage(error) });
-            }
+      const stored = readStoredChatSessionId(me.id);
+      if (stored) {
+        try {
+          const history = await api<ChatGetResponse>(
+            `/api/chat?session_id=${encodeURIComponent(stored)}`,
+          );
+          if (cancelled) return;
+          setPersona(history.persona);
+          setTurns(history.turns);
+          applySession(me.id, stored);
+        } catch (error) {
+          if (cancelled) return;
+          if (error instanceof ApiError && error.status === 404) {
+            clearStoredChatSessionId(me.id);
+          } else {
+            setBanner({ tone: "error", text: errorMessage(error) });
           }
         }
-      } catch (error) {
-        if (cancelled) return;
-        setBanner({ tone: "error", text: errorMessage(error) });
       }
-      setBoot("ready");
+      if (!cancelled) {
+        setBoot("ready");
+      }
     })();
     return () => {
       cancelled = true;
@@ -149,16 +146,18 @@ export function ChatPage() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!me || !text || busy) {
+    if (!me || !text || busy || (!sessionId && !persona)) {
       return;
     }
     setBusy(true);
     setBanner(null);
     setDraft("");
     try {
-      const payload: { text: string; session_id?: string } = { text };
+      const payload: Record<string, string> = { text };
       if (sessionId) {
         payload.session_id = sessionId;
+      } else if (persona) {
+        payload[requiredVite("VITE_PERSONA_ID_QUERY")] = persona.id;
       }
       const result = await api<ChatPostResponse>("/api/chat", {
         method: "POST",
@@ -220,6 +219,8 @@ export function ChatPage() {
     );
   }
 
+  const canTalk = Boolean(sessionId || persona);
+
   return (
     <div style={wrapStyle}>
         <div style={headStyle}>
@@ -274,7 +275,7 @@ export function ChatPage() {
               label="Message"
               rows={3}
               value={draft}
-              disabled={busy}
+              disabled={busy || !canTalk}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -287,7 +288,7 @@ export function ChatPage() {
               <Button
                 type="submit"
                 variant="solid"
-                disabled={busy || draft.trim().length === 0}
+                disabled={busy || !canTalk || draft.trim().length === 0}
               >
                 {busy ? "Sending…" : "Send"}
               </Button>

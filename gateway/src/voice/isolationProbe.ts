@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
 import pino from "pino";
+import { nextSignInAction } from "../access/decision.js";
 import { createGatewayApp } from "../app.js";
 import { persistAuthSession, signSessionCookieValue } from "../auth/session.js";
 import { createPostgres, createRedis } from "../clients.js";
@@ -23,7 +24,7 @@ import {
   ownerOverview,
   personalSessionDetail,
 } from "../insights/queries.js";
-import { SESSION_CHANNEL } from "../schema.js";
+import { type AccessStatus, SESSION_CHANNEL } from "../schema.js";
 
 let failed = 0;
 
@@ -88,15 +89,32 @@ try {
   check("session_cursor_rejects_garbage", decodeSessionCursor("nope") === null);
 
   const users = await sql<
-    { id: string; email: string; engram_user_id: string }[]
+    {
+      id: string;
+      email: string;
+      engram_user_id: string;
+      access_status: AccessStatus | null;
+    }[]
   >`
-    SELECT id, email, engram_user_id FROM users ORDER BY created_at
+    SELECT u.id, u.email, u.engram_user_id, a.status AS access_status
+    FROM users u
+    LEFT JOIN access_requests a ON a.google_sub = u.google_sub
+    ORDER BY u.created_at
   `;
   const owner = users.find((user) => isOwnerEmail(user.email, config)) ?? null;
   const other =
-    users.find((user) => !isOwnerEmail(user.email, config)) ??
-    users.find((user) => user.id !== owner?.id) ??
-    null;
+    users.find((user) => {
+      if (isOwnerEmail(user.email, config)) {
+        return false;
+      }
+      return (
+        nextSignInAction({
+          owner: false,
+          hasUser: true,
+          requestStatus: user.access_status,
+        }).type === "provision"
+      );
+    }) ?? null;
 
   const cookieFor = async (userId: string) => {
     const id = await persistAuthSession(redis, config, userId);
@@ -229,11 +247,99 @@ try {
     );
     check("me_omits_google_sub", !Object.hasOwn(ownerBody, "google_sub"));
 
-    const ownerMem = await get("/api/me/memories", ownerCookie);
-    const otherMem = await get("/api/me/memories", otherCookie);
+    const directory = await get("/api/personas", ownerCookie);
+    const directoryBody = directory.json() as {
+      personas?: { id?: string; published?: unknown }[];
+    };
+    check(
+      "directory_lists_published",
+      directory.statusCode === 200 && Array.isArray(directoryBody.personas),
+      `${directory.statusCode}`,
+    );
+    check(
+      "directory_omits_published_flag",
+      (directoryBody.personas ?? []).every(
+        (row) => !Object.hasOwn(row, "published"),
+      ),
+    );
+    const chatUnpinned = await get("/api/chat", ownerCookie);
+    check(
+      "chat_without_pin_is_404",
+      chatUnpinned.statusCode === 404,
+      `${chatUnpinned.statusCode}`,
+    );
+    const chatConflict = chatUnpinned.json() as { error?: string };
+    check(
+      "chat_without_pin_matches_missing_session",
+      chatConflict.error === config.INSIGHTS_ERROR_NOT_FOUND,
+      `${chatConflict.error ?? ""}`,
+    );
 
-    if (ownerMem.statusCode === 404 || otherMem.statusCode === 404) {
+    const marker = randomUUID();
+    const [draft] = await sql<{ id: string }[]>`
+      INSERT INTO personas (
+        engram_persona_id, handle, display_name, published
+      )
+      VALUES (
+        ${`probe-${marker}`},
+        ${`probe-${marker}`},
+        ${"unpublished probe"},
+        ${false}
+      )
+      RETURNING id
+    `;
+    try {
+      if (draft) {
+        const hidden = await get("/api/personas", ownerCookie);
+        const hiddenBody = hidden.json() as { personas?: { id?: string }[] };
+        check(
+          "directory_hides_unpublished",
+          hidden.statusCode === 200 &&
+            !(hiddenBody.personas ?? []).some((row) => row.id === draft.id),
+        );
+        const unpublishedChat = await get(
+          `/api/chat?${config.PERSONA_ID_QUERY}=${draft.id}`,
+          ownerCookie,
+        );
+        check(
+          "unpublished_persona_chat_is_404",
+          unpublishedChat.statusCode === 404,
+          `${unpublishedChat.statusCode}`,
+        );
+        const unpublishedBody = unpublishedChat.json() as { error?: string };
+        check(
+          "unpublished_persona_matches_missing_session",
+          unpublishedBody.error === config.INSIGHTS_ERROR_NOT_FOUND,
+        );
+        const unpublishedMem = await get(
+          `/api/me/memories?${config.PERSONA_ID_QUERY}=${draft.id}`,
+          ownerCookie,
+        );
+        check(
+          "unpublished_persona_memories_is_404",
+          unpublishedMem.statusCode === 404,
+          `${unpublishedMem.statusCode}`,
+        );
+      }
+    } finally {
+      if (draft) {
+        await sql`DELETE FROM personas WHERE id = ${draft.id}`;
+      }
+    }
+
+    const publishedId = (directoryBody.personas ?? []).find(
+      (row): row is { id: string } => typeof row.id === "string",
+    )?.id;
+    const memQuery = publishedId
+      ? `/api/me/memories?${config.PERSONA_ID_QUERY}=${publishedId}`
+      : "/api/me/memories";
+    const ownerMem = await get(memQuery, ownerCookie);
+    const otherMem = await get(memQuery, otherCookie);
+
+    if (config.MEMORY_PANEL_ENABLED !== "true") {
       console.log("memories_panel_probe=SKIP (MEMORY_PANEL_ENABLED is off)");
+    } else if (!publishedId) {
+      console.log("memories_panel_probe=SKIP (no published persona)");
     } else {
       check(
         "memory_panel_owner_ok",
@@ -493,7 +599,7 @@ try {
   }
 
   const [persona] = await sql<{ id: string }[]>`
-    SELECT id FROM personas ORDER BY created_at LIMIT 1
+    SELECT id FROM personas WHERE published = true ORDER BY created_at LIMIT 1
   `;
   const scopeUser = other ?? owner ?? users[0] ?? null;
   if (persona && scopeUser) {
