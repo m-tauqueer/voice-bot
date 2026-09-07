@@ -12,7 +12,11 @@ import {
   parseList,
   parseRangeWindows,
 } from "./parse.js";
-import { sessionDetailScope, sessionListScope } from "./scope.js";
+import {
+  sessionDetailPublishedOnly,
+  sessionDetailScope,
+  sessionListScope,
+} from "./scope.js";
 import type {
   ActivitySeries,
   BudgetModeRow,
@@ -444,8 +448,15 @@ async function sessionDetail(
   sql: Sql,
   sessionId: string,
   scopeUserId: string | null,
+  publishedOnly: boolean,
 ): Promise<SessionDetail | null> {
   const ownerScope = scopeUserId ? sql`AND s.user_id = ${scopeUserId}` : sql``;
+  const publishedScope = publishedOnly
+    ? sql`AND EXISTS (
+        SELECT 1 FROM personas p
+        WHERE p.id = s.persona_id AND p.published = true
+      )`
+    : sql``;
   const [session] = await sql<
     {
       id: string;
@@ -471,6 +482,7 @@ async function sessionDetail(
     INNER JOIN users u ON u.id = s.user_id
     WHERE s.id = ${sessionId}
       ${ownerScope}
+      ${publishedScope}
   `;
   if (!session) {
     return null;
@@ -601,14 +613,24 @@ export async function personalSessionDetail(
   sessionId: string,
   userId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, sessionDetailScope(false, userId));
+  return sessionDetail(
+    sql,
+    sessionId,
+    sessionDetailScope(false, userId),
+    sessionDetailPublishedOnly(false),
+  );
 }
 
 export async function ownerSessionDetail(
   sql: Sql,
   sessionId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, sessionDetailScope(true, ""));
+  return sessionDetail(
+    sql,
+    sessionId,
+    sessionDetailScope(true, ""),
+    sessionDetailPublishedOnly(true),
+  );
 }
 
 export async function ownerActivity(

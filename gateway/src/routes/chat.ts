@@ -6,7 +6,7 @@ import { z } from "zod";
 import { touchChatActivity } from "../chat/activity.js";
 import { createTextSession, getSessionForUser } from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
-import { callWorker } from "../clients/worker.js";
+import { callWorker, memberFacingBody } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
@@ -289,6 +289,14 @@ export async function registerChatRoutes(
       }),
       config.LOG_TURN_EVENT,
     );
-    return reply.code(response.status).send(payload);
+    return reply
+      .code(response.status)
+      .send(
+        memberFacingBody(
+          response.status,
+          payload,
+          config.INSIGHTS_ERROR_NOT_FOUND,
+        ),
+      );
   });
 }

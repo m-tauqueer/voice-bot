@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emptySessionList,
+  sessionDetailPublishedOnly,
   sessionDetailScope,
   sessionListScope,
 } from "./scope.js";
@@ -35,6 +36,11 @@ describe("insights SQL scope", () => {
   it("scopes personal session detail and leaves owner detail unscoped", () => {
     expect(sessionDetailScope(false, viewer)).toBe(viewer);
     expect(sessionDetailScope(true, viewer)).toBeNull();
+  });
+
+  it("hides an unpublished persona's transcript from its member, not the owner", () => {
+    expect(sessionDetailPublishedOnly(false)).toBe(true);
+    expect(sessionDetailPublishedOnly(true)).toBe(false);
   });
 
   it("returns no rows when a sitting list has no persona pin", () => {

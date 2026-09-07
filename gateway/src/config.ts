@@ -377,6 +377,15 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("invalid_deletion_transition"),
   ),
+  LIFECYCLE_ERROR_PURGE_INCOMPLETE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default(
+        "Your memories could not be erased yet, so nothing was deleted. Please try again.",
+      ),
+  ),
   LIFECYCLE_ERROR_VERSION: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("consent_version_mismatch"),

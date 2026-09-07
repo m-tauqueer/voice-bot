@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type postgres from "postgres";
-import { callWorker } from "../clients/worker.js";
+import { callWorker, memberFacingBody } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
 import {
   getPublishedPersonaById,
@@ -9,7 +9,11 @@ import {
 
 type Sql = ReturnType<typeof postgres>;
 
-async function sendWorker(reply: FastifyReply, response: Response) {
+async function sendWorker(
+  reply: FastifyReply,
+  response: Response,
+  notFoundError: string,
+) {
   const text = await response.text();
   let body: unknown = null;
   if (text.length > 0) {
@@ -27,7 +31,9 @@ async function sendWorker(reply: FastifyReply, response: Response) {
       body = { error: detail };
     }
   }
-  return reply.code(response.status).send(body);
+  return reply
+    .code(response.status)
+    .send(memberFacingBody(response.status, body, notFoundError));
 }
 
 export async function registerMemoryRoutes(
@@ -69,6 +75,6 @@ export async function registerMemoryRoutes(
         engram_persona_id: persona.engramPersonaId,
       }),
     });
-    return sendWorker(reply, response);
+    return sendWorker(reply, response, config.INSIGHTS_ERROR_NOT_FOUND);
   });
 }

@@ -33,6 +33,7 @@ from worker.engram.org_member import (
     skip_org_join,
 )
 from worker.engram.registry import BrainRegistry
+from worker.engram.tenant import is_own_private_pool
 from worker.engram.user_id import persona_engine_user_id
 from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
@@ -835,9 +836,14 @@ class TurnRunner:
             self._settings.memory_panel_query,
             top_k=self._settings.memory_panel_top_k,
         )
+        # retrieve answers from the shared pool as well. This panel says what
+        # the persona remembers about *this* member, so only their own private
+        # pool belongs here — and nobody else's ever can.
         memories: list[dict[str, str | None]] = []
         for hit in outcome.results:
             if not hit.text:
+                continue
+            if not is_own_private_pool(hit.tenant, engram_user_id=bound):
                 continue
             memories.append({"text": hit.text, "tenant": hit.tenant})
         return memories

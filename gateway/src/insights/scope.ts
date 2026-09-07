@@ -23,3 +23,12 @@ export function sessionDetailScope(
 ): string | null {
   return ownerView ? null : viewerUserId;
 }
+
+/**
+ * Unpublishing hides a persona from members everywhere, transcripts included,
+ * so a member reading one session by id gets the same 404 as a missing one.
+ * The owner still needs drafts visible to inspect them.
+ */
+export function sessionDetailPublishedOnly(ownerView: boolean): boolean {
+  return !ownerView;
+}

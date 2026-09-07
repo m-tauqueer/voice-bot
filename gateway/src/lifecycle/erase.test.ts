@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeEngramStatus } from "./erase.js";
+import { eraseMayWipeLocalRows, mergeEngramStatus } from "./erase.js";
 
 describe("mergeEngramStatus", () => {
   it("stays skipped until a persona is attempted", () => {
@@ -19,5 +19,17 @@ describe("mergeEngramStatus", () => {
 
   it("stays failed when every attempted purge failed", () => {
     expect(mergeEngramStatus("failed", "failed")).toBe("failed");
+  });
+});
+
+describe("eraseMayWipeLocalRows", () => {
+  it("deletes our rows only once Engram is clear", () => {
+    expect(eraseMayWipeLocalRows("ok")).toBe(true);
+    expect(eraseMayWipeLocalRows("skipped")).toBe(true);
+  });
+
+  it("keeps our rows when memory may still be there", () => {
+    expect(eraseMayWipeLocalRows("partial")).toBe(false);
+    expect(eraseMayWipeLocalRows("failed")).toBe(false);
   });
 });
