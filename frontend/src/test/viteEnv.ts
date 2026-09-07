@@ -227,4 +227,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_PERSONA_SUBSCRIBED: "Tester subscribed.",
   VITE_PERSONA_RECORDED_LOCAL: "Local subscription recorded.",
   VITE_PERSONA_SELECT_FIRST: "Select a persona first.",
+  VITE_PERSONA_PICKER_TITLE: "Who do you want to talk to?",
+  VITE_PERSONA_PICKER_EMPTY: "No published personas yet.",
+  VITE_PERSONA_PICKER_HELP: "Pick one, then start the call. Hang up to switch.",
 };

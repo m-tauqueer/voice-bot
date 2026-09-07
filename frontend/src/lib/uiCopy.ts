@@ -176,6 +176,9 @@ export type UiCopy = {
   personaSubscribed: string;
   personaRecordedLocal: string;
   personaSelectFirst: string;
+  personaPickerTitle: string;
+  personaPickerEmpty: string;
+  personaPickerHelp: string;
 };
 
 let cached: UiCopy | null = null;
@@ -380,6 +383,9 @@ export function loadUiCopy(): UiCopy {
     personaSubscribed: requiredVite("VITE_PERSONA_SUBSCRIBED"),
     personaRecordedLocal: requiredVite("VITE_PERSONA_RECORDED_LOCAL"),
     personaSelectFirst: requiredVite("VITE_PERSONA_SELECT_FIRST"),
+    personaPickerTitle: requiredVite("VITE_PERSONA_PICKER_TITLE"),
+    personaPickerEmpty: requiredVite("VITE_PERSONA_PICKER_EMPTY"),
+    personaPickerHelp: requiredVite("VITE_PERSONA_PICKER_HELP"),
   };
   return cached;
 }

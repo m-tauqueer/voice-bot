@@ -638,6 +638,10 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("persona_id"),
   ),
+  PERSONA_VOICE_TTS_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("tts_voice"),
+  ),
   MEMORY_PANEL_ENABLED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.enum(["true", "false"]).default("true"),

@@ -110,12 +110,20 @@ These are different.
 
 > `personas.unsubscribe(pid, user_id)` — their private pool is untouched.
 
-Subscribe / unsubscribe / subscribers are **workspace-admin** on the docs. The public docs **never name** a permission string `org:manage`. Our live key has returned `403 missing permission(s): ['org:manage']` on `subscribe`, and independently `chat` / `retrieve` / `converse` still worked without a subscription. So:
+Subscribe / unsubscribe / subscribers are **workspace-admin** on the docs. The public docs **never name** a permission string `org:manage`. The live API does: `POST .../personas/{id}/subscribers` and `GET .../subscribers` return `403 missing permission(s): ['org:manage']` with this key. Independently, `chat` / `retrieve` / `converse` still work without a subscription on this alpha.
+
+**Our grant code is done.** First think for a sitting calls `personas.subscribe` for **that** persona, mirrors local `subscriptions` only when Engram accepts, logs `subscribe_forbidden` on manage-scope 403 and continues, and fails the turn if retrieve/chat return not-subscribed. Sign-in does not subscribe anyone. Live sitting: two published personas, one subscribe attempt each, talk still worked.
+
+**What this key actually carries** (`account.me()`): role `org_admin`, but the token is narrowed to `billing:read`, `members:read`, `memory:read`, `memory:write`, `metrics:read`, `tokens:read`. No `org:manage`, no `members:write`, no `tokens:write`. That is why Engram’s People → Subscribers tab stays at 0 and `Record local only` never appears there — local mirror ≠ Engram audience.
+
+**Still open — filling Engram subscribers.** Not more app logic in this part. Until a credential can actually subscribe, their dashboard will not list members. Paths to try later (do not guess in code): mint/replace the API key with empty/`*` scopes or whatever includes subscribe; or add the member in Engram’s own Subscribers UI while signed in as org admin. Do not treat our `subscriptions` table as isolation.
+
+So:
 
 1. **Published list in our app is who may see the persona.**
 2. **On first talk** we still call `personas.subscribe(engram_persona_id, engram_user_id)` so a future Engram 403 cannot surprise us.
 3. If subscribe 403s for missing manage scope: log it, do not block the member **while** retrieve/chat still succeed.
-4. If retrieve/chat return `ForbiddenError` (not subscribed): fail the turn honestly. Isolation still holds. Owner needs a key that can subscribe.
+4. If retrieve/chat return `ForbiddenError` (not subscribed): fail the turn honestly. Isolation still holds.
 5. **Never treat our `subscriptions` table as the isolation control.** It is a mirror for admin visibility.
 
 `persona_subscriptions` on Engram’s side: `(id, org_id, persona_id, user_id, created_at)`, unique `(persona_id, user_id)`.
@@ -148,7 +156,7 @@ Admin-only (member naming anyone else → `ForbiddenError: cannot access another
 
 Roles: `member` | `org_admin` | `superadmin`. Permission shape is `resource:action`. Named scopes in the docs: `memory:read`, `memory:write`, `metrics:read`, `audit:read`. Empty scopes or `"*"` = full role of the creator. Scopes cannot exceed the creator.
 
-`org:manage` is **not** in the public docs; it is what the live API returned on subscribe. Treat subscribe as workspace-admin / org-admin until a key with that scope exists.
+`org:manage` is **not** in the public docs; it is what the live API returned on subscribe. This worker key is `org_admin` **and** scoped down, so the role name is not enough — check `account.me().permissions`. Subscribe stays workspace-admin until a key includes whatever this alpha calls `org:manage`. See §4.
 
 Our product org is one Engram org. Each approved Google member maps to one Engram `user_id`. The **persona** is not a second Engram user.
 
@@ -187,7 +195,7 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | 401 | bad key | fix key; no retry |
 | 402 | org over allowance | stop writes |
 | 403 `ForbiddenError` on chat | not subscribed, or wrong pool | typed not-subscribed; do not invent a tenant |
-| 403 `org:manage` on subscribe | key cannot admin-subscribe | log; isolation still app-side |
+| 403 `org:manage` on subscribe / list subscribers | key cannot grant Engram audience | log; talk may still work; Engram Subscribers UI stays empty |
 | 403 persona-private on `/t/` | someone built a three-segment tenant | use persona endpoints |
 | 404 `engine 404: gid N` | wrong pool | pass `scope=` |
 | 404 unknown `session_id` on `conversation()` | bad thread id | do not treat as empty chat |
@@ -218,8 +226,8 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 3. Isolation unknown flag: taxonomy says fallback `strict`; admin `set_flag` rejects unknown.
 4. Two “subscriptions”: persona access vs billing plan.
 5. Two `session_id`s: `sessions.open` vs persona conversation.
-6. `org:manage` live vs undocumented in public docs.
-7. Subscribe required for chat (docs) vs our alpha key still serving chat without subscribe (measured). Product policy: subscribe on first talk; app published list is the member-facing gate; fail closed if Engram starts enforcing 403.
+6. `org:manage` live vs undocumented in public docs. `org_admin` on the key still does not imply subscribe when the token is narrowed.
+7. Subscribe required for chat (docs) vs our alpha key still serving chat without subscribe (measured). Product policy: subscribe on first talk; app published list is the member-facing gate; fail closed if Engram starts enforcing 403. Filling Engram’s subscriber list is still open (key/dashboard), not more grant code.
 
 ---
 
@@ -229,4 +237,4 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, and publish or unpublish locally (Engram `delete` is a later destroy step). The gateway does not guess one local row.
 
-The remaining gap is **member picker**: members still need a picker on chat and voice. Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting calls `personas.subscribe` for that persona, mirrors `subscriptions` on success, logs `org:manage` 403 and continues, and fails closed if retrieve/chat return not-subscribed. Live first-talk check is after the voice picker. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting calls `personas.subscribe` for that persona, mirrors `subscriptions` on success, logs `org:manage` 403 and continues, and fails closed if retrieve/chat return not-subscribed. That grant path is **done**; Engram’s Subscribers list is still empty because this key cannot `org:manage`. Chat still needs the same picker as voice. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).

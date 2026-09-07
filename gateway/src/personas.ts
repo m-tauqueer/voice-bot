@@ -10,6 +10,7 @@ export type CatalogPersona = {
   displayName: string;
   description: string | null;
   published: boolean;
+  voiceConfig: Record<string, unknown>;
 };
 
 type PersonaRow = {
@@ -19,7 +20,15 @@ type PersonaRow = {
   display_name: string;
   description: string | null;
   published: boolean;
+  voice_config?: unknown;
 };
+
+function asVoiceConfig(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
 
 function mapPersona(row: PersonaRow): CatalogPersona {
   return {
@@ -29,7 +38,23 @@ function mapPersona(row: PersonaRow): CatalogPersona {
     displayName: row.display_name,
     description: row.description,
     published: row.published,
+    voiceConfig: asVoiceConfig(row.voice_config),
   };
+}
+
+export function resolveSpeakModel(
+  voiceConfig: Record<string, unknown>,
+  ttsKey: string,
+  fallback: string | undefined,
+): string | undefined {
+  const raw = voiceConfig[ttsKey];
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return fallback;
 }
 
 export function parseOptionalPersonaId(
@@ -85,7 +110,8 @@ export async function getPersonaById(
   personaId: string,
 ): Promise<CatalogPersona | null> {
   const rows = await sql<PersonaRow[]>`
-    SELECT id, engram_persona_id, handle, display_name, description, published
+    SELECT id, engram_persona_id, handle, display_name, description, published,
+           voice_config
     FROM personas
     WHERE id = ${personaId}
   `;

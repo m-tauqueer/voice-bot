@@ -39,6 +39,7 @@ export default defineConfig({
         "src/chat/sessions.ts",
         "src/chat/turns.ts",
         "src/personas.ts",
+        "src/deepgram/settings.ts",
       ],
       thresholds: coverage,
     },

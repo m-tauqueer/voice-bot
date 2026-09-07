@@ -23,7 +23,7 @@ import {
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
-import { getPublishedPersonaById } from "../personas.js";
+import { getPublishedPersonaById, resolveSpeakModel } from "../personas.js";
 import {
   type Utterance,
   VoiceAudioCapture,
@@ -209,12 +209,20 @@ export async function registerVoiceRoutes(
             return;
           }
           sessionId = session.id;
-          const settings = buildVoiceAgentSettings(config, {
-            appUserId: user.id,
-            engramUserId: user.engramUserId,
-            personaId: persona.id,
-            sessionId: session.id,
-          });
+          const settings = buildVoiceAgentSettings(
+            config,
+            {
+              appUserId: user.id,
+              engramUserId: user.engramUserId,
+              personaId: persona.id,
+              sessionId: session.id,
+            },
+            resolveSpeakModel(
+              persona.voiceConfig,
+              config.PERSONA_VOICE_TTS_KEY,
+              config.DEEPGRAM_TTS_VOICE,
+            ),
+          );
           let opened: Awaited<
             ReturnType<typeof openVoiceAgentSessionWithRetry>
           >;

@@ -253,6 +253,9 @@ interface ImportMetaEnv {
   readonly VITE_PERSONA_SUBSCRIBED: string;
   readonly VITE_PERSONA_RECORDED_LOCAL: string;
   readonly VITE_PERSONA_SELECT_FIRST: string;
+  readonly VITE_PERSONA_PICKER_TITLE: string;
+  readonly VITE_PERSONA_PICKER_EMPTY: string;
+  readonly VITE_PERSONA_PICKER_HELP: string;
 }
 
 interface ImportMeta {

@@ -65,7 +65,9 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Parts 5.1–5.3 are done.** Live first-talk subscribe is checked on a real sitting after the voice picker exists. Do not start 5.4–5.7 until Tauqueer names one. The `/voice` picker is 5.4; the same picker on chat is 5.5.
+**Parts 5.1–5.3 are done. Part 5.4 is named and in progress** — do not mark it done until its manual test passes. Do not start 5.5–5.7 until Tauqueer names one. The same picker on chat is 5.5.
+
+Engram **subscribers** are not a later part in this file. First-talk subscribe code is in. Filling Engram’s audience list needs a credential that can actually subscribe (`org:manage` on this alpha), or an add in their dashboard. See [ENGRAM.md](ENGRAM.md) §4.
 
 ### Part 5.1 — Stop assuming one persona (done)
 
@@ -83,7 +85,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 - Goal: talking to a published persona grants Engram access without subscribing the world at admit time.
 - Tasks: drop admit-time subscribe to `ENGRAM_PERSONA_ID` only; on first turn/call for (user, persona), `subscribe` then proceed; log 403 `org:manage` without failing the member if retrieve still works; if retrieve/chat 403 not-subscribed, fail closed. Mirror `subscriptions` when subscribe succeeds.
-- Manual test: new member is not subscribed to every persona; first voice or chat turn to Ada records a subscribe attempt; a second persona first-talk does the same. **Local gates passed.** Live sitting check waits for the voice picker (5.4); do not use a console workaround.
+- Manual test: new member is not subscribed to every persona; first voice or chat turn to Ada records a subscribe attempt; a second persona first-talk does the same. **Passed.** Live `/voice` sitting: first talk to each published persona logged `subscribe_forbidden` (`403 org:manage`); retrieve still 200; spoken call still worked. Engram People → Subscribers stays 0 until a key (or dashboard session) can grant audience — that is not more code in this part.
 
 ### Part 5.4 — Voice picker
 

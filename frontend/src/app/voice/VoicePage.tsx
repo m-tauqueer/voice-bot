@@ -3,7 +3,7 @@ import { Badge, type BadgeTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { BarMeter } from "../../components/ui/Meter";
-import { ApiError } from "../../lib/gateway";
+import { ApiError, api } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
@@ -11,6 +11,11 @@ import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
 import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
+import { loadUiCopy } from "../../lib/uiCopy";
+import {
+  parsePublishedDirectory,
+  type PublishedPersona,
+} from "../../lib/publishedPersonas";
 import { useSession } from "../session";
 
 type CallPhase =
@@ -114,16 +119,32 @@ function eventContent(event: Record<string, unknown>): string | null {
   return null;
 }
 
+const listButtonStyle: CSSProperties = {
+  width: "100%",
+  textAlign: "left",
+  background: "transparent",
+  border: 0,
+  color: "var(--text-hi)",
+  cursor: "pointer",
+  padding: "10px 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
 export function VoicePage() {
   const identity = useSession();
-  const { loadingLabel, appName } = loadNavConfig();
+  const copy = loadUiCopy();
+  const { loadingLabel } = loadNavConfig();
   const me = identity.status === "ready" ? identity.me : null;
-  const persona = identity.status === "ready" ? identity.persona : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptLine[]>([]);
+  const [directory, setDirectory] = useState<PublishedPersona[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [vu, setVu] = useState(0);
   const [levels, setLevels] = useState<number[]>([]);
   const [clientConfig, setClientConfig] = useState<VoiceClientConfig | null>(
@@ -148,10 +169,35 @@ export function VoicePage() {
     levelRaf: null,
     pendingLevel: 0,
   });
+  const picked = directory.find((row) => row.id === pickedId) ?? null;
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setBoot("ready");
+    if (!me) {
+      setBoot("ready");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await api<{ personas?: unknown }>("/api/personas");
+        if (cancelled) {
+          return;
+        }
+        setDirectory(parsePublishedDirectory(payload));
+      } catch (error) {
+        if (!cancelled) {
+          setBanner({ tone: "error", text: errorMessage(error) });
+        }
+      } finally {
+        if (!cancelled) {
+          setBoot("ready");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [me]);
 
   useEffect(() => {
@@ -205,6 +251,8 @@ export function VoicePage() {
     await current.playback?.stop();
     setVu(0);
     setLevels([]);
+    setTurns([]);
+    setSessionId(null);
     setPhase("idle");
   }
 
@@ -266,7 +314,7 @@ export function VoicePage() {
   }
 
   async function startCall() {
-    if ((phase !== "idle" && phase !== "error") || !persona) {
+    if ((phase !== "idle" && phase !== "error") || !picked) {
       return;
     }
     setPhase("starting");
@@ -295,7 +343,7 @@ export function VoicePage() {
       });
       session.current.mic = mic;
       const socket = openVoiceSocket(
-        { ...config, wsUrl: voiceSocketUrl(config, persona.id) },
+        { ...config, wsUrl: voiceSocketUrl(config, picked.id) },
         {
         onReady: (ready) => {
           live.current = true;
@@ -358,13 +406,16 @@ export function VoicePage() {
     phase === "speaking" ||
     phase === "reconnecting";
   const starting = phase === "starting";
+  const pickingLocked = inCall || starting;
 
   return (
     <div style={wrapStyle}>
         <div>
-          <h1 className="mc-pagehead__title">{persona?.display_name ?? appName}</h1>
+          <h1 className="mc-pagehead__title">
+            {picked?.display_name ?? copy.personaPickerTitle}
+          </h1>
           <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-            {persona?.handle ? `@${persona.handle}` : null}
+            {picked?.handle ? `@${picked.handle}` : copy.personaPickerHelp}
           </p>
         </div>
 
@@ -384,6 +435,38 @@ export function VoicePage() {
         )}
 
         <Card>
+          <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
+            {copy.personaPickerTitle}
+          </h2>
+          {directory.length === 0 ? (
+            <p style={{ color: "var(--text-mid)" }}>{copy.personaPickerEmpty}</p>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+              {directory.map((row) => (
+                <li key={row.id} style={{ borderTop: "1px solid var(--line, #333)" }}>
+                  <button
+                    type="button"
+                    style={{
+                      ...listButtonStyle,
+                      cursor: pickingLocked ? "not-allowed" : "pointer",
+                      opacity: pickingLocked ? 0.55 : 1,
+                    }}
+                    aria-pressed={row.id === pickedId}
+                    disabled={pickingLocked}
+                    onClick={() => setPickedId(row.id)}
+                  >
+                    <span>
+                      {row.display_name}{" "}
+                      <span style={{ color: "var(--text-mid)" }}>@{row.handle}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {inCall ? (
@@ -394,7 +477,7 @@ export function VoicePage() {
                 <Button
                   type="button"
                   variant="solid"
-                  disabled={starting || !persona}
+                  disabled={starting || !picked}
                   onClick={() => void startCall()}
                 >
                   {starting ? "Starting…" : "Start call"}

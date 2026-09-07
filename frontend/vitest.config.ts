@@ -28,6 +28,7 @@ export default defineConfig({
         "src/lib/sessionState.ts",
         "src/lib/memoryPanel.ts",
         "src/lib/personaVoice.ts",
+        "src/lib/publishedPersonas.ts",
         "src/app/dashboard/MemoryPanel.tsx",
       ],
       thresholds: coverage,

@@ -6,6 +6,7 @@ import {
   listPublishedPersonas,
   parseOptionalPersonaId,
   personaPublicPayload,
+  resolveSpeakModel,
 } from "./personas.js";
 import { queuedSql } from "./test/http.js";
 
@@ -51,6 +52,7 @@ describe("persona catalog", () => {
       displayName: "Nova",
       description: null,
       published: false,
+      voiceConfig: {},
     });
   });
 
@@ -64,6 +66,22 @@ describe("persona catalog", () => {
     await expect(
       getPublishedPersonaById(queuedSql([[published]]) as never, published.id),
     ).resolves.toMatchObject({ id: published.id, published: true });
+  });
+
+  it("uses the persona tts id and falls back to the env voice", () => {
+    expect(
+      resolveSpeakModel(
+        { tts_voice: "aura-2-thalia-en" },
+        "tts_voice",
+        "aura-2-luna-en",
+      ),
+    ).toBe("aura-2-thalia-en");
+    expect(
+      resolveSpeakModel({ tts_voice: "  " }, "tts_voice", "aura-2-luna-en"),
+    ).toBe("aura-2-luna-en");
+    expect(resolveSpeakModel({}, "tts_voice", "aura-2-luna-en")).toBe(
+      "aura-2-luna-en",
+    );
   });
 
   it("parses a persona pin without treating a missing field as invalid", () => {
@@ -88,6 +106,7 @@ describe("persona catalog", () => {
         displayName: "Ada",
         description: "first",
         published: true,
+        voiceConfig: {},
       }),
     ).toEqual({
       id: published.id,
