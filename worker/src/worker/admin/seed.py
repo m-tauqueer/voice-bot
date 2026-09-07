@@ -87,6 +87,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_persona_id(publish)
 
+    destroy = sub.add_parser(
+        "destroy",
+        help="wipe Engram pools for a persona and delete its local rows",
+    )
+    destroy.add_argument(
+        "--confirm",
+        required=True,
+        help="the persona handle, typed exactly",
+    )
+    _add_persona_id(destroy)
+
     show = sub.add_parser("show")
     _add_persona_id(show)
 
@@ -114,10 +125,11 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                 )
                 return 0
-            persona_id = args.engram_persona_id or settings.engram_persona_id
+            persona_id = args.engram_persona_id or admin.seed_persona_id()
             if not persona_id:
                 raise AdminError(
-                    "pass --engram-persona-id or set ENGRAM_PERSONA_ID",
+                    "pass --engram-persona-id "
+                    "(ENGRAM_PERSONA_ID only seeds an empty catalog)",
                     reason="missing_persona_id",
                 )
             _print(
@@ -161,6 +173,9 @@ def main(argv: list[str] | None = None) -> int:
                     persona_id=pin,
                 ),
             )
+            return 0
+        if args.command == "destroy":
+            _print(admin.destroy(confirmation=args.confirm, persona_id=pin))
             return 0
         if args.command == "show":
             _print(admin.show(pin))

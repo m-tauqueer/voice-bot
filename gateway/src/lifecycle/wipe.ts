@@ -16,6 +16,20 @@ export async function listUserAudioUrls(
   return rows.map((row) => row.blob_url);
 }
 
+export async function listPersonaAudioUrls(
+  sql: Sql,
+  personaId: string,
+): Promise<string[]> {
+  const rows = await sql<{ blob_url: string }[]>`
+    SELECT a.blob_url
+    FROM audio_assets a
+    INNER JOIN turns t ON t.id = a.turn_id
+    INNER JOIN sessions s ON s.id = t.session_id
+    WHERE s.persona_id = ${personaId}
+  `;
+  return rows.map((row) => row.blob_url);
+}
+
 export async function wipeMemberRows(
   sql: Sql,
   userId: string,

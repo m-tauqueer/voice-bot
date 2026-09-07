@@ -10,7 +10,7 @@ from worker.admin.errors import AdminError
 from worker.admin.service import PersonaAdmin
 from worker.admin.voice import as_voice_config, merge_tts_voice
 from worker.config import WorkerSettings
-from worker.engram.errors import ForbiddenError, ValidationError
+from worker.engram.errors import ForbiddenError, NotFoundError, ValidationError
 from worker.engram.interface import IngestOutcome, PersonaRecord
 
 ADA = "11111111-1111-1111-1111-111111111111"
@@ -138,6 +138,25 @@ class Catalog:
             if user["id"] == user_id:
                 user["engram_user_id"] = engram_user_id
 
+    def delete_persona_cascade(
+        self,
+        _conn: object,
+        persona_id: str,
+    ) -> dict[str, int]:
+        subscriptions = [
+            row for row in self.subscriptions if row.get("persona_id") == persona_id
+        ]
+        self.subscriptions = [
+            row for row in self.subscriptions if row.get("persona_id") != persona_id
+        ]
+        before = len(self.rows)
+        self.rows = [row for row in self.rows if str(row["id"]) != str(persona_id)]
+        return {
+            "subscriptions": len(subscriptions),
+            "sessions": 0,
+            "personas": before - len(self.rows),
+        }
+
 
 class FakeRoster:
     def __init__(self, user_id: str = "e-user-1") -> None:
@@ -173,6 +192,7 @@ class FakeBrain:
         self.subscribed: list[tuple[str, str]] = []
         self.subscribe_errors: list[Exception] = []
         self.create_error: Exception | None = None
+        self.delete_error: Exception | None = None
         self.remote: dict[str, PersonaRecord] = {
             "eng-ada": _record("eng-ada", "Ada", "ada", "first"),
             "eng-nova": _record("eng-nova", "Nova", "nova", None),
@@ -195,6 +215,8 @@ class FakeBrain:
         return _record(persona_id, "Remote", "remote", "from engram")
 
     def delete_persona(self, persona_id: str) -> None:
+        if self.delete_error is not None:
+            raise self.delete_error
         self.deleted.append(persona_id)
 
     def teach(self, persona_id: str, text: str) -> dict[str, bool]:
@@ -249,6 +271,10 @@ def _bind(monkeypatch: pytest.MonkeyPatch, catalog: Catalog) -> None:
     monkeypatch.setattr(
         "worker.admin.service.set_engram_user_id",
         catalog.set_engram_user_id,
+    )
+    monkeypatch.setattr(
+        "worker.admin.service.delete_persona_cascade",
+        catalog.delete_persona_cascade,
     )
 
 
@@ -471,6 +497,91 @@ def test_subscribe_persists_engram_people_id(
     assert catalog.users[0]["engram_user_id"] == "8de1b2b278724e0bba19000086f8bef2"
     assert brain.subscribed == [("eng-ada", "8de1b2b278724e0bba19000086f8bef2")]
     assert roster.added == [("a@example.com", "a@example.com", "member", False)]
+
+
+def test_seed_persona_id_only_fills_an_empty_catalog(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = settings.model_copy(update={"engram_persona_id": "eng-seed"})
+    empty = _admin(seeded, monkeypatch, Catalog([]), FakeBrain())
+    assert empty.seed_persona_id() == "eng-seed"
+
+    stocked = _admin(seeded, monkeypatch, Catalog([_row()]), FakeBrain())
+    assert stocked.seed_persona_id() is None
+
+    unset = _admin(settings, monkeypatch, Catalog([]), FakeBrain())
+    assert unset.seed_persona_id() is None
+
+
+def test_destroy_wipes_engram_then_local_rows(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog(
+        [
+            _row(),
+            _row(
+                id=NOVA,
+                engram_persona_id="eng-nova",
+                handle="nova",
+                display_name="Nova",
+            ),
+        ]
+    )
+    catalog.subscriptions.append({"persona_id": ADA, "user_id": "user-1"})
+    brain = FakeBrain()
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    result = admin.destroy(confirmation="ada", persona_id=ADA)
+    assert brain.deleted == ["eng-ada"]
+    assert result["engram"] == "deleted"
+    assert result["removed"]["personas"] == 1
+    assert result["removed"]["subscriptions"] == 1
+    assert [row["handle"] for row in catalog.rows] == ["nova"]
+
+
+def test_destroy_refuses_a_handle_that_does_not_match(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    for typed in ("Ada", "ad", "", "  "):
+        with pytest.raises(AdminError) as caught:
+            admin.destroy(confirmation=typed, persona_id=ADA)
+        assert caught.value.reason == "confirmation_mismatch"
+        assert caught.value.status == 400
+    # Nothing was touched on either side.
+    assert brain.deleted == []
+    assert [row["handle"] for row in catalog.rows] == ["ada"]
+
+
+def test_destroy_still_clears_local_rows_when_engram_lost_it(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    brain.delete_error = NotFoundError("no such persona", status=404)
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    result = admin.destroy(confirmation=" ada ", persona_id=ADA)
+    assert result["engram"] == "missing"
+    assert catalog.rows == []
+
+
+def test_destroy_keeps_local_rows_when_engram_refuses(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    brain.delete_error = ForbiddenError("not allowed", status=403)
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    with pytest.raises(AdminError) as caught:
+        admin.destroy(confirmation="ada", persona_id=ADA)
+    assert caught.value.status == 403
+    assert [row["handle"] for row in catalog.rows] == ["ada"]
 
 
 def test_subscribe_retries_join_on_validation(

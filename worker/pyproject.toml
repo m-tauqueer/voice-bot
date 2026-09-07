@@ -54,6 +54,7 @@ addopts = [
     "--cov=worker.engram.tenant",
     "--cov=worker.engram.engram_brain",
     "--cov=worker.admin.service",
+    "--cov=worker.admin.confirm",
     "--cov=worker.admin.voice",
     "--cov=worker.reframe.reframer",
     "--cov=worker.reframe.answerer",

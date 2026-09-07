@@ -91,6 +91,41 @@ def set_persona_published(
     return row
 
 
+def delete_persona_cascade(
+    conn: psycopg.Connection,
+    persona_id: str,
+) -> dict[str, int]:
+    """Remove a persona and the local record of every sitting under it.
+
+    `sessions.persona_id` and `subscriptions.persona_id` are ON DELETE RESTRICT,
+    so both go first; turns and their spans, memory refs and audio rows follow
+    by cascade. One transaction: a persona row must never outlive its sittings
+    or the reverse.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM subscriptions WHERE persona_id = %s RETURNING id",
+            (str(persona_id),),
+        )
+        subscriptions = len(cur.fetchall())
+        cur.execute(
+            "DELETE FROM sessions WHERE persona_id = %s RETURNING id",
+            (str(persona_id),),
+        )
+        sessions = len(cur.fetchall())
+        cur.execute(
+            "DELETE FROM personas WHERE id = %s RETURNING id",
+            (str(persona_id),),
+        )
+        personas = len(cur.fetchall())
+    conn.commit()
+    return {
+        "subscriptions": subscriptions,
+        "sessions": sessions,
+        "personas": personas,
+    }
+
+
 def upsert_persona(
     conn: psycopg.Connection,
     *,

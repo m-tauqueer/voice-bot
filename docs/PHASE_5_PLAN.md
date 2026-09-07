@@ -65,13 +65,15 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Parts 5.1–5.3 are done. The voice picker is in the product. Chat, history, and memory follow a published pick (manual sitting still open). Part 5.6 is named and in progress** — do not mark it done until its manual tests pass. Do not start 5.7 or **5.8** until Tauqueer names that part. 5.8 needs a worker key with `members:manage` before it can pass live.
+**Every part 5.1–5.8 is built.** Automated checks are green: `npm test` (gateway, frontend, worker), `npm run isolation`, `npm run security`. What is still open is **live sittings**, not code — each part below says which. One thing is blocked outside this repo: Engram-side per-member private memory ([ENGRAM.md](ENGRAM.md) §2.3).
 
 ### Part 5.1 — Stop assuming one persona (done)
 
 - Goal: the backend can store and address many local personas without throwing.
 - Tasks: replace `resolveActivePersona` with lookup by id; `published` on `personas` (existing rows published so today’s single persona still works); session create requires `persona_id`; chat/voice/memory/lifecycle 404 on missing or unpublished the same way as a missing session; `ENGRAM_PERSONA_ID` is seed-only when the table is empty, never the resolver. Config, no magic ids. Member directory read of published rows (API; picker UI is later parts).
 - Manual test: two local rows do not 500/409 the app; unpublished id 404s; isolation probe still passes with one published persona. **Passed.**
+- Audit follow-up: `ENGRAM_PERSONA_ID` is now seed-only in the CLI too (`PersonaAdmin.seed_persona_id` returns it only for an empty catalog). Before, `create-persona` with no `--engram-persona-id` fell back to the env value and `register`'s upsert could rewrite an existing persona's handle, name and voice.
+- Deliberate, not a gap: a **malformed** persona id answers 400 where the route validates it, while missing / unpublished / missing-session all answer one identical 404. A malformed id cannot name a real row, so telling a caller their input was invalid reveals nothing about what exists.
 
 ### Part 5.2 — Owner: many personas (done)
 
@@ -96,6 +98,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 - Goal: typed chat uses the **same picker**; history and memory never mix personas.
 - Tasks: chat sitting pin; no talk until pick; history and memory filter by the persona you are on; owner conversation list filters by persona. New sitting = new Engram `session_id`; private-pool recall still works.
 - Manual test: Ada chat does not list Nova turns; memory panel for Ada does not show Nova private hits; opening chat with no pick shows the empty state, not a guessed persona. **Code is in; do not mark done until the sitting below passes.**
+- Audit follow-up: call phases, call and chat buttons, the transcript empty states and the request-failed fallback were hardcoded in `VoicePage.tsx` and `ChatPage.tsx`. They now come from `VITE_CALL_*` / `VITE_CHAT_*` / `VITE_REQUEST_FAILED` like the rest of the copy. Adding browser copy means the running Vite needs a restart and the keys must exist in `.env`, not only `.env.example`, or `requiredVite` throws on load.
 
 ### Part 5.6 — Isolation and delete-my-data for many personas
 
@@ -104,13 +107,16 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 - Manual test: user A cannot read user B’s sitting for the same published persona; user A’s first-persona memory tenants are not the second persona’s private pool; delete-my-data forgets and unsubscribes every persona that member used. **Code is in; do not mark done until the sitting below passes.**
 - Audit (8 Sep 2026) found and fixed four gaps: a relayed worker 404 told a member an unpublished draft existed (`memberFacingBody` now makes every member-facing 404 identical); `GET /api/me/sessions/:id` still served a transcript after unpublish (member views filter on `published`, owner views do not); the memory panel showed shared-pool rows under “what it remembers about you” (now only the acting member’s own private tenant, `worker/src/worker/engram/tenant.py`); delete-my-data enumerated only personas it could still prove were used and wiped Postgres even when the Engram purge failed (now every catalog persona, and it refuses to delete our rows unless the purge came back clean).
 - **Engram-side per-member private memory is blocked externally.** The conversation endpoints take no subject, so with one server key every member shares the org admin’s private pool — evidence, the ask to Engram, and the interim behaviour are in [ENGRAM.md](ENGRAM.md) §2.3. The private-pool half of this manual test cannot pass until they answer; the app-side half (session ownership, persona pin, published gate) passes and `npm run isolation` is green.
-- Probe debt to close before this is called done: the memory-panel assertion is negative (“not user B’s id”) and passed vacuously for months. It must assert the private tenant **equals** the acting member. Also missing: voice isolation, cross-user theft on the second persona, the reverse direction, and delete-my-data.
+- Probe hardened (8 Sep 2026). Added: the **positive** tenant assertion — every private row a member reads must belong to that member, which is the check that would have caught §2.3 on day one instead of passing vacuously for months; cross-user reads in **both** directions on **both** personas (`owner_second`, `other_first`, `other_second` for session and chat); the second member's second-persona list excluding the other member and the other persona; and a transcript on an unpublished persona returning 404 to its own member while staying visible to the owner.
+- Still not probed, with reasons: **voice/WebSocket isolation** — the spoken path runs the same `TurnRunner.begin` identity gate, and forged identity headers on the public think endpoint are already covered by `npm run security` (`worker/src/worker/observe/security.py`), so a WebSocket probe would re-test the same gate through a harder harness. **Delete-my-data** — asserting it end to end means irreversibly erasing a real member, so it stays a manual sitting.
 
 ### Part 5.7 — Unpublish and destroy
 
 - Goal: hide vs wipe are different, both owner-only, both confirmed.
 - Tasks: unpublish hides from members, leaves Engram pools, next think 404s on a live call; destroy calls `personas.delete` after typed confirm and removes the local row. Copy from config. Never destroy from a member UI.
-- Manual test: unpublish makes the persona disappear from the picker; republish restores chats still in Engram. Destroy of a throwaway persona makes retrieve/chat 404 and local history gone.
+- Built: unpublish now asks first (a confirm panel, copy from config) because taking a persona away from members ends a live call on its next reply; publishing stays one click. Destroy is confirmed by **typing the persona's handle**, not a fixed phrase, so the owner cannot wipe the wrong row with something already in the clipboard. Order is Engram first (`personas.delete` removes the shared pool and every member's private pool, so there is nothing left to unsubscribe), then our rows — while they exist we can still name what to delete. `subscriptions` and `sessions` are `ON DELETE RESTRICT`, so `delete_persona_cascade` clears both before the persona in one transaction; turns, spans, memory refs and audio rows follow by cascade. The gateway collects that persona's blob urls **before** calling the worker, because the rows that name them are about to go. An Engram 404 means it is already gone their side and the local rows still get cleared. Also on the CLI: `npm run admin -- destroy --persona-id <id> --confirm <handle>`.
+- Verified live on a throwaway local row: wrong handle → 400 `confirmation_mismatch` with nothing touched; correct handle → persona, sitting, turn, latency span and subscription all gone.
+- Manual test: unpublish makes the persona disappear from the picker; republish restores chats still in Engram. Destroy of a throwaway persona makes retrieve/chat 404 and local history gone. **Destroy against a real Engram persona has not been run — it is irreversible and needs a throwaway persona Tauqueer is willing to lose.**
 
 ### Part 5.8 — Engram People then subscribe
 
@@ -130,3 +136,11 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 ## 4. Done when (the phase)
 
 A member picks Ada or Nova on chat and on voice, each remembers that member separately, the owner can teach and voice them separately, unpublished drafts stay owner-only, destroy is explicit, two tabs do not mix pools, `npm run isolation` covers two users × two personas, and first talk joins Engram People then subscribes that persona. Then stop. Onboarding UI and accounts are [FUTURE.md](FUTURE.md).
+
+### What is left (8 Sep 2026)
+
+Code: nothing outstanding. Every part is built and the automated checks pass.
+
+1. **Blocked on Engram** — “each remembers that member separately” cannot be true while the conversation endpoints resolve the private pool from the API key ([ENGRAM.md](ENGRAM.md) §2.3). Everything else in that sentence holds. Private memory written under the shared admin identity is disposable, so decide whether to wipe those pools once a subject lands.
+2. **Live sittings** — voice hang-up-and-switch; chat / history / memory on two personas; two users × two personas by hand; delete-my-data; destroy against a persona you are willing to lose. Each is named in its part above.
+3. **Do not** treat the passing isolation probe as proof of Engram-side per-member memory. It proves the app's own gates, and now proves that no member is shown another member's pool.

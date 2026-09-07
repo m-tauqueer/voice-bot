@@ -142,6 +142,37 @@ export type UiCopy = {
   personaUnpublished: string;
   personaPublishedBadge: string;
   personaDraftBadge: string;
+  personaUnpublishConfirmTitle: string;
+  personaUnpublishConfirmBody: string;
+  personaUnpublishConfirmLabel: string;
+  personaConfirmCancelLabel: string;
+  personaDestroyTitle: string;
+  personaDestroyBody: string;
+  personaDestroyHint: string;
+  personaDestroyConfirmLabel: string;
+  personaDestroyLabel: string;
+  personaDestroyingLabel: string;
+  personaDestroyed: string;
+  requestFailed: string;
+  callPhaseIdle: string;
+  callPhaseConnecting: string;
+  callPhaseListening: string;
+  callPhaseThinking: string;
+  callPhaseSpeaking: string;
+  callPhaseReconnecting: string;
+  callPhaseError: string;
+  callStartLabel: string;
+  callStartingLabel: string;
+  callEndLabel: string;
+  callMicLabel: string;
+  callSessionSavedBadge: string;
+  callTranscriptListening: string;
+  callTranscriptIdle: string;
+  chatNewConversationLabel: string;
+  chatThinkingLabel: string;
+  chatMessageLabel: string;
+  chatSendLabel: string;
+  chatSendingLabel: string;
   personaHandleLabel: string;
   personaNameLabel: string;
   personaDescriptionLabel: string;
@@ -351,6 +382,45 @@ export function loadUiCopy(): UiCopy {
     personaUnpublished: requiredVite("VITE_PERSONA_UNPUBLISHED"),
     personaPublishedBadge: requiredVite("VITE_PERSONA_PUBLISHED_BADGE"),
     personaDraftBadge: requiredVite("VITE_PERSONA_DRAFT_BADGE"),
+    personaUnpublishConfirmTitle: requiredVite(
+      "VITE_PERSONA_UNPUBLISH_CONFIRM_TITLE",
+    ),
+    personaUnpublishConfirmBody: requiredVite(
+      "VITE_PERSONA_UNPUBLISH_CONFIRM_BODY",
+    ),
+    personaUnpublishConfirmLabel: requiredVite(
+      "VITE_PERSONA_UNPUBLISH_CONFIRM_LABEL",
+    ),
+    personaConfirmCancelLabel: requiredVite("VITE_PERSONA_CONFIRM_CANCEL_LABEL"),
+    personaDestroyTitle: requiredVite("VITE_PERSONA_DESTROY_TITLE"),
+    personaDestroyBody: requiredVite("VITE_PERSONA_DESTROY_BODY"),
+    personaDestroyHint: requiredVite("VITE_PERSONA_DESTROY_HINT"),
+    personaDestroyConfirmLabel: requiredVite(
+      "VITE_PERSONA_DESTROY_CONFIRM_LABEL",
+    ),
+    personaDestroyLabel: requiredVite("VITE_PERSONA_DESTROY_LABEL"),
+    personaDestroyingLabel: requiredVite("VITE_PERSONA_DESTROYING_LABEL"),
+    personaDestroyed: requiredVite("VITE_PERSONA_DESTROYED"),
+    requestFailed: requiredVite("VITE_REQUEST_FAILED"),
+    callPhaseIdle: requiredVite("VITE_CALL_PHASE_IDLE"),
+    callPhaseConnecting: requiredVite("VITE_CALL_PHASE_CONNECTING"),
+    callPhaseListening: requiredVite("VITE_CALL_PHASE_LISTENING"),
+    callPhaseThinking: requiredVite("VITE_CALL_PHASE_THINKING"),
+    callPhaseSpeaking: requiredVite("VITE_CALL_PHASE_SPEAKING"),
+    callPhaseReconnecting: requiredVite("VITE_CALL_PHASE_RECONNECTING"),
+    callPhaseError: requiredVite("VITE_CALL_PHASE_ERROR"),
+    callStartLabel: requiredVite("VITE_CALL_START_LABEL"),
+    callStartingLabel: requiredVite("VITE_CALL_STARTING_LABEL"),
+    callEndLabel: requiredVite("VITE_CALL_END_LABEL"),
+    callMicLabel: requiredVite("VITE_CALL_MIC_LABEL"),
+    callSessionSavedBadge: requiredVite("VITE_CALL_SESSION_SAVED_BADGE"),
+    callTranscriptListening: requiredVite("VITE_CALL_TRANSCRIPT_LISTENING"),
+    callTranscriptIdle: requiredVite("VITE_CALL_TRANSCRIPT_IDLE"),
+    chatNewConversationLabel: requiredVite("VITE_CHAT_NEW_CONVERSATION_LABEL"),
+    chatThinkingLabel: requiredVite("VITE_CHAT_THINKING_LABEL"),
+    chatMessageLabel: requiredVite("VITE_CHAT_MESSAGE_LABEL"),
+    chatSendLabel: requiredVite("VITE_CHAT_SEND_LABEL"),
+    chatSendingLabel: requiredVite("VITE_CHAT_SENDING_LABEL"),
     personaHandleLabel: requiredVite("VITE_PERSONA_HANDLE_LABEL"),
     personaNameLabel: requiredVite("VITE_PERSONA_NAME_LABEL"),
     personaDescriptionLabel: requiredVite("VITE_PERSONA_DESCRIPTION_LABEL"),

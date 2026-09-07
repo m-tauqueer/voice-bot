@@ -114,6 +114,88 @@ describe("AdminPage personas", () => {
     });
   });
 
+  it("asks before taking a published persona away from members", async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Unpublish" }))[0],
+    );
+    expect(
+      await screen.findByText("Unpublish this persona?"),
+    ).toBeTruthy();
+    expect(
+      apiMock.mock.calls.some(
+        ([path]) => path === "/api/admin/persona/publish",
+      ),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Unpublish this persona?")).toBeNull();
+    });
+    expect(
+      apiMock.mock.calls.some(
+        ([path]) => path === "/api/admin/persona/publish",
+      ),
+    ).toBe(false);
+  });
+
+  it("unpublishes locally once the owner confirms", async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Unpublish" }))[0],
+    );
+    await screen.findByText("Unpublish this persona?");
+    const confirm = screen
+      .getAllByRole("button", { name: "Unpublish" })
+      .at(-1) as HTMLElement;
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(
+        ([path]) => path === "/api/admin/persona/publish",
+      );
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        persona_id: ada.id,
+        published: false,
+      });
+    });
+  });
+
+  it("keeps destroy locked until the handle is typed exactly", async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    const destroy = (await screen.findByRole("button", {
+      name: "Destroy persona",
+    })) as HTMLButtonElement;
+    expect(destroy.disabled).toBe(true);
+
+    const field = screen.getByLabelText("Handle", {
+      selector: "input[value='']",
+    });
+    fireEvent.change(field, { target: { value: "Ada" } });
+    expect(
+      (screen.getByRole("button", { name: "Destroy persona" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.change(field, { target: { value: "ada" } });
+    const armed = screen.getByRole("button", {
+      name: "Destroy persona",
+    }) as HTMLButtonElement;
+    expect(armed.disabled).toBe(false);
+    fireEvent.click(armed);
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(
+        ([path]) => path === "/api/admin/persona/destroy",
+      );
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        persona_id: ada.id,
+        confirmation: "ada",
+      });
+    });
+  });
+
   it("shows the link form when Engram create is forbidden", async () => {
     apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
       if (init?.method === "PUT") {

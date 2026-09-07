@@ -76,14 +76,14 @@ const bubbleStyle = (speaker: string, userSpeaker: string): CSSProperties => ({
   whiteSpace: "pre-wrap",
 });
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "request failed";
+  return fallback;
 }
 
 export function ChatPage() {
@@ -125,7 +125,7 @@ export function ChatPage() {
         }
       } catch (error) {
         if (!cancelled) {
-          setBanner({ tone: "error", text: errorMessage(error) });
+          setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
         }
       } finally {
         if (!cancelled) {
@@ -168,7 +168,7 @@ export function ChatPage() {
         setTurns([]);
         return;
       }
-      setBanner({ tone: "error", text: errorMessage(error) });
+      setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
     }
   }
 
@@ -243,7 +243,7 @@ export function ChatPage() {
       }
     } catch (error) {
       setDraft(text);
-      setBanner({ tone: "error", text: errorMessage(error) });
+      setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
     } finally {
       setBusy(false);
     }
@@ -282,7 +282,7 @@ export function ChatPage() {
             </p>
           </div>
           <Button type="button" onClick={startFresh} disabled={pickerLocked || !picked}>
-            New conversation
+            {copy.chatNewConversationLabel}
           </Button>
         </div>
 
@@ -326,7 +326,7 @@ export function ChatPage() {
               </div>
             ))}
             {busy && (
-              <p style={{ color: "var(--text-mid)" }}>Thinking…</p>
+              <p style={{ color: "var(--text-mid)" }}>{copy.chatThinkingLabel}</p>
             )}
             <div ref={bottom} />
           </div>
@@ -335,7 +335,7 @@ export function ChatPage() {
         <Card>
           <form onSubmit={send} style={{ display: "grid", gap: 12 }}>
             <Textarea
-              label="Message"
+              label={copy.chatMessageLabel}
               rows={3}
               value={draft}
               disabled={busy || sittingLoad || !canTalk}
@@ -353,9 +353,9 @@ export function ChatPage() {
                 variant="solid"
                 disabled={busy || sittingLoad || !canTalk || draft.trim().length === 0}
               >
-                {busy ? "Sending…" : "Send"}
+                {busy ? copy.chatSendingLabel : copy.chatSendLabel}
               </Button>
-              {sessionId && <Badge>Session saved</Badge>}
+              {sessionId && <Badge>{copy.callSessionSavedBadge}</Badge>}
             </div>
           </form>
         </Card>

@@ -157,6 +157,8 @@ export function AdminPage() {
   const [answerText, setAnswerText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [subscribeUser, setSubscribeUser] = useState("");
+  const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
+  const [destroyConfirm, setDestroyConfirm] = useState("");
   const loadSeq = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -306,6 +308,37 @@ export function AdminPage() {
     await loadPersona(persona.id);
     await session.reloadPersona();
     setStatus(nextPublished ? copy.personaPublished : copy.personaUnpublished);
+  }
+
+  // Publishing is safe. Taking a persona away from members mid-call is not,
+  // so that direction asks first.
+  function requestPublishToggle(persona: Persona) {
+    if (persona.published) {
+      setConfirmingUnpublish(true);
+      return;
+    }
+    void run("publish", async () => {
+      await togglePublished(persona);
+    });
+  }
+
+  async function destroyPersona(persona: Persona) {
+    await api("/api/admin/persona/destroy", {
+      method: "POST",
+      body: JSON.stringify({
+        [pinField]: persona.id,
+        confirmation: destroyConfirm,
+      }),
+    });
+    setDestroyConfirm("");
+    loadSeq.current += 1;
+    setSelectedId(null);
+    setSubscriptions([]);
+    setQuestions([]);
+    setCoverage(null);
+    await loadPersona();
+    await session.reloadPersona();
+    setStatus(copy.personaDestroyed);
   }
 
   if (!me || boot === "loading") {
@@ -536,11 +569,7 @@ export function AdminPage() {
                   variant="solid"
                   size="sm"
                   disabled={busy !== null}
-                  onClick={() =>
-                    run("publish", async () => {
-                      await togglePublished(selected);
-                    })
-                  }
+                  onClick={() => requestPublishToggle(selected)}
                 >
                   {selected.published
                     ? copy.personaUnpublishLabel
@@ -614,11 +643,7 @@ export function AdminPage() {
                 </Button>
                 <Button
                   disabled={busy !== null}
-                  onClick={() =>
-                    run("publish", async () => {
-                      await togglePublished(selected);
-                    })
-                  }
+                  onClick={() => requestPublishToggle(selected)}
                 >
                   {selected.published
                     ? copy.personaUnpublishLabel
@@ -627,6 +652,37 @@ export function AdminPage() {
               </div>
             </div>
           </Card>
+
+          {confirmingUnpublish && (
+            <Card>
+              <h2 className="mc-sec__title" style={{ marginBottom: 10 }}>
+                {copy.personaUnpublishConfirmTitle}
+              </h2>
+              <p style={{ color: "var(--text-mid)", marginTop: 0 }}>
+                {copy.personaUnpublishConfirmBody}
+              </p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Button
+                  variant="danger"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run("unpublish", async () => {
+                      await togglePublished(selected);
+                      setConfirmingUnpublish(false);
+                    })
+                  }
+                >
+                  {copy.personaUnpublishConfirmLabel}
+                </Button>
+                <Button
+                  disabled={busy !== null}
+                  onClick={() => setConfirmingUnpublish(false)}
+                >
+                  {copy.personaConfirmCancelLabel}
+                </Button>
+              </div>
+            </Card>
+          )}
 
           <Card>
             <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
@@ -808,6 +864,40 @@ export function AdminPage() {
                 ))}
               </ul>
             )}
+          </Card>
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 10 }}>
+              {copy.personaDestroyTitle}
+            </h2>
+            <p style={{ color: "var(--text-mid)", marginTop: 0 }}>
+              {copy.personaDestroyBody}
+            </p>
+            <p style={{ color: "var(--text-mid)" }}>
+              {copy.personaDestroyHint} <code>{selected.handle}</code>
+            </p>
+            <Input
+              label={copy.personaDestroyConfirmLabel}
+              value={destroyConfirm}
+              onChange={(event) => setDestroyConfirm(event.target.value)}
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <Button
+                variant="danger"
+                disabled={
+                  busy !== null || destroyConfirm.trim() !== selected.handle
+                }
+                onClick={() =>
+                  run("destroy", async () => {
+                    await destroyPersona(selected);
+                  })
+                }
+              >
+                {busy === "destroy"
+                  ? copy.personaDestroyingLabel
+                  : copy.personaDestroyLabel}
+              </Button>
+            </div>
           </Card>
         </>
       )}

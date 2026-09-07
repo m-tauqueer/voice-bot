@@ -11,7 +11,7 @@ import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
 import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
-import { loadUiCopy } from "../../lib/uiCopy";
+import { loadUiCopy, type UiCopy } from "../../lib/uiCopy";
 import {
   parsePublishedDirectory,
   type PublishedPersona,
@@ -55,36 +55,36 @@ const bubbleStyle = (fromUser: boolean): CSSProperties => ({
   whiteSpace: "pre-wrap",
 });
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "request failed";
+  return fallback;
 }
 
-function phaseLabel(phase: CallPhase): string {
+function phaseLabel(phase: CallPhase, copy: UiCopy): string {
   if (phase === "starting") {
-    return "Connecting";
+    return copy.callPhaseConnecting;
   }
   if (phase === "listening") {
-    return "Listening";
+    return copy.callPhaseListening;
   }
   if (phase === "thinking") {
-    return "Thinking";
+    return copy.callPhaseThinking;
   }
   if (phase === "speaking") {
-    return "Speaking";
+    return copy.callPhaseSpeaking;
   }
   if (phase === "reconnecting") {
-    return "Reconnecting";
+    return copy.callPhaseReconnecting;
   }
   if (phase === "error") {
-    return "Error";
+    return copy.callPhaseError;
   }
-  return "Idle";
+  return copy.callPhaseIdle;
 }
 
 function phaseTone(phase: CallPhase): BadgeTone {
@@ -174,7 +174,7 @@ export function VoicePage() {
         setDirectory(parsePublishedDirectory(payload));
       } catch (error) {
         if (!cancelled) {
-          setBanner({ tone: "error", text: errorMessage(error) });
+          setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
         }
       } finally {
         if (!cancelled) {
@@ -373,7 +373,7 @@ export function VoicePage() {
       });
       session.current.socket = socket;
     } catch (error) {
-      setBanner({ tone: "error", text: errorMessage(error) });
+      setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
       setPhase("error");
       await endCall();
     }
@@ -436,7 +436,7 @@ export function VoicePage() {
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {inCall ? (
                 <Button type="button" variant="danger" onClick={() => void endCall()}>
-                  End call
+                  {copy.callEndLabel}
                 </Button>
               ) : (
                 <Button
@@ -445,15 +445,19 @@ export function VoicePage() {
                   disabled={starting || !picked}
                   onClick={() => void startCall()}
                 >
-                  {starting ? "Starting…" : "Start call"}
+                  {starting ? copy.callStartingLabel : copy.callStartLabel}
                 </Button>
               )}
-              <Badge tone={phaseTone(phase)}>{phaseLabel(phase)}</Badge>
-              {sessionId && <Badge>Session saved</Badge>}
+              <Badge tone={phaseTone(phase)}>{phaseLabel(phase, copy)}</Badge>
+              {sessionId && <Badge>{copy.callSessionSavedBadge}</Badge>}
             </div>
             {(inCall || starting) && (
               <>
-                <BarMeter value={vu} label="Mic" accent={phase === "listening"} />
+                <BarMeter
+                  value={vu}
+                  label={copy.callMicLabel}
+                  accent={phase === "listening"}
+                />
                 {levels.length > 0 && (
                   <div
                     aria-hidden="true"
@@ -488,8 +492,8 @@ export function VoicePage() {
             {turns.length === 0 && (
               <p style={{ color: "var(--text-mid)" }}>
                 {inCall
-                  ? "Speak when the badge says Listening."
-                  : "Start a call to see the live transcript."}
+                  ? copy.callTranscriptListening
+                  : copy.callTranscriptIdle}
               </p>
             )}
             {turns.map((turn, index) => (

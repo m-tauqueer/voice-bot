@@ -177,6 +177,12 @@ class WorkerSettings(BaseSettings):
         default="Engram refused create; record a dashboard persona id instead",
         min_length=1,
     )
+    # Destroy is confirmed by typing the persona's own handle, so the owner
+    # cannot wipe the wrong one with a phrase they already have in the clipboard.
+    admin_error_destroy_confirmation: str = Field(
+        default="type the persona handle exactly to destroy it",
+        min_length=1,
+    )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)

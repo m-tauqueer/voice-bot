@@ -72,7 +72,7 @@ export async function createGatewayApp(deps: {
   });
   await app.register(websocket);
   await registerAuthRoutes(app, { config, sql, redis });
-  await registerAdminRoutes(app, { config });
+  await registerAdminRoutes(app, { config, sql });
   await registerPersonaRoutes(app, { config, sql });
   await registerChatRoutes(app, { config, sql, redis });
   await registerInsightRoutes(app, { config, sql });

@@ -328,6 +328,38 @@ try {
           unpublishedMem.statusCode === 404,
           `${unpublishedMem.statusCode}`,
         );
+
+        // Unpublish hides transcripts too, not just the picker. The owner
+        // still needs the draft visible to inspect it.
+        const [draftSitting] = await sql<{ id: string }[]>`
+          INSERT INTO sessions (user_id, persona_id, channel)
+          VALUES (${other.id}, ${draft.id}, ${SESSION_CHANNEL.TEXT})
+          RETURNING id
+        `;
+        if (draftSitting) {
+          try {
+            const memberRead = await get(
+              `/api/me/sessions/${draftSitting.id}`,
+              otherCookie,
+            );
+            check(
+              "unpublished_persona_transcript_is_404_for_its_member",
+              memberRead.statusCode === 404,
+              `${memberRead.statusCode}`,
+            );
+            const ownerRead = await get(
+              `/api/admin/sessions/${draftSitting.id}`,
+              ownerCookie,
+            );
+            check(
+              "unpublished_persona_transcript_stays_visible_to_owner",
+              ownerRead.statusCode === 200,
+              `${ownerRead.statusCode}`,
+            );
+          } finally {
+            await sql`DELETE FROM sessions WHERE id = ${draftSitting.id}`;
+          }
+        }
       }
     } finally {
       if (draft) {
@@ -404,6 +436,28 @@ try {
               personaEngineUserId(tenant) ===
               personaEngineUserId(owner.engram_user_id),
           ),
+        );
+
+        // The two checks above are negative: they passed for months while the
+        // panel served a third party's pool that matched neither id. Assert
+        // the positive — every private row belongs to the member reading it.
+        const ownsEveryPrivateRow = (
+          tenants: Set<string>,
+          engramUserId: string,
+        ) =>
+          [...tenants].every(
+            (tenant) =>
+              personaEngineUserId(tenant) === personaEngineUserId(engramUserId),
+          );
+        check(
+          "memory_panel_owner_private_rows_are_the_owners",
+          ownsEveryPrivateRow(ownerPrivateTenants, owner.engram_user_id),
+          [...ownerPrivateTenants].join(",") || "(none)",
+        );
+        check(
+          "memory_panel_other_private_rows_are_that_member's",
+          ownsEveryPrivateRow(otherPrivateTenants, other.engram_user_id),
+          [...otherPrivateTenants].join(",") || "(none)",
         );
       }
     }
@@ -504,6 +558,60 @@ try {
             !otherFirstIds.has(byName.owner_first),
           `${otherFirstList.statusCode}`,
         );
+
+        const otherSecondList = await get(
+          `/api/me/sessions?${pin(secondPersona.id)}`,
+          otherCookie,
+        );
+        const otherSecondIds = new Set(
+          (otherSecondList.json() as { sessions?: { id?: string }[] }).sessions
+            ?.map((row) => row.id)
+            .filter((id): id is string => typeof id === "string") ?? [],
+        );
+        check(
+          "other_second_list_includes_own_sitting",
+          otherSecondList.statusCode === 200 &&
+            typeof byName.other_second === "string" &&
+            otherSecondIds.has(byName.other_second),
+          `${otherSecondList.statusCode}`,
+        );
+        check(
+          "other_second_list_excludes_owner_sitting",
+          typeof byName.owner_second === "string" &&
+            !otherSecondIds.has(byName.owner_second),
+        );
+        check(
+          "other_second_list_excludes_first_persona",
+          typeof byName.other_first === "string" &&
+            !otherSecondIds.has(byName.other_first),
+        );
+
+        // Both directions, both personas: a leak in either one is a leak.
+        for (const [name, cookie, label] of [
+          ["owner_second", otherCookie, "other_user_cannot_read_owner_second"],
+          ["other_first", ownerCookie, "owner_cannot_read_other_first"],
+          ["other_second", ownerCookie, "owner_cannot_read_other_second"],
+        ] as const) {
+          const sessionId = byName[name];
+          if (!sessionId) {
+            continue;
+          }
+          const stolen = await get(`/api/me/sessions/${sessionId}`, cookie);
+          check(
+            `${label}_session`,
+            stolen.statusCode === 404,
+            `${stolen.statusCode}`,
+          );
+          const stolenChat = await get(
+            `/api/chat?session_id=${sessionId}`,
+            cookie,
+          );
+          check(
+            `${label}_chat`,
+            stolenChat.statusCode === 404,
+            `${stolenChat.statusCode}`,
+          );
+        }
 
         if (byName.owner_first) {
           const stolenPinned = await get(

@@ -45,6 +45,11 @@ class PublishIn(BaseModel):
     persona_id: UUID | None = None
 
 
+class DestroyIn(BaseModel):
+    confirmation: str = Field(min_length=1)
+    persona_id: UUID | None = None
+
+
 def _raise_admin(exc: AdminError) -> NoReturn:
     raise HTTPException(
         status_code=exc.status,
@@ -105,6 +110,16 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
         try:
             return admin.publish(
                 published=body.published,
+                persona_id=body.persona_id,
+            )
+        except AdminError as exc:
+            _raise_admin(exc)
+
+    @router.post("/persona/destroy")
+    def destroy_persona(body: DestroyIn) -> dict[str, Any]:
+        try:
+            return admin.destroy(
+                confirmation=body.confirmation,
                 persona_id=body.persona_id,
             )
         except AdminError as exc:

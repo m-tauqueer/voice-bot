@@ -253,7 +253,7 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 `worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), converse. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
 
-The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, and publish or unpublish locally (Engram `delete` is a later destroy step). The gateway does not guess one local row.
+The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, publish or unpublish locally, and destroy. Destroy calls `personas.delete` (shared pool plus every member's private pool) after the owner types the handle, then clears the local subscriptions, sittings and persona row. The gateway does not guess one local row.
 
 Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 

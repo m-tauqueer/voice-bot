@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from worker.admin.confirm import confirmation_matches
 from worker.admin.errors import AdminError
 from worker.admin.store import (
     connect,
+    delete_persona_cascade,
     find_user,
     get_persona,
     list_personas,
@@ -28,6 +30,7 @@ from worker.engram.errors import (
     BrainError,
     ConflictError,
     ForbiddenError,
+    NotFoundError,
     ValidationError,
 )
 from worker.engram.interface import IngestOutcome, PersonaBrain, PersonaRecord
@@ -135,6 +138,21 @@ class PersonaAdmin:
                 reason="persona_missing",
             )
         return row
+
+    def seed_persona_id(self) -> str | None:
+        """`ENGRAM_PERSONA_ID` seeds an empty catalog and nothing else.
+
+        With rows already recorded it must not stand in for a pin: `register`
+        upserts on `engram_persona_id`, so an implicit id would quietly rewrite
+        an existing persona's handle, name and voice.
+        """
+        seed = self._settings.engram_persona_id
+        if not seed:
+            return None
+        with connect(self._settings) as conn:
+            if list_personas(conn):
+                return None
+        return seed
 
     def show(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
         pin = _pin(persona_id)
@@ -276,6 +294,43 @@ class PersonaAdmin:
                 reason="persona_missing",
             )
         return {"persona": _row(local)}
+
+    def destroy(
+        self,
+        *,
+        confirmation: str,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        """Wipe a persona: Engram pools first, then our record of it.
+
+        Engram `delete` removes the shared pool **and** every member's private
+        pool for this persona, so there is nothing to unsubscribe afterwards.
+        Our rows go last: while they exist we can still name what to delete.
+        """
+        persona = self._require_active(persona_id)
+        if not confirmation_matches(confirmation, str(persona["handle"])):
+            raise AdminError(
+                self._settings.admin_error_destroy_confirmation,
+                status=400,
+                reason="confirmation_mismatch",
+            )
+        engram = "deleted"
+        try:
+            with self._brain() as brain:
+                brain.delete_persona(str(persona["engram_persona_id"]))
+        except NotFoundError:
+            # Already gone on their side; our row is the only thing left.
+            engram = "missing"
+        except BrainError as exc:
+            raise _brain_error(exc) from exc
+        with connect(self._settings) as conn:
+            removed = delete_persona_cascade(conn, str(persona["id"]))
+        return {
+            "ok": True,
+            "persona": _row(persona),
+            "engram": engram,
+            "removed": removed,
+        }
 
     def teach(
         self,

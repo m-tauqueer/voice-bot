@@ -1,8 +1,13 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type postgres from "postgres";
 import { createRequireOwner } from "../auth/owner.js";
 import { callWorker } from "../clients/worker.js";
 import type { GatewayConfig } from "../config.js";
+import { deleteAudioBlobs } from "../lifecycle/blobs.js";
+import { listPersonaAudioUrls } from "../lifecycle/wipe.js";
 import { parseOptionalPersonaId } from "../personas.js";
+
+type Sql = ReturnType<typeof postgres>;
 
 async function sendWorker(reply: FastifyReply, response: Response) {
   const text = await response.text();
@@ -46,9 +51,9 @@ export function workerPersonaPath(
 
 export async function registerAdminRoutes(
   app: FastifyInstance,
-  deps: { config: GatewayConfig },
+  deps: { config: GatewayConfig; sql: Sql },
 ): Promise<void> {
-  const { config } = deps;
+  const { config, sql } = deps;
   const requireOwner = createRequireOwner(config);
 
   await app.register(
@@ -87,6 +92,32 @@ export async function registerAdminRoutes(
             body: JSON.stringify(request.body ?? {}),
           },
         );
+        return sendWorker(reply, response);
+      });
+
+      admin.post("/persona/destroy", async (request, reply) => {
+        const pin = parseOptionalPersonaId(
+          request.body,
+          config.PERSONA_ID_QUERY,
+        );
+        if (!pin.ok || !pin.id) {
+          return reply.code(400).send({ error: "invalid body" });
+        }
+        // Blobs live outside Postgres, so collect them while the rows that
+        // name them are still here. The worker deletes those rows.
+        const urls = await listPersonaAudioUrls(sql, pin.id);
+        const response = await callWorker(
+          config,
+          "/internal/admin/persona/destroy",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(request.body ?? {}),
+          },
+        );
+        if (response.ok) {
+          await deleteAudioBlobs(config, urls, request.log);
+        }
         return sendWorker(reply, response);
       });
 
