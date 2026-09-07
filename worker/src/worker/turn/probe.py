@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from uuid import UUID
 
-from worker.admin.store import connect, require_single_persona
+from worker.admin.store import connect, probe_persona
 from worker.config import load_settings
 from worker.persistence.sessions import create_session
 from worker.schema import SESSION_CHANNEL_TEXT
@@ -17,9 +17,9 @@ def main() -> int:
     settings = load_settings()
     conn = connect(settings)
     try:
-        persona = require_single_persona(conn, settings)
+        persona = probe_persona(conn, settings)
         if persona is None:
-            print("FAIL: no persona recorded locally", file=sys.stderr)
+            print("FAIL: no published persona recorded locally", file=sys.stderr)
             return 1
         with conn.cursor() as cur:
             cur.execute(

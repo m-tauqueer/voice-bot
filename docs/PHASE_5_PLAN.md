@@ -65,7 +65,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 3. Parts (name one to start)
 
-**Every part 5.1–5.8 is built.** Automated checks are green: `npm test` (gateway, frontend, worker), `npm run isolation`, `npm run security`. What is still open is **live sittings**, not code — each part below says which. One thing is blocked outside this repo: Engram-side per-member private memory ([ENGRAM.md](ENGRAM.md) §2.3).
+**Every part 5.1–5.8 is built.** Automated checks are green: `npm test` (gateway, frontend, worker), `npm run isolation`, `npm run security`, `npm run failures`. What is still open is **live sittings**, not code — each part below says which. One thing is blocked outside this repo: Engram-side per-member private memory ([ENGRAM.md](ENGRAM.md) §2.3).
 
 ### Part 5.1 — Stop assuming one persona (done)
 
@@ -139,8 +139,13 @@ A member picks Ada or Nova on chat and on voice, each remembers that member sepa
 
 ### What is left (8 Sep 2026)
 
-Code: nothing outstanding. Every part is built and the automated checks pass.
+Code for 5.1–5.8 is built. Logic review (same day) found no isolation/fail-closed product defects; two probe nits were fixed (unpublished `PROBE_PERSONA_ID` pins fail closed; `npm run failures` restores any temporary subscription mirror so first-talk join is not skipped later). Automated suite green including `npm run failures`. Residual risk: CLI `npm run admin -- destroy` does not collect Azure blob urls the way the gateway destroy route does — harmless while `VOICE_AUDIO_PERSIST_ENABLED=false`.
 
 1. **Blocked on Engram** — “each remembers that member separately” cannot be true while the conversation endpoints resolve the private pool from the API key ([ENGRAM.md](ENGRAM.md) §2.3). Everything else in that sentence holds. Private memory written under the shared admin identity is disposable, so decide whether to wipe those pools once a subject lands.
-2. **Live sittings** — voice hang-up-and-switch; chat / history / memory on two personas; two users × two personas by hand; delete-my-data; destroy against a persona you are willing to lose. Each is named in its part above.
+2. **Live sittings (your checklist)** — do not mark a part done until its sitting passes:
+   - **5.4** Hang up on `/voice`, pick the other published persona, talk again; transcripts stay per persona; TTS can differ per row.
+   - **5.5** Chat / history / memory on Ada then Nova; no mix; empty state with no pick.
+   - **5.6** Two Google users × two personas by hand (session ownership + persona pin). Private-tenant half stays blocked on §2.3. Optional: delete-my-data on a throwaway member.
+   - **5.7** Unpublish → disappears from picker; republish restores Engram chats. Destroy only a throwaway Engram persona you are willing to lose.
+   - **5.8** Subscribe tester or first talk puts that Google email on Engram People and under that persona’s Subscribers; second member is a second People row. Shared teach still reads. (True distinct private tenants still need Engram’s subject answer.)
 3. **Do not** treat the passing isolation probe as proof of Engram-side per-member memory. It proves the app's own gates, and now proves that no member is shown another member's pool.

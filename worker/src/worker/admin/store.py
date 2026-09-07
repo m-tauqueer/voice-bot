@@ -46,13 +46,37 @@ def pick_single_persona(
     )
 
 
-def require_single_persona(
+def pick_probe_persona(
+    rows: list[PersonaRow],
+    *,
+    persona_id: str | None = None,
+) -> PersonaRow | None:
+    """One published persona for a probe to talk to.
+
+    A probe exercises the turn path, not the catalog, so a second persona must
+    not break it: without a pin it takes the oldest published row. `rows` is
+    expected in `created_at` order. `PROBE_PERSONA_ID` pins a specific published
+    row; an unpublished or missing pin yields None so the probe fails closed.
+    """
+    if persona_id:
+        wanted = str(persona_id)
+        for row in rows:
+            if str(row["id"]) == wanted and row.get("published") is True:
+                return row
+        return None
+    for row in rows:
+        if row.get("published") is True:
+            return row
+    return None
+
+
+def probe_persona(
     conn: psycopg.Connection,
     settings: WorkerSettings,
 ) -> PersonaRow | None:
-    return pick_single_persona(
+    return pick_probe_persona(
         list_personas(conn),
-        error=settings.admin_error_persona_pin_required,
+        persona_id=settings.probe_persona_id,
     )
 
 

@@ -168,6 +168,8 @@ class WorkerSettings(BaseSettings):
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
+    # Pins which published persona the probes talk to. Unset means the oldest.
+    probe_persona_id: str | None = None
     persona_error_not_found: str = Field(default="persona not found", min_length=1)
     admin_error_persona_pin_required: str = Field(
         default="persona_id is required when several personas exist",

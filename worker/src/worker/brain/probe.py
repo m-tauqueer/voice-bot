@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import time
 
-from worker.admin.store import connect, require_single_persona
+from worker.admin.store import connect, probe_persona
 from worker.config import load_settings
 from worker.persistence.sessions import create_session
 from worker.schema import SESSION_CHANNEL_VOICE
@@ -57,9 +57,9 @@ def _spoken(runner: TurnRunner, **kwargs) -> tuple[str, float, object]:
 def main() -> int:
     base = load_settings()
     conn = connect(base)
-    persona = require_single_persona(conn, base)
+    persona = probe_persona(conn, base)
     if persona is None:
-        print("FAIL: no persona recorded locally", file=sys.stderr)
+        print("FAIL: no published persona recorded locally", file=sys.stderr)
         return 1
     with conn.cursor() as cur:
         cur.execute(

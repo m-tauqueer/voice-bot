@@ -50,7 +50,7 @@ Failure handling and reconnect copy. Read API (personal history, owner reconstru
 
 Not built in 3.x: Azure deploy, multilingual, voice-clone (those are [FUTURE.md](FUTURE.md)).
 
-Engram subscribe is **not** an access gate today (this key 403s `org:manage` on subscribe and on listing subscribers). Isolation is app session + identity match. See [ENGRAM.md](ENGRAM.md) §4.
+Engram subscribe **is** the product grant path now: first talk joins People (`members:manage`) then `personas.subscribe` (`org:manage`) and fails closed if either fails. Isolation for transcripts is still app session + identity match. Engram-side private pools are not yet per-member — see [ENGRAM.md](ENGRAM.md) §2.3 and §4.
 
 ---
 

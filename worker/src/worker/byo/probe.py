@@ -8,7 +8,7 @@ import time
 
 from fastapi.testclient import TestClient
 
-from worker.admin.store import connect, require_single_persona
+from worker.admin.store import connect, probe_persona
 from worker.config import load_settings
 from worker.main import app
 from worker.persistence.sessions import create_session
@@ -237,9 +237,9 @@ def main() -> int:
 
     conn = connect(settings)
     try:
-        persona = require_single_persona(conn, settings)
+        persona = probe_persona(conn, settings)
         if persona is None:
-            print("FAIL: no persona recorded locally", file=sys.stderr)
+            print("FAIL: no published persona recorded locally", file=sys.stderr)
             return 1
         with conn.cursor() as cur:
             cur.execute(
