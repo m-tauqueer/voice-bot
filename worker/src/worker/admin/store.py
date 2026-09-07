@@ -164,6 +164,23 @@ def find_user(conn: psycopg.Connection, identifier: str) -> UserRow | None:
         return cur.fetchone()
 
 
+def set_engram_user_id(
+    conn: psycopg.Connection,
+    user_id: str,
+    engram_user_id: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET engram_user_id = %s
+            WHERE id = %s
+            """,
+            (engram_user_id, user_id),
+        )
+    conn.commit()
+
+
 def upsert_subscription(
     conn: psycopg.Connection,
     *,

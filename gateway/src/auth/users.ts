@@ -5,12 +5,23 @@ import type { AppUser } from "./types.js";
 
 type Sql = ReturnType<typeof postgres>;
 
+const HYPHENATED_UUID =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 type UserRow = {
   id: string;
   google_sub: string;
   email: string;
   engram_user_id: string;
 };
+
+/** Engram subscribe `user_id` max is 32 characters; uuid hex is 32. */
+export function personaEngineUserId(appUserId: string): string {
+  if (HYPHENATED_UUID.test(appUserId)) {
+    return appUserId.replaceAll("-", "").toLowerCase();
+  }
+  return appUserId;
+}
 
 function mapUser(row: UserRow): AppUser {
   return {
@@ -28,7 +39,7 @@ export async function upsertGoogleUser(
   const id = randomUUID();
   const rows = await sql<UserRow[]>`
     INSERT INTO users (id, google_sub, email, engram_user_id)
-    VALUES (${id}, ${identity.sub}, ${identity.email}, ${id})
+    VALUES (${id}, ${identity.sub}, ${identity.email}, ${personaEngineUserId(id)})
     ON CONFLICT (google_sub) DO UPDATE
     SET email = EXCLUDED.email, updated_at = now()
     RETURNING id, google_sub, email, engram_user_id

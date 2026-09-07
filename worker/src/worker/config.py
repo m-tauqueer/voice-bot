@@ -125,6 +125,23 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     log_subscribe_failed: str = Field(default="subscribe_failed", min_length=1)
+    log_engram_join_failed: str = Field(default="engram_join_failed", min_length=1)
+    log_engram_join_skipped: str = Field(default="engram_join_skipped", min_length=1)
+    failure_message_engram_join: str = Field(
+        default=(
+            "Could not join this member to the persona memory workspace. "
+            "The turn did not run."
+        ),
+        min_length=1,
+    )
+    failure_code_engram_join: str = Field(default="engram_join_failed", min_length=1)
+    engram_org_member_role: str = Field(default="member", min_length=1)
+    engram_org_member_password_nbytes: int = Field(default=24, ge=8)
+    engram_org_join_skip_email_prefix: str = Field(default="probe-", min_length=1)
+    engram_org_join_skip_email_domain: str = Field(
+        default="example.test",
+        min_length=1,
+    )
     voice_notice_kind_trace: str = Field(default="trace", min_length=1)
     voice_notice_trace_code: str = Field(default="turn_traced", min_length=1)
     voice_notice_trace_message: str = Field(default="Turn recorded.", min_length=1)

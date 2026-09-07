@@ -76,11 +76,6 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="email, app user id, or Engram user id",
     )
-    subscribe.add_argument(
-        "--record-local",
-        action="store_true",
-        help="write the local subscription row if Engram refuses subscribe",
-    )
     _add_persona_id(subscribe)
 
     publish = sub.add_parser("publish")
@@ -155,7 +150,6 @@ def main(argv: list[str] | None = None) -> int:
             _print(
                 admin.subscribe(
                     args.user,
-                    record_local=args.record_local,
                     persona_id=pin,
                 ),
             )

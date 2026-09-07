@@ -798,25 +798,6 @@ export function AdminPage() {
               >
                 {copy.personaSubscribeButton}
               </Button>
-              <Button
-                disabled={busy !== null || subscribeUser.trim().length === 0}
-                onClick={() =>
-                  run("record", async () => {
-                    await api("/api/admin/subscribe", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        [pinField]: selected.id,
-                        user: subscribeUser,
-                        record_local: true,
-                      }),
-                    });
-                    await loadPersona(selected.id);
-                    setStatus(copy.personaRecordedLocal);
-                  })
-                }
-              >
-                {copy.personaSubscribeLocal}
-              </Button>
             </div>
             {subscriptions.length > 0 && (
               <ul style={{ marginTop: 16, paddingLeft: 18, color: "var(--text-mid)" }}>

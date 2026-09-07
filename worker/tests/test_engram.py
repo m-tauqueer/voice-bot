@@ -30,6 +30,8 @@ class FakePersonas:
         self.converses: list[dict[str, object]] = []
         self.retrieve_errors: list[Exception] = []
         self.chat_error: Exception | None = None
+        self.subscribed: list[tuple[str, str]] = []
+        self.unsubscribed: list[tuple[str, str]] = []
 
     def retrieve(self, persona_id: str, query: str, top_k: int = 10):
         if self.retrieve_errors:
@@ -88,9 +90,11 @@ class FakePersonas:
         return [{"key": "q1"}]
 
     def subscribe(self, persona_id: str, user_id: str):
+        self.subscribed.append((persona_id, user_id))
         return {"subscribed": True}
 
     def unsubscribe(self, persona_id: str, user_id: str):
+        self.unsubscribed.append((persona_id, user_id))
         return {"unsubscribed": True}
 
     def subscribers(self, persona_id: str):
@@ -129,6 +133,12 @@ def test_chat_and_persona_helpers(settings: WorkerSettings) -> None:
     assert brain.questions("p1") == [{"key": "q1"}]
     assert brain.subscribe("p1", "u1") == {"subscribed": True}
     assert brain.unsubscribe("p1", "u1") == {"unsubscribed": True}
+    hyphenated = "3a07018e-b5c2-483a-b80f-07e90488b5f4"
+    assert brain.subscribe("p1", hyphenated) == {"subscribed": True}
+    assert client.personas.subscribed == [
+        ("p1", "u1"),
+        ("p1", "3a07018eb5c2483ab80f07e90488b5f4"),
+    ]
     assert brain.subscribers("p1") == [{"user_id": "u1"}]
     outcome = brain.chat("persona-1", "hello", session_id="sess-9")
     assert outcome.messages == ["The river was high."]

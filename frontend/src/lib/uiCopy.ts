@@ -172,9 +172,7 @@ export type UiCopy = {
   personaSubscribeTitle: string;
   personaSubscribeUser: string;
   personaSubscribeButton: string;
-  personaSubscribeLocal: string;
   personaSubscribed: string;
-  personaRecordedLocal: string;
   personaSelectFirst: string;
   personaPickerTitle: string;
   personaPickerEmpty: string;
@@ -383,9 +381,7 @@ export function loadUiCopy(): UiCopy {
     personaSubscribeTitle: requiredVite("VITE_PERSONA_SUBSCRIBE_TITLE"),
     personaSubscribeUser: requiredVite("VITE_PERSONA_SUBSCRIBE_USER"),
     personaSubscribeButton: requiredVite("VITE_PERSONA_SUBSCRIBE_BUTTON"),
-    personaSubscribeLocal: requiredVite("VITE_PERSONA_SUBSCRIBE_LOCAL"),
     personaSubscribed: requiredVite("VITE_PERSONA_SUBSCRIBED"),
-    personaRecordedLocal: requiredVite("VITE_PERSONA_RECORDED_LOCAL"),
     personaSelectFirst: requiredVite("VITE_PERSONA_SELECT_FIRST"),
     personaPickerTitle: requiredVite("VITE_PERSONA_PICKER_TITLE"),
     personaPickerEmpty: requiredVite("VITE_PERSONA_PICKER_EMPTY"),

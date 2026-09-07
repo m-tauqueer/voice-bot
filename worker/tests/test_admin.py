@@ -10,7 +10,7 @@ from worker.admin.errors import AdminError
 from worker.admin.service import PersonaAdmin
 from worker.admin.voice import as_voice_config, merge_tts_voice
 from worker.config import WorkerSettings
-from worker.engram.errors import ForbiddenError
+from worker.engram.errors import ForbiddenError, ValidationError
 from worker.engram.interface import IngestOutcome, PersonaRecord
 
 ADA = "11111111-1111-1111-1111-111111111111"
@@ -128,6 +128,40 @@ class Catalog:
     def upsert_subscription(self, _conn: object, **kwargs: Any) -> None:
         self.subscriptions.append(kwargs)
 
+    def set_engram_user_id(
+        self,
+        _conn: object,
+        user_id: str,
+        engram_user_id: str,
+    ) -> None:
+        for user in self.users:
+            if user["id"] == user_id:
+                user["engram_user_id"] = engram_user_id
+
+
+class FakeRoster:
+    def __init__(self, user_id: str = "e-user-1") -> None:
+        self.user_id = user_id
+        self.added: list[tuple[str, str, str, bool]] = []
+        self.closed = False
+
+    def add_member(
+        self,
+        email: str,
+        *,
+        name: str,
+        role: str,
+        password: str,
+    ) -> str:
+        self.added.append((email, name, role, bool(password)))
+        return self.user_id
+
+    def list_members(self) -> list[tuple[str, str]]:
+        return []
+
+    def close(self) -> None:
+        self.closed = True
+
 
 class FakeBrain:
     def __init__(self) -> None:
@@ -137,6 +171,7 @@ class FakeBrain:
         self.answered: list[tuple[str, str, str]] = []
         self.ingested: list[str] = []
         self.subscribed: list[tuple[str, str]] = []
+        self.subscribe_errors: list[Exception] = []
         self.create_error: Exception | None = None
         self.remote: dict[str, PersonaRecord] = {
             "eng-ada": _record("eng-ada", "Ada", "ada", "first"),
@@ -183,6 +218,8 @@ class FakeBrain:
         return IngestOutcome(gid=1, perception=None, incomplete=None, raw={})
 
     def subscribe(self, persona_id: str, user_id: str) -> dict[str, bool]:
+        if self.subscribe_errors:
+            raise self.subscribe_errors.pop(0)
         self.subscribed.append((persona_id, user_id))
         return {"subscribed": True}
 
@@ -209,6 +246,10 @@ def _bind(monkeypatch: pytest.MonkeyPatch, catalog: Catalog) -> None:
         "worker.admin.service.upsert_subscription",
         catalog.upsert_subscription,
     )
+    monkeypatch.setattr(
+        "worker.admin.service.set_engram_user_id",
+        catalog.set_engram_user_id,
+    )
 
 
 def _admin(
@@ -216,9 +257,15 @@ def _admin(
     monkeypatch: pytest.MonkeyPatch,
     catalog: Catalog,
     brain: FakeBrain,
+    roster: FakeRoster | None = None,
 ) -> PersonaAdmin:
     _bind(monkeypatch, catalog)
-    return PersonaAdmin(settings, brain_factory=lambda _s, _u: brain)
+    org = roster or FakeRoster()
+    return PersonaAdmin(
+        settings,
+        brain_factory=lambda _s, _u: brain,
+        roster_factory=lambda _s: org,
+    )
 
 
 def test_merge_tts_voice_writes_configured_key() -> None:
@@ -410,3 +457,31 @@ def test_questions_ingest_and_subscribe_follow_the_pin(
     assert brain.subscribed == [("eng-nova", "e-user-1")]
     assert catalog.subscriptions[0]["persona_id"] == NOVA
     assert brain.deleted == []
+
+
+def test_subscribe_persists_engram_people_id(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    roster = FakeRoster(user_id="8de1b2b278724e0bba19000086f8bef2")
+    admin = _admin(settings, monkeypatch, catalog, brain, roster)
+    admin.subscribe("a@example.com")
+    assert catalog.users[0]["engram_user_id"] == "8de1b2b278724e0bba19000086f8bef2"
+    assert brain.subscribed == [("eng-ada", "8de1b2b278724e0bba19000086f8bef2")]
+    assert roster.added == [("a@example.com", "a@example.com", "member", False)]
+
+
+def test_subscribe_retries_join_on_validation(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    brain.subscribe_errors = [ValidationError("not a member", status=422)]
+    roster = FakeRoster(user_id="8de1b2b278724e0bba19000086f8bef2")
+    admin = _admin(settings, monkeypatch, catalog, brain, roster)
+    admin.subscribe("a@example.com")
+    assert brain.subscribed == [("eng-ada", "8de1b2b278724e0bba19000086f8bef2")]
+    assert len(roster.added) == 2

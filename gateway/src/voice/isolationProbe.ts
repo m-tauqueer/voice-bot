@@ -8,6 +8,7 @@ import pino from "pino";
 import { nextSignInAction } from "../access/decision.js";
 import { createGatewayApp } from "../app.js";
 import { persistAuthSession, signSessionCookieValue } from "../auth/session.js";
+import { personaEngineUserId } from "../auth/users.js";
 import { createPostgres, createRedis } from "../clients.js";
 import {
   isOwnerEmail,
@@ -390,11 +391,19 @@ try {
 
         check(
           "memory_panel_owner_never_leaks_other_private_tenant",
-          !ownerPrivateTenants.has(other.engram_user_id),
+          ![...ownerPrivateTenants].some(
+            (tenant) =>
+              personaEngineUserId(tenant) ===
+              personaEngineUserId(other.engram_user_id),
+          ),
         );
         check(
           "memory_panel_other_never_leaks_owner_private_tenant",
-          !otherPrivateTenants.has(owner.engram_user_id),
+          ![...otherPrivateTenants].some(
+            (tenant) =>
+              personaEngineUserId(tenant) ===
+              personaEngineUserId(owner.engram_user_id),
+          ),
         );
       }
     }

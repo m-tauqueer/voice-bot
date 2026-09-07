@@ -37,7 +37,6 @@ class AnswerIn(BaseModel):
 
 class SubscribeIn(BaseModel):
     user: str = Field(min_length=1)
-    record_local: bool = False
     persona_id: UUID | None = None
 
 
@@ -162,7 +161,6 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
         try:
             return admin.subscribe(
                 body.user,
-                record_local=body.record_local,
                 persona_id=body.persona_id,
             )
         except AdminError as exc:

@@ -79,3 +79,48 @@ def test_stored_engram_matches() -> None:
     assert stored_engram_matches("abc", "abc") is True
     assert stored_engram_matches(None, "abc") is False
     assert stored_engram_matches("abc", "xyz") is False
+
+
+def test_admit_placeholder_matches_after_people_remap() -> None:
+    user = uuid4()
+    persona = uuid4()
+    placeholder = user.hex
+    assert (
+        session_identity_reason(
+            session_user_id=user,
+            session_persona_id=persona,
+            stored_engram_user_id="8de1b2b278724e0bba19000086f8bef2",
+            claimed_app_user_id=user,
+            claimed_persona_id=persona,
+            claimed_engram_user_id=placeholder,
+        )
+        is None
+    )
+    assert (
+        session_identity_reason(
+            session_user_id=user,
+            session_persona_id=persona,
+            stored_engram_user_id="8de1b2b278724e0bba19000086f8bef2",
+            claimed_app_user_id=user,
+            claimed_persona_id=persona,
+            claimed_engram_user_id=uuid4().hex,
+        )
+        == "identity_mismatch"
+    )
+    hyphenated = "3a07018e-b5c2-483a-b80f-07e90488b5f4"
+    hex_id = "3a07018eb5c2483ab80f07e90488b5f4"
+    assert stored_engram_matches(hyphenated, hex_id) is True
+    assert stored_engram_matches(hex_id, hyphenated) is True
+    user = uuid4()
+    persona = uuid4()
+    assert (
+        session_identity_reason(
+            session_user_id=user,
+            session_persona_id=persona,
+            stored_engram_user_id=hyphenated,
+            claimed_app_user_id=user,
+            claimed_persona_id=persona,
+            claimed_engram_user_id=hex_id,
+        )
+        is None
+    )

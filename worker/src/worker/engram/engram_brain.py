@@ -26,6 +26,7 @@ from worker.engram.interface import (
     RetrieveHit,
     RetrieveOutcome,
 )
+from worker.engram.user_id import persona_engine_user_id
 
 T = TypeVar("T")
 
@@ -100,9 +101,9 @@ class EngramBrain(PersonaBrain):
         client: Any | None = None,
     ) -> None:
         self._settings = settings
-        self._user_id = user_id
+        self._user_id = persona_engine_user_id(user_id)
         self._client = (
-            client if client is not None else create_engram(settings, user_id)
+            client if client is not None else create_engram(settings, self._user_id)
         )
 
     def _read(self, op: Callable[[], T]) -> T:
@@ -189,13 +190,15 @@ class EngramBrain(PersonaBrain):
         return _ingest_outcome(result)
 
     def subscribe(self, persona_id: str, user_id: str) -> Any:
+        engine_user_id = persona_engine_user_id(user_id)
         return self._write(
-            lambda: self._client.personas.subscribe(persona_id, user_id),
+            lambda: self._client.personas.subscribe(persona_id, engine_user_id),
         )
 
     def unsubscribe(self, persona_id: str, user_id: str) -> Any:
+        engine_user_id = persona_engine_user_id(user_id)
         return self._write(
-            lambda: self._client.personas.unsubscribe(persona_id, user_id),
+            lambda: self._client.personas.unsubscribe(persona_id, engine_user_id),
         )
 
     def subscribers(self, persona_id: str) -> Any:

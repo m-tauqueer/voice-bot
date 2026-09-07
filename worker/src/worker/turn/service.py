@@ -27,7 +27,13 @@ from worker.engram.errors import (
     ValidationError,
 )
 from worker.engram.interface import ChatOutcome
+from worker.engram.org_member import (
+    ensure_org_member,
+    open_org_roster,
+    skip_org_join,
+)
 from worker.engram.registry import BrainRegistry
+from worker.engram.user_id import persona_engine_user_id
 from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
 from worker.persistence.db import borrow
@@ -41,6 +47,7 @@ from worker.persistence.receipts import (
 from worker.persistence.sessions import (
     get_session,
     set_engram_session_id,
+    set_user_engram_id,
     user_email,
     user_engram_id,
 )
@@ -69,7 +76,11 @@ from worker.reframe.types import HistoryTurn
 from worker.schema import TURN_SPEAKER_PERSONA, TURN_SPEAKER_USER
 from worker.turn.errors import TurnError
 from worker.turn.grant import grant_persona_access, should_attempt_grant
-from worker.turn.identity import session_identity_reason, stored_engram_matches
+from worker.turn.identity import (
+    claimed_is_admit_placeholder,
+    session_identity_reason,
+    stored_engram_matches,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -282,12 +293,14 @@ class TurnRunner:
                     claimed_persona_id=persona_id,
                     claimed_engram_user_id=engram_user_id,
                 )
-                if mismatch is not None:
+                if mismatch is not None or not stored_engram:
                     raise TurnError(
                         "forbidden",
                         status=403,
-                        reason=mismatch,
+                        reason=mismatch or "identity_mismatch",
                     )
+                # Bind the stored People id, not a stale voice header.
+                engram_user_id = persona_engine_user_id(stored_engram)
 
                 email = user_email(conn, app_user_id)
                 if quota_applies_to_caller(
@@ -376,27 +389,16 @@ class TurnRunner:
             mirrored=mirrored,
             already_tried=pair in self._grant_tried,
         ):
-            self._grant_tried.add(pair)
-            granted = grant_persona_access(
-                brain,
-                self._settings,
+            engine_user_id = self._join_and_subscribe(
+                app_user_id=app_user_id,
+                email=email or "",
+                stored_engram_user_id=engram_user_id,
                 engram_persona_id=engram_persona_id,
-                engram_user_id=engram_user_id,
+                persona_id=persona_id,
             )
-            if granted.mirror:
-                try:
-                    with borrow(self._settings) as conn:
-                        upsert_active_subscription(
-                            conn,
-                            app_user_id,
-                            persona_id,
-                        )
-                        conn.commit()
-                except Exception:
-                    log.warning(
-                        self._settings.log_subscribe_failed,
-                        session_id=str(session_id),
-                    )
+            self._grant_tried.add(pair)
+            engram_user_id = engine_user_id
+            brain = self._brains.get(engram_user_id)
 
         mode = self._settings.brain_mode
         memories: list[str] = []
@@ -655,6 +657,103 @@ class TurnRunner:
         clear_contextvars()
         return result
 
+    def _join_and_subscribe(
+        self,
+        *,
+        app_user_id: UUID,
+        email: str,
+        stored_engram_user_id: str,
+        engram_persona_id: str,
+        persona_id: UUID,
+    ) -> str:
+        if skip_org_join(self._settings, email) or not email.strip():
+            raise TurnError(
+                self._settings.failure_message_engram_join,
+                status=403,
+                reason="engram_join_skipped",
+                code=self._settings.failure_code_engram_join,
+            )
+        engine_id = self._ensure_member_id(email)
+        engine_id = self._persist_engram_user_id(
+            app_user_id,
+            stored_engram_user_id,
+            engine_id,
+        )
+        granted = grant_persona_access(
+            self._brains.get(engine_id),
+            self._settings,
+            engram_persona_id=engram_persona_id,
+            engram_user_id=engine_id,
+        )
+        if granted.reason == "validation":
+            engine_id = self._ensure_member_id(email)
+            engine_id = self._persist_engram_user_id(
+                app_user_id,
+                stored_engram_user_id,
+                engine_id,
+            )
+            granted = grant_persona_access(
+                self._brains.get(engine_id),
+                self._settings,
+                engram_persona_id=engram_persona_id,
+                engram_user_id=engine_id,
+            )
+        if not granted.subscribed:
+            raise TurnError(
+                self._settings.failure_message_engram_join,
+                status=granted.status if granted.status is not None else 502,
+                reason=granted.reason or "engram_join_failed",
+                code=self._settings.failure_code_engram_join,
+            )
+        if granted.mirror:
+            try:
+                with borrow(self._settings) as conn:
+                    upsert_active_subscription(
+                        conn,
+                        app_user_id,
+                        persona_id,
+                    )
+                    conn.commit()
+            except Exception:
+                log.warning(self._settings.log_subscribe_failed)
+        return engine_id
+
+    def _ensure_member_id(self, email: str) -> str:
+        try:
+            with open_org_roster(self._settings) as roster:
+                return ensure_org_member(roster, self._settings, email=email)
+        except BrainError as exc:
+            log.warning(self._settings.log_engram_join_failed, status=exc.status)
+            raise TurnError(
+                self._settings.failure_message_engram_join,
+                status=exc.status if exc.status is not None else 502,
+                reason="engram_join_failed",
+                code=self._settings.failure_code_engram_join,
+            ) from exc
+
+    def _persist_engram_user_id(
+        self,
+        app_user_id: UUID,
+        stored_engram_user_id: str,
+        engine_id: str,
+    ) -> str:
+        engine_id = persona_engine_user_id(engine_id)
+        if engine_id == persona_engine_user_id(stored_engram_user_id):
+            return engine_id
+        try:
+            with borrow(self._settings) as conn:
+                set_user_engram_id(conn, app_user_id, engine_id)
+                conn.commit()
+        except Exception as exc:
+            log.warning(self._settings.log_engram_join_failed)
+            raise TurnError(
+                self._settings.failure_message_database,
+                status=503,
+                reason="database_unavailable",
+                code=self._settings.failure_code_database,
+            ) from exc
+        return engine_id
+
     def _should_write_back(self, plan: TurnPlan) -> bool:
         # chat writes the caller's private pool itself; only retrieve owes one.
         if plan.mode != "retrieve":
@@ -729,8 +828,8 @@ class TurnRunner:
         engram_user_id: str,
         engram_persona_id: str,
     ) -> list[dict[str, str | None]]:
-        self._assert_identity(app_user_id, engram_user_id)
-        brain = self._brains.get(engram_user_id)
+        bound = self._bound_engram_user_id(app_user_id, engram_user_id)
+        brain = self._brains.get(bound)
         outcome = brain.retrieve(
             engram_persona_id,
             self._settings.memory_panel_query,
@@ -743,12 +842,13 @@ class TurnRunner:
             memories.append({"text": hit.text, "tenant": hit.tenant})
         return memories
 
-    def _assert_identity(self, app_user_id: UUID, engram_user_id: str) -> None:
+    def _bound_engram_user_id(self, app_user_id: UUID, claimed: str) -> str:
         """Refuse a caller whose stored Engram id does not match the header.
 
         The turn path already checks this inline in `_begin`; the memory panel
         needs the same gate so a valid internal secret alone can never read
-        another user's private pool.
+        another user's private pool. After join, bind the stored People id
+        even if the header is still the admit placeholder.
         """
         try:
             with borrow(self._settings) as conn:
@@ -760,12 +860,18 @@ class TurnRunner:
                 reason="database_unavailable",
                 code=self._settings.failure_code_database,
             ) from exc
-        if not stored_engram_matches(stored, engram_user_id):
-            raise TurnError(
-                "forbidden",
-                status=403,
-                reason="identity_mismatch",
-            )
+        if stored_engram_matches(stored, claimed) and stored:
+            return persona_engine_user_id(stored)
+        if stored and claimed_is_admit_placeholder(
+            app_user_id=app_user_id,
+            claimed=claimed,
+        ):
+            return persona_engine_user_id(stored)
+        raise TurnError(
+            "forbidden",
+            status=403,
+            reason="identity_mismatch",
+        )
 
     def close(self) -> None:
         self._writers.shutdown(wait=True)
