@@ -181,6 +181,10 @@ export type UiCopy = {
   personaTtsHelp: string;
   personaFishLabel: string;
   personaFishHelp: string;
+  personaProviderLabel: string;
+  personaProviderHelp: string;
+  personaProviderAuraLabel: string;
+  personaProviderFishLabel: string;
   personaVoiceJsonLabel: string;
   personaVoiceInvalid: string;
   personaTeachTitle: string;
@@ -202,6 +206,13 @@ export type UiCopy = {
   personaIngestButton: string;
   personaIngestingLabel: string;
   personaIngested: string;
+  personaCloneTitle: string;
+  personaCloneHelp: string;
+  personaCloneFileLabel: string;
+  personaCloneAccept: string;
+  personaCloneButton: string;
+  personaCloningLabel: string;
+  personaCloned: string;
   personaSubscribeTitle: string;
   personaSubscribeUser: string;
   personaSubscribeButton: string;
@@ -431,6 +442,10 @@ export function loadUiCopy(): UiCopy {
     personaTtsHelp: requiredVite("VITE_PERSONA_TTS_HELP"),
     personaFishLabel: requiredVite("VITE_PERSONA_FISH_LABEL"),
     personaFishHelp: requiredVite("VITE_PERSONA_FISH_HELP"),
+    personaProviderLabel: requiredVite("VITE_PERSONA_PROVIDER_LABEL"),
+    personaProviderHelp: requiredVite("VITE_PERSONA_PROVIDER_HELP"),
+    personaProviderAuraLabel: requiredVite("VITE_PERSONA_PROVIDER_AURA_LABEL"),
+    personaProviderFishLabel: requiredVite("VITE_PERSONA_PROVIDER_FISH_LABEL"),
     personaVoiceJsonLabel: requiredVite("VITE_PERSONA_VOICE_JSON_LABEL"),
     personaVoiceInvalid: requiredVite("VITE_PERSONA_VOICE_INVALID"),
     personaTeachTitle: requiredVite("VITE_PERSONA_TEACH_TITLE"),
@@ -452,6 +467,13 @@ export function loadUiCopy(): UiCopy {
     personaIngestButton: requiredVite("VITE_PERSONA_INGEST_BUTTON"),
     personaIngestingLabel: requiredVite("VITE_PERSONA_INGESTING_LABEL"),
     personaIngested: requiredVite("VITE_PERSONA_INGESTED"),
+    personaCloneTitle: requiredVite("VITE_PERSONA_CLONE_TITLE"),
+    personaCloneHelp: requiredVite("VITE_PERSONA_CLONE_HELP"),
+    personaCloneFileLabel: requiredVite("VITE_PERSONA_CLONE_FILE_LABEL"),
+    personaCloneAccept: requiredVite("VITE_PERSONA_CLONE_ACCEPT"),
+    personaCloneButton: requiredVite("VITE_PERSONA_CLONE_BUTTON"),
+    personaCloningLabel: requiredVite("VITE_PERSONA_CLONE_CLONING_LABEL"),
+    personaCloned: requiredVite("VITE_PERSONA_CLONE_CLONED"),
     personaSubscribeTitle: requiredVite("VITE_PERSONA_SUBSCRIBE_TITLE"),
     personaSubscribeUser: requiredVite("VITE_PERSONA_SUBSCRIBE_USER"),
     personaSubscribeButton: requiredVite("VITE_PERSONA_SUBSCRIBE_BUTTON"),

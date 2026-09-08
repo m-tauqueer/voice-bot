@@ -89,6 +89,8 @@ describe("AdminPage personas", () => {
     expect((screen.getByLabelText("Fish voice id") as HTMLInputElement).value).toBe(
       "",
     );
+    expect(screen.getByRole("button", { name: "Deepgram Aura" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fish Audio" })).toBeTruthy();
     expect(
       screen.getAllByRole("button", { name: "Unpublish" }).length,
     ).toBeGreaterThan(0);
@@ -101,6 +103,7 @@ describe("AdminPage personas", () => {
       "Fish voice id",
     )) as HTMLInputElement;
     fireEvent.change(fish, { target: { value: "fish-ref-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fish Audio" }));
     fireEvent.click(screen.getByRole("button", { name: "Save persona" }));
     await waitFor(() => {
       const call = apiMock.mock.calls.find(
@@ -115,8 +118,10 @@ describe("AdminPage personas", () => {
       };
       expect(body.tts_voice).toBe("aura-2-thalia-en");
       expect(body.fish_voice).toBe("fish-ref-1");
+      expect(body.voice_provider).toBe("fish");
       expect(body.voice_config.tts_voice).toBe("aura-2-thalia-en");
       expect(body.voice_config.fish_voice).toBe("fish-ref-1");
+      expect(body.voice_config.voice_provider).toBe("fish");
     });
   });
 
@@ -260,5 +265,30 @@ describe("AdminPage personas", () => {
     ).toBeTruthy();
     expect(screen.getByLabelText("Engram persona id")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Link persona" })).toBeTruthy();
+  });
+
+  it("posts a clone clip to the clone route and not to ingest", async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    const input = (await screen.findByLabelText("Voice clip")) as HTMLInputElement;
+    const clip = new File(["RIFF...."], "clip.wav", { type: "audio/wav" });
+    fireEvent.change(input, { target: { files: [clip] } });
+    fireEvent.click(screen.getByRole("button", { name: "Clone Fish voice" }));
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(
+        ([path, init]) =>
+          typeof path === "string" &&
+          path.startsWith("/api/admin/persona/clone") &&
+          init?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+      expect(String(call?.[0])).toContain(`persona_id=${ada.id}`);
+      expect(call?.[1]?.body).toBeInstanceOf(FormData);
+    });
+    expect(
+      apiMock.mock.calls.some(
+        ([path]) => typeof path === "string" && path.includes("/api/admin/ingest"),
+      ),
+    ).toBe(false);
   });
 });

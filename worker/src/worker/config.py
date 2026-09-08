@@ -224,6 +224,16 @@ class WorkerSettings(BaseSettings):
     )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     persona_voice_fish_key: str = Field(default="fish_voice", min_length=1)
+    persona_voice_provider_key: str = Field(
+        default="voice_provider",
+        min_length=1,
+    )
+    persona_voice_provider_aura: str = Field(default="aura", min_length=1)
+    persona_voice_provider_fish: str = Field(default="fish", min_length=1)
+    admin_error_voice_provider: str = Field(
+        default="voice provider is not a configured choice",
+        min_length=1,
+    )
     fish_api_key: str | None = None
     fish_api_base_url: str = Field(
         default="https://api.fish.audio",
@@ -233,6 +243,49 @@ class WorkerSettings(BaseSettings):
     fish_tts_format: str = Field(default="pcm", min_length=1)
     fish_tts_sample_rate: int = Field(default=24000, gt=0)
     fish_tts_latency: str = Field(default="balanced", min_length=1)
+    fish_clone_type: str = Field(default="tts", min_length=1)
+    fish_clone_train_mode: str = Field(default="fast", min_length=1)
+    fish_clone_visibility: str = Field(default="private", min_length=1)
+    fish_clone_enhance: bool = Field(default=True)
+    fish_clone_ready_state: str = Field(default="trained", min_length=1)
+    fish_clone_timeout_seconds: float = Field(default=60, gt=0)
+    admin_fish_clone_max_bytes: int = Field(default=10485760, gt=0)
+    fish_clone_content_types: str = Field(
+        default="audio/wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/x-wav",
+        min_length=1,
+    )
+    fish_clone_suffixes: str = Field(
+        default=".wav,.mp3,.m4a,.opus,.webm,.ogg",
+        min_length=1,
+    )
+    admin_error_fish_key_missing: str = Field(
+        default="Fish API key is not set",
+        min_length=1,
+    )
+    admin_error_fish_unauthorized: str = Field(
+        default="Fish rejected the API key",
+        min_length=1,
+    )
+    admin_error_fish_payment: str = Field(
+        default="Fish has no remaining API credits",
+        min_length=1,
+    )
+    admin_error_fish_clone_failed: str = Field(
+        default="Fish could not clone that clip",
+        min_length=1,
+    )
+    admin_error_fish_untrained: str = Field(
+        default="Fish has not finished training that voice",
+        min_length=1,
+    )
+    admin_error_fish_clip_type: str = Field(
+        default="clip type is not allowed",
+        min_length=1,
+    )
+    admin_error_fish_clip_empty: str = Field(
+        default="clip is empty",
+        min_length=1,
+    )
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)
@@ -376,9 +429,20 @@ class WorkerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def distinct_persona_voice_keys(self) -> WorkerSettings:
-        if self.persona_voice_fish_key == self.persona_voice_tts_key:
+        keys = {
+            self.persona_voice_tts_key,
+            self.persona_voice_fish_key,
+            self.persona_voice_provider_key,
+        }
+        if len(keys) != 3:
             raise ValueError(
-                "PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY"
+                "PERSONA_VOICE_TTS_KEY, PERSONA_VOICE_FISH_KEY, and "
+                "PERSONA_VOICE_PROVIDER_KEY must be distinct"
+            )
+        if self.persona_voice_provider_aura == self.persona_voice_provider_fish:
+            raise ValueError(
+                "PERSONA_VOICE_PROVIDER_AURA must differ from "
+                "PERSONA_VOICE_PROVIDER_FISH"
             )
         return self
 

@@ -33,9 +33,9 @@ Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauquee
 
 1. **Hosted Fish only.** `api.fish.audio`. No self-host, no Azure GPU for this work.
 2. **Deepgram stays.** Nova-3 STT and Aura-2 Voice Agent remain the default sitting.
-3. **Per persona, not a global switch.** If that row has a Fish voice id, `/voice` speaks with Fish. If it does not, Deepgram Aura as today. Hang up to change persona (already true).
+3. **Per persona, not a global switch.** The owner chooses Deepgram Aura or Fish Audio on that row (`PERSONA_VOICE_PROVIDER_KEY`, values from env). Empty or missing means Aura. A stored Fish id does not by itself change the sitting. Hang up to change persona (already true).
 4. **Owner-only clone.** Members never upload. The owner may **paste** a Fish voice id from fish.audio **or upload a clip** on `/admin/persona`. Persistent Fish `reference_id` only. Do not send reference audio on every turn.
-5. **No id sniffing.** A dedicated `voice_config` key whose name comes from env (`PERSONA_VOICE_FISH_KEY`) means Fish. The existing Deepgram key (`PERSONA_VOICE_TTS_KEY` / `tts_voice`) stays Aura. Empty Fish key → Deepgram. Never guess from uuid shape or other string heuristics.
+5. **No id sniffing.** Dedicated `voice_config` keys named from env: Deepgram (`PERSONA_VOICE_TTS_KEY` / `tts_voice`), Fish (`PERSONA_VOICE_FISH_KEY` / `fish_voice`), and the sitting choice (`PERSONA_VOICE_PROVIDER_KEY` / `voice_provider`). Never guess from uuid shape or from whether the Fish key is nonempty.
 6. **Brain unchanged.** Controller → Engram → speaking LLM, streamed. Fish only turns those tokens into audio.
 7. **Audio never goes to Engram.** Clone bytes go to Fish only. Text-only into Engram still holds.
 8. **Fail closed.** A Fish sitting with a missing/invalid key or Fish 401/402 → sitting error copy from config. Do **not** fall back to Aura (wrong voice). The product still boots without a Fish key if no sitting needs Fish.
@@ -52,7 +52,7 @@ Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauquee
 
 ```
 member picks a published persona
-  → Fish voice key set?
+  → provider equals the configured Fish value (and a Fish id is present)?
        no  → Deepgram Voice Agent (Nova-3 + Aura-2 + barge-in) as today
        yes → Deepgram listen WSS → worker think (streamed) → Fish TTS WS → browser PCM
              barge-in: flush playback, abort Fish socket
@@ -66,11 +66,12 @@ member picks a published persona
 | --- | --- | --- |
 | Owner | paste Fish voice id | local `personas.voice_config` (Fish key from env) |
 | Owner | upload clip to clone | Fish `POST /model`; store returned id on that key. Bytes are not kept in Postgres or Engram |
+| Owner | Deepgram Aura vs Fish Audio | local `personas.voice_config` (provider key from env). Empty means Aura |
 | Owner | Deepgram Aura id | local `personas.voice_config` (existing TTS key) |
 | Owner | teach / questions / documents | Engram shared `{org}:{persona}` — unchanged |
 | Member | talk | Engram private `{org}:{persona}:{user}` — unchanged |
-| Member | `/voice` with Fish key set | Deepgram STT + Fish TTS; brain unchanged |
-| Member | `/voice` without Fish key | Deepgram Voice Agent — unchanged |
+| Member | `/voice` with provider = Fish value | Deepgram STT + Fish TTS; brain unchanged |
+| Member | `/voice` with provider empty or Aura | Deepgram Voice Agent — unchanged |
 
 Conversation is never promoted to shared. Clone audio is never sent to Engram.
 
@@ -104,23 +105,28 @@ Conversation is never promoted to shared. Clone audio is never sent to Engram.
 - Tests after each subpart. Logic: no id-format sniffing.
 - Manual: paste a Fish id on one persona, leave another on Aura; Aura call still works. Fish speech is Part 3.
 
-### Part 2 — Clone from a clip on `/admin/persona`
+### Part 2 — Clone from a clip; owner chooses Aura or Fish
 
-- Goal: owner upload creates a persistent Fish voice and stores the id.
+- Goal: owner upload creates a persistent Fish voice and stores the id. Owner explicitly chooses Deepgram Aura vs Fish Audio (config values). `/voice` still uses Aura until speak work.
 - Subparts:
-  - **2.a** Upload (types/size from config) → Fish `POST /model` (`train_mode=fast`, `visibility=private`, enhance from config) → persist returned `_id`. Do not log audio bytes or the API key.
-  - **2.b** Fail closed on missing key / untrained / Fish 402. Paste-id still works. Clip is not stored in Engram or Postgres.
+  - **2.a** Admin choose buttons. Store `PERSONA_VOICE_PROVIDER_KEY` with `PERSONA_VOICE_PROVIDER_AURA` / `PERSONA_VOICE_PROVIDER_FISH`. Empty/missing → Aura. Do not infer from whether a Fish id is present. `/voice` unchanged.
+  - **2.b** Upload (types/size from config) → Fish `POST /model` (`train_mode=fast`, `visibility=private`, enhance from config) → persist returned `_id` on the Fish key. Do not change the provider. Do not log audio bytes or the API key. Separate file input from Engram ingest.
+  - **2.c** Fail closed on missing key / untrained / Fish 402 / disallowed or empty clip. Paste-id still works. Clip is not stored in Engram or Postgres.
 - Tests with a mocked Fish client. Isolation/security unchanged.
-- Manual: when the key is in `.env`, upload a short clip; id appears on the persona.
+- Manual:
+  1. Carry-forward from Part 1: paste a Fish id (placeholder is fine) on one persona, leave another empty; Aura `/voice` still speaks Aura. A persona with a Fish id also still Aura this sitting.
+  2. Click Deepgram Aura vs Fish Audio, save, reload — the choice persists. Choosing Fish does not change `/voice` yet.
+  3. With `FISH_API_KEY` in `.env`, upload a short allowed clip; the Fish id appears on the Fish field, Deepgram field unchanged. Clip is not in Engram or Postgres.
+  4. Disallowed type or empty clip shows the config error. Missing key / 402 if you can provoke them.
 
 ### Part 3 — `/voice` speaks the clone
 
 - Goal: picking a Fish persona hears that voice; Aura personas stay on Voice Agent.
 - Subparts:
-  - **3.a** Branch at call start: Fish key set → Fish transport; else existing Voice Agent path.
+  - **3.a** Branch at call start: provider equals the configured Fish value and a Fish id is present → Fish transport; else existing Voice Agent path. Provider is Fish but the Fish id is empty → sitting error from config, no Aura fallback.
   - **3.b** Fish path: Deepgram listen WSS → existing think stream → Fish TTS WebSocket with `reference_id` → PCM to the client; barge-in flushes playback and aborts Fish. Thinking cue stays. First-word span recorded. Fish 401/402/timeout → sitting error, no Aura fallback.
   - **3.c** Live probe `npm run fish` (skip without key). `isolation` and `security` still green.
-- Manual: pick the cloned persona, hear that voice, interrupt and it stops; pick an Aura persona, Voice Agent path unchanged.
+- Manual: pick the cloned persona with provider Fish, hear that voice, interrupt and it stops; pick an Aura persona (or a Fish-id persona still on Aura), Voice Agent path unchanged. Carry-forward: paste-id path still works.
 
 ### Part 4 — Home dashboard and persona boxes
 

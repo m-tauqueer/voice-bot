@@ -10,7 +10,7 @@ This file answers “where are we?” It is not the architecture spec ([TRD.md](
 
 A browser voice bot that speaks as an owner-taught **persona** with long-term Engram memory. Members sign in with Google (waitlist). They pick a published persona, then talk at `/chat` or `/voice`. Private memory is per (member, persona). Shared knowledge is per persona.
 
-Speech today: Deepgram Voice Agent (Nova-3 STT + Aura-2 TTS + barge-in) with our brain behind a BYO-LLM shim. **Current work** is a cloned Fish Audio voice **per persona** (hosted API only), then Home/picker cards and member UI. Locked why: [decisions/0002-hosted-fish-tts-per-persona.md](decisions/0002-hosted-fish-tts-per-persona.md).
+Speech today: Deepgram Voice Agent (Nova-3 STT + Aura-2 TTS + barge-in) with our brain behind a BYO-LLM shim, which stays the path when the persona provider is empty or Aura. A persona whose provider is Fish and that has a Fish id uses Deepgram listen + hosted Fish TTS instead; the brain is unchanged. **Current work** is that cloned Fish path, then Home/picker cards and member UI. Locked why: [decisions/0002-hosted-fish-tts-per-persona.md](decisions/0002-hosted-fish-tts-per-persona.md), [decisions/0005-persona-voice-provider.md](decisions/0005-persona-voice-provider.md).
 
 ---
 
@@ -20,7 +20,7 @@ Typed chat, spoken Aura calls, personal `/dashboard`, owner `/admin` (create/lin
 
 History and measured latency: [SHIPPED.md](SHIPPED.md). Leftover live sittings from personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
 
-Deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false` until a storage account); `BRAIN_MODE=chat` (slow switch; default `retrieve`). Spoken calls need a live public worker URL (`BYO_LLM_PUBLIC_URL`).
+Deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false` until a storage account); `BRAIN_MODE=chat` (slow switch; default `retrieve`). Aura spoken calls need a live public worker URL (`BYO_LLM_PUBLIC_URL`). Fish sittings think at `WORKER_URL` from the gateway.
 
 ---
 
@@ -37,7 +37,7 @@ Fish is **not** shipped. No GPU, no self-host. A Fish API key is not required to
 - **Tauqueer names the part.** Never pick the next one. Never work two parts at once unless he says so.
 - Config, not magic values. No keyword/intent heuristics for language understanding.
 - Never hand-build Engram tenant strings. Text-only into Engram. Audio (including clone clips) never goes to Engram.
-- TTS routing is a dedicated `voice_config` key from env, not id-format sniffing. Fish sitting + missing/401/402 → fail closed, no Aura fallback.
+- TTS routing is a dedicated provider key from env (`PERSONA_VOICE_PROVIDER_KEY`), not id-format sniffing and not “Fish key nonempty.” Fish sitting + missing/401/402 → fail closed, no Aura fallback.
 - Ground truth for behaviour is the code. Docs own **intent**.
 - Context7 MCP for library/API lookups when connected; otherwise Engram / Deepgram / Fish published docs. This sitting: Context7 was not connected.
 
@@ -50,7 +50,7 @@ Full decision log: [decisions/README.md](decisions/README.md).
 | Path | Role |
 | --- | --- |
 | `frontend/` | React 18 + Vite + Tailwind. `/`, `/status`, `/waitlist`, `/dashboard`, `/chat`, `/voice`, `/admin` |
-| `gateway/` | TypeScript: Google auth, chat HTTP, admin proxy, Deepgram (and later Fish) speech transport |
+| `gateway/` | TypeScript: Google auth, chat HTTP, admin proxy, Deepgram Voice Agent and Fish speech transport |
 | `worker/` | Python (uv, CPython 3.12): Engram, reframe, controller, BYO-LLM, clone upload |
 | `infra/` | Compose Postgres/Redis, migrations |
 | `docs/` | This tree. Map: [README.md](README.md) |

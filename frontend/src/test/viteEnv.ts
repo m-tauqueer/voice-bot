@@ -168,6 +168,9 @@ export const viteTestEnv: Record<string, string> = {
   VITE_DELETIONS_SELECTED_NONE: "Select at least one request.",
   VITE_PERSONA_VOICE_TTS_KEY: "tts_voice",
   VITE_PERSONA_VOICE_FISH_KEY: "fish_voice",
+  VITE_PERSONA_VOICE_PROVIDER_KEY: "voice_provider",
+  VITE_PERSONA_VOICE_PROVIDER_AURA: "aura",
+  VITE_PERSONA_VOICE_PROVIDER_FISH: "fish",
   VITE_PERSONA_CATALOG_HELP:
     "Create or link Engram personas here. Drafts stay off the member list until you publish.",
   VITE_PERSONA_LIST_TITLE: "Catalog",
@@ -238,6 +241,11 @@ export const viteTestEnv: Record<string, string> = {
   VITE_PERSONA_FISH_LABEL: "Fish voice id",
   VITE_PERSONA_FISH_HELP:
     "Hosted Fish Audio voice id for this persona. Leave empty to keep Deepgram Aura.",
+  VITE_PERSONA_PROVIDER_LABEL: "Spoken voice",
+  VITE_PERSONA_PROVIDER_HELP:
+    "Choose Deepgram Aura or Fish Audio. A Fish sitting is a later change; Aura calls still use Aura.",
+  VITE_PERSONA_PROVIDER_AURA_LABEL: "Deepgram Aura",
+  VITE_PERSONA_PROVIDER_FISH_LABEL: "Fish Audio",
   VITE_PERSONA_VOICE_JSON_LABEL: "Voice style (JSON)",
   VITE_PERSONA_VOICE_INVALID: "voice_config must be a JSON object",
   VITE_PERSONA_TEACH_TITLE: "Teach",
@@ -259,6 +267,14 @@ export const viteTestEnv: Record<string, string> = {
   VITE_PERSONA_INGEST_BUTTON: "Ingest document",
   VITE_PERSONA_INGESTING_LABEL: "Ingesting…",
   VITE_PERSONA_INGESTED: "Document ingested.",
+  VITE_PERSONA_CLONE_TITLE: "Clone Fish voice",
+  VITE_PERSONA_CLONE_HELP:
+    "Upload a short clip. Fish stores the voice; we keep only the returned id. This is not a document for Engram.",
+  VITE_PERSONA_CLONE_FILE_LABEL: "Voice clip",
+  VITE_PERSONA_CLONE_ACCEPT: ".wav,.mp3,.m4a,.opus,.webm,.ogg",
+  VITE_PERSONA_CLONE_BUTTON: "Clone Fish voice",
+  VITE_PERSONA_CLONE_CLONING_LABEL: "Cloning…",
+  VITE_PERSONA_CLONE_CLONED: "Fish voice cloned.",
   VITE_PERSONA_SUBSCRIBE_TITLE: "Subscribe tester",
   VITE_PERSONA_SUBSCRIBE_USER: "Email or user id",
   VITE_PERSONA_SUBSCRIBE_BUTTON: "Subscribe in Engram",

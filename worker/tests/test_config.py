@@ -39,6 +39,10 @@ def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(
     assert loaded.fish_api_key is None
     assert loaded.persona_voice_tts_key == "tts_voice"
     assert loaded.persona_voice_fish_key == "fish_voice"
+    assert loaded.persona_voice_provider_key == "voice_provider"
+    assert loaded.fish_clone_train_mode == "fast"
+    assert loaded.fish_clone_visibility == "private"
+    assert loaded.admin_fish_clone_max_bytes == 10485760
     kwargs["persona_voice_tts_key"] = "voice"
     kwargs["persona_voice_fish_key"] = "voice"
     with pytest.raises(ValidationError) as caught:

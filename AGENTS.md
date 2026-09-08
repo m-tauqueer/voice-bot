@@ -94,6 +94,7 @@ npm run chat         # two-turn live typed-loop probe
 npm run byo          # Chat Completions shim probe (needs Engram + OpenAI)
 npm run brains       # Same questions through both BRAIN_MODE paths, side by side
 npm run voice        # Voice Agent handshake + inject probe (needs Deepgram + public worker URL)
+npm run fish         # Hosted Fish live TTS check (skips without FISH_API_KEY)
 npm run call         # Full spoken call: synthesised speech in, STT, reply, interruption
 npm run audio        # WAV container, capture boundaries, turn binding, blob read-back
 npm run bargein      # Barge-in state machine (no services needed)

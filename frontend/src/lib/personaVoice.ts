@@ -12,6 +12,18 @@ export function personaFishKey(): string {
   return requiredVite("VITE_PERSONA_VOICE_FISH_KEY");
 }
 
+export function personaProviderKey(): string {
+  return requiredVite("VITE_PERSONA_VOICE_PROVIDER_KEY");
+}
+
+export function personaProviderAura(): string {
+  return requiredVite("VITE_PERSONA_VOICE_PROVIDER_AURA");
+}
+
+export function personaProviderFish(): string {
+  return requiredVite("VITE_PERSONA_VOICE_PROVIDER_FISH");
+}
+
 export function adminPersonaQuery(id: string): string {
   return `${personaPinField()}=${encodeURIComponent(id)}`;
 }
@@ -24,15 +36,26 @@ export function splitVoiceConfig(
   voice: Record<string, unknown>,
   ttsKey: string,
   fishKey: string,
-): { ttsVoice: string; fishVoice: string; style: Record<string, unknown> } {
+  providerKey: string,
+  auraValue: string,
+): {
+  ttsVoice: string;
+  fishVoice: string;
+  provider: string;
+  style: Record<string, unknown>;
+} {
   const style = { ...voice };
   const ttsRaw = style[ttsKey];
   const fishRaw = style[fishKey];
+  const providerRaw = style[providerKey];
   delete style[ttsKey];
   delete style[fishKey];
+  delete style[providerKey];
+  const provider = voiceId(providerRaw).trim();
   return {
     ttsVoice: voiceId(ttsRaw),
     fishVoice: voiceId(fishRaw),
+    provider: provider.length > 0 ? provider : auraValue,
     style,
   };
 }
@@ -58,13 +81,21 @@ export function mergePersonaVoices(
   ttsKey: string,
   fishVoice: string,
   fishKey: string,
+  provider: string,
+  providerKey: string,
 ): Record<string, unknown> {
   const next = { ...style };
   delete next[ttsKey];
   delete next[fishKey];
-  return mergeVoiceConfig(
+  delete next[providerKey];
+  const merged = mergeVoiceConfig(
     mergeVoiceConfig(next, ttsVoice, ttsKey),
     fishVoice,
     fishKey,
   );
+  const chosen = provider.trim();
+  if (chosen) {
+    merged[providerKey] = chosen;
+  }
+  return merged;
 }

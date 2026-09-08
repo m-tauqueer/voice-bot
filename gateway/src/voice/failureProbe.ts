@@ -30,6 +30,27 @@ const config = loadGatewayConfig();
 
 check("fatal_engram", isFatalFailure(config, config.FAILURE_CODE_ENGRAM));
 check("fatal_deepgram", isFatalFailure(config, config.FAILURE_CODE_DEEPGRAM));
+check("fatal_fish", isFatalFailure(config, config.FAILURE_CODE_FISH));
+check(
+  "fatal_fish_key_missing",
+  isFatalFailure(config, config.FAILURE_CODE_FISH_KEY_MISSING),
+);
+check(
+  "fatal_fish_voice_missing",
+  isFatalFailure(config, config.FAILURE_CODE_FISH_VOICE_MISSING),
+);
+check(
+  "fatal_fish_unauthorized",
+  isFatalFailure(config, config.FAILURE_CODE_FISH_UNAUTHORIZED),
+);
+check(
+  "fatal_fish_payment",
+  isFatalFailure(config, config.FAILURE_CODE_FISH_PAYMENT),
+);
+check(
+  "fatal_voice_provider",
+  isFatalFailure(config, config.FAILURE_CODE_VOICE_PROVIDER),
+);
 check(
   "warning_record_not_fatal",
   !isFatalFailure(config, config.FAILURE_CODE_RECORD),

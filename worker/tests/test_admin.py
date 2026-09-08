@@ -8,7 +8,12 @@ import pytest
 
 from worker.admin.errors import AdminError
 from worker.admin.service import PersonaAdmin
-from worker.admin.voice import as_voice_config, merge_persona_voices, merge_tts_voice
+from worker.admin.voice import (
+    VoiceProviderError,
+    as_voice_config,
+    merge_persona_voices,
+    merge_tts_voice,
+)
 from worker.config import WorkerSettings
 from worker.engram.errors import ForbiddenError, NotFoundError, ValidationError
 from worker.engram.interface import IngestOutcome, PersonaRecord
@@ -292,14 +297,17 @@ def _admin(
     catalog: Catalog,
     brain: FakeBrain,
     roster: FakeRoster | None = None,
+    clone: object | None = None,
 ) -> PersonaAdmin:
     _bind(monkeypatch, catalog)
     org = roster or FakeRoster()
-    return PersonaAdmin(
-        settings,
-        brain_factory=lambda _s, _u: brain,
-        roster_factory=lambda _s: org,
-    )
+    kwargs: dict[str, Any] = {
+        "brain_factory": lambda _s, _u: brain,
+        "roster_factory": lambda _s: org,
+    }
+    if clone is not None:
+        kwargs["clone_factory"] = lambda _s: clone
+    return PersonaAdmin(settings, **kwargs)
 
 
 def test_merge_tts_voice_writes_configured_key() -> None:
@@ -339,6 +347,28 @@ def test_merge_persona_voices_writes_fish_on_its_own_key() -> None:
         fish_key="fish_voice",
     )
     assert cleared == {"pace": "calm", "tts_voice": "aura-2-thalia-en"}
+    chosen = merge_persona_voices(
+        merged,
+        tts_voice=None,
+        tts_key="tts_voice",
+        fish_voice=None,
+        fish_key="fish_voice",
+        provider="fish",
+        provider_key="voice_provider",
+        allowed_providers=frozenset({"aura", "fish"}),
+    )
+    assert chosen["voice_provider"] == "fish"
+    with pytest.raises(VoiceProviderError):
+        merge_persona_voices(
+            {},
+            tts_voice=None,
+            tts_key="tts_voice",
+            fish_voice=None,
+            fish_key="fish_voice",
+            provider="other",
+            provider_key="voice_provider",
+            allowed_providers=frozenset({"aura", "fish"}),
+        )
 
 
 def test_show_unknown_pin_is_missing(
@@ -634,3 +664,158 @@ def test_subscribe_retries_join_on_validation(
     admin.subscribe("a@example.com")
     assert brain.subscribed == [("eng-ada", "8de1b2b278724e0bba19000086f8bef2")]
     assert len(roster.added) == 2
+
+
+class FakeClone:
+    def __init__(
+        self,
+        voice_id: str = "cloned-1",
+        state: str = "trained",
+        error: Exception | None = None,
+    ) -> None:
+        self.voice_id = voice_id
+        self.state = state
+        self.error = error
+        self.titles: list[str] = []
+        self.audio_lengths: list[int] = []
+
+    def create(
+        self,
+        *,
+        title: str,
+        audio: bytes,
+        filename: str,
+        content_type: str,
+    ) -> Any:
+        self.titles.append(title)
+        self.audio_lengths.append(len(audio))
+        if self.error is not None:
+            raise self.error
+        from worker.fish.clone import ClonedVoice
+
+        return ClonedVoice(voice_id=self.voice_id, state=self.state)
+
+
+def test_clone_stores_fish_id_and_does_not_ingest(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog(
+        [
+            _row(
+                voice_config={
+                    "tts_voice": "aura-2-thalia-en",
+                    "voice_provider": "aura",
+                }
+            )
+        ]
+    )
+    brain = FakeBrain()
+    clone = FakeClone()
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=clone)
+    shown = admin.clone_voice(
+        audio=b"RIFF....",
+        filename="clip.wav",
+        content_type="audio/wav",
+        persona_id=ADA,
+    )
+    assert shown["persona"]["voice_config"]["fish_voice"] == "cloned-1"
+    assert shown["persona"]["voice_config"]["tts_voice"] == "aura-2-thalia-en"
+    assert shown["persona"]["voice_config"]["voice_provider"] == "aura"
+    assert brain.ingested == []
+    assert brain.taught == []
+    assert clone.titles == ["Ada"]
+    assert clone.audio_lengths == [8]
+
+
+def test_clone_fails_closed_without_sending_clip_to_engram(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from worker.fish.errors import FishCloneError
+
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    clone = FakeClone(
+        error=FishCloneError("no credits", status=402, reason="fish_payment"),
+    )
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=clone)
+    with pytest.raises(AdminError) as caught:
+        admin.clone_voice(
+            audio=b"RIFF....",
+            filename="clip.wav",
+            content_type="audio/wav",
+            persona_id=ADA,
+        )
+    assert caught.value.status == 402
+    assert caught.value.reason == "fish_payment"
+    assert "fish_voice" not in catalog.rows[0]["voice_config"]
+    assert brain.ingested == []
+
+    missing = FakeClone(
+        error=FishCloneError("no key", status=503, reason="fish_key_missing"),
+    )
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=missing)
+    with pytest.raises(AdminError) as missing_caught:
+        admin.clone_voice(
+            audio=b"RIFF....",
+            filename="clip.wav",
+            content_type="audio/wav",
+            persona_id=ADA,
+        )
+    assert missing_caught.value.reason == "fish_key_missing"
+
+    untrained = FakeClone(state="created")
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=untrained)
+    with pytest.raises(AdminError) as untrained_caught:
+        admin.clone_voice(
+            audio=b"RIFF....",
+            filename="clip.wav",
+            content_type="audio/wav",
+            persona_id=ADA,
+        )
+    assert untrained_caught.value.reason == "fish_untrained"
+
+    with pytest.raises(AdminError) as type_caught:
+        admin.clone_voice(
+            audio=b"not-audio",
+            filename="notes.txt",
+            content_type="text/plain",
+            persona_id=ADA,
+        )
+    assert type_caught.value.reason == "fish_clip_type"
+
+    empty = FakeClone()
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=empty)
+    with pytest.raises(AdminError) as empty_caught:
+        admin.clone_voice(
+            audio=b"",
+            filename="clip.wav",
+            content_type="audio/wav",
+            persona_id=ADA,
+        )
+    assert empty_caught.value.reason == "fish_clip_empty"
+    assert empty.titles == []
+
+    too_big = FakeClone()
+    admin = _admin(settings, monkeypatch, catalog, brain, clone=too_big)
+    with pytest.raises(AdminError) as large_caught:
+        admin.clone_voice(
+            audio=b"x" * (settings.admin_fish_clone_max_bytes + 1),
+            filename="clip.wav",
+            content_type="audio/wav",
+            persona_id=ADA,
+        )
+    assert large_caught.value.status == 413
+    assert too_big.titles == []
+
+    pasted = admin.update_local(
+        persona_id=ADA,
+        handle=None,
+        display_name=None,
+        description=None,
+        voice_config=None,
+        fish_voice="pasted-id",
+    )
+    assert pasted["persona"]["voice_config"]["fish_voice"] == "pasted-id"
+    assert brain.ingested == []

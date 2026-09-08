@@ -196,6 +196,9 @@ interface ImportMetaEnv {
   readonly VITE_DELETIONS_SELECTED_NONE: string;
   readonly VITE_PERSONA_VOICE_TTS_KEY: string;
   readonly VITE_PERSONA_VOICE_FISH_KEY: string;
+  readonly VITE_PERSONA_VOICE_PROVIDER_KEY: string;
+  readonly VITE_PERSONA_VOICE_PROVIDER_AURA: string;
+  readonly VITE_PERSONA_VOICE_PROVIDER_FISH: string;
   readonly VITE_PERSONA_CATALOG_HELP: string;
   readonly VITE_PERSONA_LIST_TITLE: string;
   readonly VITE_PERSONA_LIST_EMPTY: string;
@@ -259,6 +262,10 @@ interface ImportMetaEnv {
   readonly VITE_PERSONA_TTS_HELP: string;
   readonly VITE_PERSONA_FISH_LABEL: string;
   readonly VITE_PERSONA_FISH_HELP: string;
+  readonly VITE_PERSONA_PROVIDER_LABEL: string;
+  readonly VITE_PERSONA_PROVIDER_HELP: string;
+  readonly VITE_PERSONA_PROVIDER_AURA_LABEL: string;
+  readonly VITE_PERSONA_PROVIDER_FISH_LABEL: string;
   readonly VITE_PERSONA_VOICE_JSON_LABEL: string;
   readonly VITE_PERSONA_VOICE_INVALID: string;
   readonly VITE_PERSONA_TEACH_TITLE: string;
@@ -280,6 +287,13 @@ interface ImportMetaEnv {
   readonly VITE_PERSONA_INGEST_BUTTON: string;
   readonly VITE_PERSONA_INGESTING_LABEL: string;
   readonly VITE_PERSONA_INGESTED: string;
+  readonly VITE_PERSONA_CLONE_TITLE: string;
+  readonly VITE_PERSONA_CLONE_HELP: string;
+  readonly VITE_PERSONA_CLONE_FILE_LABEL: string;
+  readonly VITE_PERSONA_CLONE_ACCEPT: string;
+  readonly VITE_PERSONA_CLONE_BUTTON: string;
+  readonly VITE_PERSONA_CLONE_CLONING_LABEL: string;
+  readonly VITE_PERSONA_CLONE_CLONED: string;
   readonly VITE_PERSONA_SUBSCRIBE_TITLE: string;
   readonly VITE_PERSONA_SUBSCRIBE_USER: string;
   readonly VITE_PERSONA_SUBSCRIBE_BUTTON: string;

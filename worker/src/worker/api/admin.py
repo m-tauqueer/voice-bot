@@ -22,6 +22,7 @@ class PersonaWriteIn(BaseModel):
     voice_config: dict[str, Any] | None = None
     tts_voice: str | None = None
     fish_voice: str | None = None
+    voice_provider: str | None = None
     create_remote: bool = False
 
 
@@ -86,6 +87,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                     voice_config=body.voice_config or {},
                     tts_voice=body.tts_voice,
                     fish_voice=body.fish_voice,
+                    voice_provider=body.voice_provider,
                 )
             if body.engram_persona_id:
                 return admin.register(
@@ -96,6 +98,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                     voice_config=body.voice_config or {},
                     tts_voice=body.tts_voice,
                     fish_voice=body.fish_voice,
+                    voice_provider=body.voice_provider,
                 )
             return admin.update_local(
                 persona_id=body.persona_id,
@@ -105,6 +108,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                 voice_config=body.voice_config,
                 tts_voice=body.tts_voice,
                 fish_voice=body.fish_voice,
+                voice_provider=body.voice_provider,
             )
         except AdminError as exc:
             _raise_admin(exc)
@@ -172,6 +176,24 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
             source.name = file.filename
         try:
             return admin.ingest_document(source, metadata, persona_id=persona_id)
+        except AdminError as exc:
+            _raise_admin(exc)
+
+    @router.post("/persona/clone")
+    def clone_voice(
+        file: UploadFile = File(...),
+        persona_id: UUID | None = Query(default=None),
+    ) -> dict[str, Any]:
+        data = file.file.read()
+        if len(data) > settings.admin_fish_clone_max_bytes:
+            raise HTTPException(status_code=413, detail={"error": "file too large"})
+        try:
+            return admin.clone_voice(
+                audio=data,
+                filename=file.filename or "",
+                content_type=file.content_type or "",
+                persona_id=persona_id,
+            )
         except AdminError as exc:
             _raise_admin(exc)
 

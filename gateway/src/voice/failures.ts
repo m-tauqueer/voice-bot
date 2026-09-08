@@ -21,6 +21,21 @@ export function failureMessages(config: GatewayConfig): Map<string, string> {
     [config.FAILURE_CODE_RECONNECTED, config.FAILURE_MESSAGE_RECONNECTED],
     [config.FAILURE_CODE_DATABASE, config.FAILURE_MESSAGE_DATABASE],
     [config.FAILURE_CODE_THINK, config.FAILURE_MESSAGE_THINK],
+    [config.FAILURE_CODE_FISH, config.FAILURE_MESSAGE_FISH],
+    [
+      config.FAILURE_CODE_FISH_KEY_MISSING,
+      config.FAILURE_MESSAGE_FISH_KEY_MISSING,
+    ],
+    [
+      config.FAILURE_CODE_FISH_VOICE_MISSING,
+      config.FAILURE_MESSAGE_FISH_VOICE_MISSING,
+    ],
+    [
+      config.FAILURE_CODE_FISH_UNAUTHORIZED,
+      config.FAILURE_MESSAGE_FISH_UNAUTHORIZED,
+    ],
+    [config.FAILURE_CODE_FISH_PAYMENT, config.FAILURE_MESSAGE_FISH_PAYMENT],
+    [config.FAILURE_CODE_VOICE_PROVIDER, config.FAILURE_MESSAGE_VOICE_PROVIDER],
   ]);
 }
 
