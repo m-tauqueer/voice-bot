@@ -1,6 +1,6 @@
 # Phase 5 — Personas
 
-Current product work. Owner: Tauqueer. Read [AGENTS.md](../AGENTS.md), [PRD.md](PRD.md), [TRD.md](TRD.md), and [ENGRAM.md](ENGRAM.md) first. **Do only the part Tauqueer names.** Do not start [FUTURE.md](FUTURE.md). Do not start coding until he names a part after this architecture is locked.
+Built. Leftover **live sittings** are in §4. Current product work is [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Owner: Tauqueer. Map: [README.md](README.md). Read [AGENTS.md](../AGENTS.md), [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md), [TRD.md](TRD.md), and [ENGRAM.md](ENGRAM.md) first. **Do only the part Tauqueer names.** Do not start [FUTURE.md](FUTURE.md) until named.
 
 Goal: several owner-created Engram personas. A member talks to **one sitting at a time**. Shared knowledge is per persona. Private memory is per (user, persona). Isolation is structural in Engram plus an explicit persona pin on every app session.
 
@@ -135,7 +135,7 @@ Conversation is **never** promoted to shared. Teaching is **never** written from
 
 ## 4. Done when (the phase)
 
-A member picks Ada or Nova on chat and on voice, each remembers that member separately, the owner can teach and voice them separately, unpublished drafts stay owner-only, destroy is explicit, two tabs do not mix pools, `npm run isolation` covers two users × two personas, and first talk joins Engram People then subscribes that persona. Then stop. Onboarding UI and accounts are [FUTURE.md](FUTURE.md).
+A member picks Ada or Nova on chat and on voice, each remembers that member separately, the owner can teach and voice them separately, unpublished drafts stay owner-only, destroy is explicit, two tabs do not mix pools, `npm run isolation` covers two users × two personas, and first talk joins Engram People then subscribes that persona. Then stop. Cloned voices, Home/picker UI, onboarding, and accounts are [PHASE_6_PLAN.md](PHASE_6_PLAN.md).
 
 ### What is left (8 Sep 2026)
 

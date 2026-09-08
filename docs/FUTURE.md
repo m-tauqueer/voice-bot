@@ -1,19 +1,12 @@
-# Future work (parked)
+# Later work (parked)
 
-Do **not** start anything in this file until Tauqueer names it. Current work is [PHASE_5_PLAN.md](PHASE_5_PLAN.md). History: [SHIPPED.md](SHIPPED.md).
+Do **not** start anything in this file until Tauqueer names it. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work is [PHASE_6_PLAN.md](PHASE_6_PLAN.md). History: [SHIPPED.md](SHIPPED.md). Personas (built): [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
----
-
-## After Phase 5 — Phase 6: onboarding, UX, and accounts
-
-Starts only when personas are done.
-
-- **Onboarding & UX.** First-run/empty states; mic-permission coaching; error/loading surfaces; error boundary; mobile; accessibility (keyboard, focus, ARIA, contrast, reduced motion). Copy from config.
-- **Accounts & preferences.** Display name/avatar; preferences (voice/language later); session management / sign-out everywhere. Extra auth providers stay optional (D-F).
+Onboarding, cloned Fish voices, Home/picker UI, mobile, accessibility, and accounts moved to [PHASE_6_PLAN.md](PHASE_6_PLAN.md).
 
 ---
 
-## Parked product (later than Phase 6)
+## Parked product (later than the current phase)
 
 Leave these until Tauqueer pulls one forward:
 
@@ -21,7 +14,7 @@ Leave these until Tauqueer pulls one forward:
 - Billing (only if we charge — D-C)
 - Growth loops (recaps, referrals, re-engagement)
 - Multilingual code-switch (`language=multi`, config not a code branch)
-- Voice cloning (voice already lives on `personas.voice_config`)
+- Fish self-host / GPU, Fish Agents replacing our brain, Fish STT, member-created clones
 - Richer controller (safety, end-session, handoff, tools — still model/signal driven)
 - More channels (telephony, WhatsApp, native mobile)
 - Owner analytics (engagement, memory-growth, per-persona quality)

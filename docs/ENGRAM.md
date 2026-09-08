@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together.
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md).
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>

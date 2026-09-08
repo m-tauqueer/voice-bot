@@ -1,12 +1,12 @@
 # TRD — Voice Persona Bot
 
-Technical Requirements & Design. This is the source of truth for **how** the system is built. Owner: Tauqueer. Companion documents: [PRD](PRD.md), [ENGRAM](ENGRAM.md), [Phase 5](PHASE_5_PLAN.md), [index](PHASE_PLAN.md).
+Technical Requirements & Design. This is the source of truth for **how** the system is built. Owner: Tauqueer. Why a choice was made: [decisions/](decisions/README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Map: [README.md](README.md). Companions: [PRD](PRD.md), [ENGRAM](ENGRAM.md), [current work](PHASE_6_PLAN.md), [personas](PHASE_5_PLAN.md), [index](PHASE_PLAN.md).
 
 ---
 
 ## 1. Locked decisions
 
-Every decision below is confirmed. Do not silently change any of them; if reality forces a change, raise it with the owner and update this section.
+Every decision below is confirmed. Do not silently change any of them; if reality forces a change, raise it with the owner, write a new record under [decisions/](decisions/README.md) that supersedes the old one, and update this section.
 
 ### 1.1 Product
 
@@ -41,9 +41,10 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 ### 1.4 Voice transport
 
-- **Deepgram Voice Agent API** (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a **bring-your-own-LLM (BYO-LLM) shim** = controller -> Engram (`retrieve` by default, `chat` on the switch) -> the speaking LLM, streamed back token by token so speech starts on the first words.
-- **TTS voice is a property of the persona** (`personas.voice_config`); `DEEPGRAM_TTS_VOICE` is fallback when a row has none. Clone later. **Deepgram down = session ends** (+ reconnect attempt).
-- **Fallback:** a custom split pipeline (separate Deepgram STT WSS + Aura TTS WSS + our own turn-taking/barge-in) is used **only if** the Voice Agent API cannot acceptably host Engram-as-brain. The brain is written behind an interface so the swap is clean.
+- **Default sitting (no Fish voice id):** **Deepgram Voice Agent API** (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a **bring-your-own-LLM (BYO-LLM) shim** = controller -> Engram (`retrieve` by default, `chat` on the switch) -> the speaking LLM, streamed back token by token so speech starts on the first words. **Deepgram down = session ends** (+ reconnect attempt).
+- **TTS is a property of the persona** (`personas.voice_config`). A dedicated env-named key holds a hosted **Fish Audio** voice id when the owner cloned or pasted one. The existing Deepgram key holds an Aura id; `DEEPGRAM_TTS_VOICE` is fallback when that Deepgram key is empty. Selection is “is the Fish key a non-empty string,” never id-format sniffing. Fish sittings fail closed on missing key / 401 / 402 — they do not fall back to Aura.
+- **Fish sitting (Fish voice id set):** Deepgram **listen** streaming WSS (same STT model/language/endpointing as config) + hosted Fish TTS WebSocket (`reference_id`, PCM at the configured output sample rate) + our barge-in (flush playback and abort Fish). Voice Agent cannot speak a Fish id. The worker brain is unchanged. Fish clone bytes never go to Engram.
+- **Historical fallback:** a custom split pipeline (separate Deepgram STT WSS + Aura TTS WSS + our own turn-taking/barge-in) was documented if Voice Agent could not host Engram-as-brain. Latency was resolved inside the brain instead; Aura sittings still use Voice Agent. The Fish sitting reuses that split shape with Fish in place of Aura TTS.
 
 ### 1.5 Controller
 
@@ -141,9 +142,11 @@ sequenceDiagram
 - **Gateway (`gateway/`, TypeScript):** Google OAuth + session; the client WebSocket; the bridge to the Deepgram Voice Agent WSS (Settings, audio relay both ways, event handling incl. barge-in); writing audio to Azure Blob and Redis ephemeral state. Holds no persona logic.
 - **AI Worker (`worker/`, Python):** the **BYO-LLM endpoint** Deepgram calls. Runs the controller gate, the Engram call selected by `BRAIN_MODE`, and the speaking LLM, streaming the reply back as it is produced. Owns the Engram client wrapper and writes canonical turn records to Postgres. This is where the brain lives and where the fallback pipeline would plug in.
 
-### 2.4 Fallback architecture (custom pipeline)
+### 2.4 Split pipeline (Fish sittings, and the unused Aura fallback)
 
-Only if the Voice Agent API cannot host Engram-as-brain acceptably (e.g. its LLM wait window is too tight for Engram alpha + reframe): the gateway instead speaks to a Deepgram **STT streaming WSS** and an **Aura TTS WSS** directly, and the worker/gateway implement turn-taking (endpointing + interim results) and barge-in (`UserStartedSpeaking` -> `Clear` to TTS + flush playback) themselves. The worker brain is unchanged because it sits behind an interface.
+When the sitting’s persona has a Fish voice id, the gateway speaks to a Deepgram **STT streaming WSS** and a **Fish TTS WebSocket**, and implements turn-taking (endpointing + interim results) and barge-in (user started speaking → abort Fish + flush playback). The worker brain is unchanged.
+
+The same split shape with **Aura TTS WSS** was the documented fallback if Voice Agent could not host Engram-as-brain. That Aura fallback was never needed; Aura sittings stay on Voice Agent.
 
 ---
 
@@ -176,7 +179,7 @@ Authoritative docs: <https://developers.deepgram.com/>. Voice Agent message flow
 - **Voice Agent API:** open WSS, wait for `Welcome`, send `Settings` (audio format, Nova-3 STT `en`, Aura-2 voice, BYO-LLM config pointing at the worker), wait for `SettingsApplied`, then stream audio. Handle events: `UserStartedSpeaking` (stop playback for barge-in), `ConversationText`, `AgentThinking`, binary audio, `AgentAudioDone`, `Error`/`Warning`.
 - **BYO-LLM reachability:** Deepgram calls the worker's BYO-LLM endpoint server-to-server, so it must be publicly reachable. Local dev uses a tunnel (ngrok/cloudflared); Azure uses a public endpoint. The endpoint speaks the configured OpenAI-compatible protocol and internally runs controller -> `chat` -> reframe.
 - **Turn-taking config:** English conversational endpointing ~300ms. Code-switch (later) prefers ~100ms endpointing; treat these as config, not code branches.
-- **Fallback pipeline specifics:** STT streaming with `interim_results=true` and `endpointing`; reconstruct utterances from `is_final`/`speech_final`; Aura TTS over WSS; barge-in via `Clear` + local playback flush.
+- **Split pipeline specifics:** STT streaming with `interim_results=true` and `endpointing`; reconstruct utterances from `is_final`/`speech_final`; Fish TTS over WebSocket (PCM) when the persona has a Fish voice id, otherwise Aura TTS over WSS if that unused fallback is ever turned on; barge-in via abort/Clear + local playback flush.
 
 Only non-language-understanding thresholds (endpointing ms, timeouts) are configured. No keyword logic anywhere in the pipeline.
 
@@ -240,4 +243,4 @@ Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are dele
 
 ## 9. Future improvements (post first build)
 
-See [FUTURE.md](FUTURE.md). Multi-persona is **current** work ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)), not a future item.
+See [FUTURE.md](FUTURE.md) for parked product and Plan X. Cloned voices and member UI are **current** work ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)). Multi-persona is built ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)).

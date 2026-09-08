@@ -10,7 +10,7 @@ If a rule here conflicts with a general instinct you have, this file wins.
 
 A voice bot you can talk to that speaks as a **persona** with real long-term memory. Speech is handled by Deepgram, the persona brain and memory are handled by Engram, and a small reframing LLM turns the persona's recalled answer into natural spoken output.
 
-The one-line data flow for the shipping architecture:
+The one-line data flow for the shipping architecture (Aura sittings). A persona with a Fish voice id uses Deepgram for STT and Fish Audio for TTS — full detail is in the TRD, not this summary.
 
 ```
 browser mic -> Deepgram Voice Agent API (STT + TTS + turn-taking + barge-in)
@@ -18,7 +18,7 @@ browser mic -> Deepgram Voice Agent API (STT + TTS + turn-taking + barge-in)
             -> Deepgram speaks the reply as the words are produced
 ```
 
-Full detail is in the docs below. Do not infer architecture from this summary — read the TRD.
+Do not infer architecture from this summary — read the TRD.
 
 ---
 
@@ -32,35 +32,33 @@ Full detail is in the docs below. Do not infer architecture from this summary �
 
 ## 3. Working loop (follow exactly)
 
-1. Tauqueer names a **phase** and a **part** from [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) (or from [`docs/FUTURE.md`](docs/FUTURE.md) when he says that work is next).
-2. Complete **only that part** — all of its tasks, nothing from later parts.
-3. Where the part has a **Manual test**, run it (or walk Tauqueer through running it) and confirm it passes. Do not mark a part done until its manual test passes.
-4. **Do not commit automatically.** Commits happen **only when Tauqueer explicitly says to commit**, and **only after the part is complete** and its manual test has passed.
-5. After a commit (or if no commit is requested), stop and wait for the next instruction.
+1. Tauqueer names a **phase** and a **part** from [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md) (sittings left in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) or a part from [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) / [`docs/FUTURE.md`](docs/FUTURE.md) only when he names those files).
+2. Complete **only that part** — its subparts in order, nothing from later parts.
+3. After **each subpart**: run the automated checks that cover the change, then a logic check of the diff (config, no keyword understanding, isolation/fail-closed).
+4. After the last subpart: **tell Tauqueer** whether a manual sitting is needed (live call, real Fish id, browser). If the part lists a Manual test, walk him through it and wait until it passes. If it lists none, say so. If UI changed, verify in the browser. Do not mark the part done until that is settled.
+5. **Then commit that part** (see §4) and **stop** until Tauqueer names the next part. Do not wait for a second “please commit” on this working loop. Do not start the next part in the same sitting. Docs process: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
 ---
 
 ## 4. Commit rules
 
-- Commit **only on Tauqueer's explicit instruction**, only after part completion.
+- **One part per commit**, after the part is complete and its manual test (if any) has passed. On the current working loop that commit happens at the end of the part; Tauqueer does not also have to say “commit.” If he names work outside that loop, do not commit until he says so.
 - **Commit message style: normal, plain, human.** Imperative mood, concise subject, optional short body explaining the "why."
 - **Do not mention phase numbers or part numbers** in commit messages, code comments, or PR titles. Describe the work in plain language (do not write "Phase 0", "Part 1.2", "1.6", and so on). Those labels live only in the plan docs Tauqueer uses to name work.
 - **No AI attribution of any kind.** Do not add `Co-authored-by`, "Generated with", "Co-authored by an AI", tool banners, or emojis to commit messages.
 - Never skip hooks, never force-push, never amend a pushed commit, never touch git config.
-- One part per commit unless Tauqueer says otherwise.
 
 ---
 
 ## 5. Documents — read in this order
 
-- [`docs/PRD.md`](docs/PRD.md) — Product Requirements. What we're building and for whom, scope in/out, success criteria.
-- [`docs/TRD.md`](docs/TRD.md) — Technical Requirements & Design. **The locked decisions, architecture, data model, external services, risks, and future improvements.** This is the source of truth for how things are built.
-- [`docs/ENGRAM.md`](docs/ENGRAM.md) — Engram contract: pools, tenants, subscribe/delete, what we ingest where. Read this before changing memory or isolation. Member-private incident and live measurements: [`docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md`](docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Rollout (name a phase/part): [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md).
-- [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — Index of current vs shipped vs later.
-- [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) — **Personas product.** Tauqueer names a part from this file for sittings / persona UI.
-- [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) — **Next coding plan when named:** contain the shared-private-pool leak, then give each member their own Engram credential.
-- [`docs/SHIPPED.md`](docs/SHIPPED.md) — History of what already works (measured latency, isolation notes). Not a build plan.
-- [`docs/FUTURE.md`](docs/FUTURE.md) — Phase 6, parked product, Plan X (CI/CD, backups, security 2.0, Azure last). Do not start until named.
+Full map and Diátaxis roles: [`docs/README.md`](docs/README.md). How we update docs: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
+1. [`docs/CONTEXT.md`](docs/CONTEXT.md) — Where we are (shipped vs current vs parked).
+2. [`docs/decisions/README.md`](docs/decisions/README.md) — Why. Do not re-litigate Accepted records.
+3. [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md) — **Current work** (cloned Fish voices, then member UI). Tauqueer names a part from this file.
+4. [`docs/PRD.md`](docs/PRD.md) / [`docs/TRD.md`](docs/TRD.md) / [`docs/ENGRAM.md`](docs/ENGRAM.md) — what, how, memory contract. Isolation extras: [`docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md`](docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md); named rollout: [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md).
+5. [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — current vs shipped vs later. Personas leftover sittings: [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4. History: [`docs/SHIPPED.md`](docs/SHIPPED.md). Parked / Plan X: [`docs/FUTURE.md`](docs/FUTURE.md) — do not start until named.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -68,7 +66,9 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Phase 5 (personas) is built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green and a logic review found no remaining product isolation gaps in our code. What remains is the live sitting checklist in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4 — Engram-side per-member private memory works as of 8 Sep 2026: each member authenticates with their own session token, so their turns land in their own private pool, and a member we cannot credential degrades to shared-only rather than falling back to the key owner ([`docs/ENGRAM.md`](docs/ENGRAM.md) §2.3, §11). Read [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) before touching memory. Tauqueer names the next work. Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
+**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Personas are built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green. Live sittings left from that work: [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4. Engram-side per-member private memory works as of 8 Sep 2026: each member authenticates with their own session token, so their turns land in their own private pool, and a member we cannot credential degrades to shared-only rather than falling back to the key owner ([`docs/ENGRAM.md`](docs/ENGRAM.md) §2.3, §11). Read [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) before touching memory.
+
+**Current work is [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md)** (cloned Fish voices, then member UI). Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
@@ -129,7 +129,7 @@ npm run infra:reset
 - `infra/` — Docker Compose, migrations, scripts.
 - `docs/` — PRD, TRD, phase plans.
 
-External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until those keys are set; `npm run smoke` reports `SKIP` until then. Engram and OpenAI are required for the live brain (typed chat and voice).
+External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth, and Fish Audio when a persona uses a cloned voice. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until those keys are set; `npm run smoke` reports `SKIP` until then. Engram and OpenAI are required for the live brain (typed chat and voice). A Fish key is required only for sittings whose persona has a Fish voice id.
 
 ---
 
@@ -139,11 +139,11 @@ External services you must have credentials for (Tauqueer holds the accounts): D
 - **No rule-based heuristics, no keyword matching, no intent if/else.** The controller's speak/silence decision and any understanding of the user must come from model outputs or structured signals — never from string/keyword matching or hand-written "if it contains X" logic. Infrastructure thresholds that are not language understanding (e.g. VAD/endpointing milliseconds, max tokens, timeouts, HTTP status handling) are allowed and expected.
 - **Build for production, not just to pass a demo.** No "TODO later" holes in a part you called done.
 - **Reference the code, not the docs, for behavior.** Keep docs updated when you change intent, but trust the code as ground truth.
-- **Use Context7 MCP for any library/API documentation, setup, or configuration lookups** (Engram SDK, Deepgram, OpenAI, etc.). If Context7 MCP is not connected in your session, say so and set it up before relying on memory. The Engram alpha docs (<https://engram-docs-alpha.netlify.app/llms.txt>) and Deepgram docs (<https://developers.deepgram.com/>) are the authoritative fallback.
+- **Use Context7 MCP for any library/API documentation, setup, or configuration lookups** (Engram SDK, Deepgram, OpenAI, Fish Audio, etc.). If Context7 MCP is not connected in your session, say so and set it up before relying on memory. The Engram alpha docs (<https://engram-docs-alpha.netlify.app/llms.txt>), Deepgram docs (<https://developers.deepgram.com/>), and Fish Audio docs (<https://docs.fish.audio/llms.txt>) are the authoritative fallback.
 - **Respect Engram's contracts:** never build tenant strings by hand; use the persona endpoints; carry `session_id` across a conversation; read `tenant` off each retrieve row. Full map: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
 ---
 
 ## 8. Definition of done for a part
 
-A part is done when: every task in it is implemented to production quality, it adheres to the principles above, the manual test (if any) passes, and Tauqueer has been shown the result. Only then may a commit happen — and only if Tauqueer says so.
+A part is done when: every subpart is implemented to production quality, it adheres to the principles above, the automated checks and logic check have passed, Tauqueer has been asked whether a manual sitting is needed and that sitting (if any) has passed. Then commit (see §4) and stop. Do not start the next part until he names it.
