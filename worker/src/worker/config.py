@@ -120,6 +120,28 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     log_turn_event: str = Field(default="turn", min_length=1)
+    log_subscribe_forbidden: str = Field(
+        default="subscribe_forbidden",
+        min_length=1,
+    )
+    log_subscribe_failed: str = Field(default="subscribe_failed", min_length=1)
+    log_engram_join_failed: str = Field(default="engram_join_failed", min_length=1)
+    log_engram_join_skipped: str = Field(default="engram_join_skipped", min_length=1)
+    failure_message_engram_join: str = Field(
+        default=(
+            "Could not join this member to the persona memory workspace. "
+            "The turn did not run."
+        ),
+        min_length=1,
+    )
+    failure_code_engram_join: str = Field(default="engram_join_failed", min_length=1)
+    engram_org_member_role: str = Field(default="member", min_length=1)
+    engram_org_member_password_nbytes: int = Field(default=24, ge=8)
+    engram_org_join_skip_email_prefix: str = Field(default="probe-", min_length=1)
+    engram_org_join_skip_email_domain: str = Field(
+        default="example.test",
+        min_length=1,
+    )
     voice_notice_kind_trace: str = Field(default="trace", min_length=1)
     voice_notice_trace_code: str = Field(default="turn_traced", min_length=1)
     voice_notice_trace_message: str = Field(default="Turn recorded.", min_length=1)
@@ -146,6 +168,24 @@ class WorkerSettings(BaseSettings):
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
+    # Pins which published persona the probes talk to. Unset means the oldest.
+    probe_persona_id: str | None = None
+    persona_error_not_found: str = Field(default="persona not found", min_length=1)
+    admin_error_persona_pin_required: str = Field(
+        default="persona_id is required when several personas exist",
+        min_length=1,
+    )
+    admin_error_create_forbidden: str = Field(
+        default="Engram refused create; record a dashboard persona id instead",
+        min_length=1,
+    )
+    # Destroy is confirmed by typing the persona's own handle, so the owner
+    # cannot wipe the wrong one with a phrase they already have in the clipboard.
+    admin_error_destroy_confirmation: str = Field(
+        default="type the persona handle exactly to destroy it",
+        min_length=1,
+    )
+    persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)

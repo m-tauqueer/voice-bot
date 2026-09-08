@@ -8,19 +8,39 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from worker.admin.confirm import confirmation_matches
 from worker.admin.errors import AdminError
 from worker.admin.store import (
     connect,
+    delete_persona_cascade,
     find_user,
+    get_persona,
+    list_personas,
     list_subscriptions,
-    resolve_active_persona,
+    pick_single_persona,
+    set_engram_user_id,
+    set_persona_published,
     upsert_persona,
     upsert_subscription,
 )
+from worker.admin.voice import as_voice_config, merge_tts_voice
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
-from worker.engram.errors import BrainError, ConflictError, ForbiddenError
+from worker.engram.errors import (
+    BrainError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from worker.engram.interface import IngestOutcome, PersonaBrain, PersonaRecord
+from worker.engram.org_member import (
+    OrgRoster,
+    ensure_org_member,
+    open_org_roster,
+    skip_org_join,
+)
+from worker.engram.user_id import persona_engine_user_id
 from worker.schema import SUBSCRIPTION_ACTIVE
 
 
@@ -60,16 +80,24 @@ def _require_handle(handle: str | None, fallback: str | None) -> str:
     return resolved
 
 
+def _pin(persona_id: str | UUID | None) -> str | None:
+    if persona_id is None:
+        return None
+    return str(persona_id)
+
+
 class PersonaAdmin:
     def __init__(
         self,
         settings: WorkerSettings,
         brain_factory: Callable[[WorkerSettings, str], PersonaBrain] | None = None,
+        roster_factory: Callable[[WorkerSettings], OrgRoster] | None = None,
     ) -> None:
         self._settings = settings
         self._brain_factory = brain_factory or (
             lambda loaded, user_id: EngramBrain(loaded, user_id)
         )
+        self._roster_factory = roster_factory
 
     def _brain(self) -> AbstractContextManager[PersonaBrain]:
         @contextmanager
@@ -82,20 +110,66 @@ class PersonaAdmin:
 
         return _open()
 
-    def _require_active(self) -> dict[str, Any]:
+    def _with_tts(
+        self,
+        voice_config: dict[str, Any] | None,
+        tts_voice: str | None,
+    ) -> dict[str, Any]:
+        return merge_tts_voice(
+            as_voice_config(voice_config),
+            tts_voice=tts_voice,
+            key=self._settings.persona_voice_tts_key,
+        )
+
+    def _require_active(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
+        pin = _pin(persona_id)
         with connect(self._settings) as conn:
-            row = resolve_active_persona(conn, self._settings)
+            if pin is not None:
+                row = get_persona(conn, pin)
+            else:
+                row = pick_single_persona(
+                    list_personas(conn),
+                    error=self._settings.admin_error_persona_pin_required,
+                )
         if row is None:
             raise AdminError(
-                "no persona is recorded yet",
+                self._settings.persona_error_not_found,
                 status=404,
                 reason="persona_missing",
             )
         return row
 
-    def show(self) -> dict[str, Any]:
+    def seed_persona_id(self) -> str | None:
+        """`ENGRAM_PERSONA_ID` seeds an empty catalog and nothing else.
+
+        With rows already recorded it must not stand in for a pin: `register`
+        upserts on `engram_persona_id`, so an implicit id would quietly rewrite
+        an existing persona's handle, name and voice.
+        """
+        seed = self._settings.engram_persona_id
+        if not seed:
+            return None
         with connect(self._settings) as conn:
-            local = resolve_active_persona(conn, self._settings)
+            if list_personas(conn):
+                return None
+        return seed
+
+    def show(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
+        pin = _pin(persona_id)
+        with connect(self._settings) as conn:
+            rows = list_personas(conn)
+            if pin is not None:
+                local = get_persona(conn, pin)
+                if local is None:
+                    raise AdminError(
+                        self._settings.persona_error_not_found,
+                        status=404,
+                        reason="persona_missing",
+                    )
+            elif len(rows) == 1:
+                local = rows[0]
+            else:
+                local = None
             subscriptions: list[dict[str, Any]] = []
             if local is not None:
                 subscriptions = list_subscriptions(conn, str(local["id"]))
@@ -108,6 +182,7 @@ class PersonaAdmin:
                 raise _brain_error(exc) from exc
         return {
             "persona": _row(local) if local else None,
+            "personas": [_row(row) for row in rows],
             "engram": _jsonable(remote) if remote else None,
             "subscriptions": _jsonable(subscriptions),
         }
@@ -120,6 +195,7 @@ class PersonaAdmin:
         display_name: str | None,
         description: str | None,
         voice_config: dict[str, Any],
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -138,7 +214,7 @@ class PersonaAdmin:
                 handle=resolved_handle,
                 display_name=resolved_name,
                 description=resolved_description,
-                voice_config=voice_config,
+                voice_config=self._with_tts(voice_config, tts_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -149,13 +225,14 @@ class PersonaAdmin:
         handle: str,
         description: str,
         voice_config: dict[str, Any],
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
                 remote = brain.create_persona(name, handle, description)
         except ForbiddenError as exc:
             raise AdminError(
-                "Engram refused create; record a dashboard persona id instead",
+                self._settings.admin_error_create_forbidden,
                 status=403,
                 reason="create_forbidden",
             ) from exc
@@ -168,19 +245,26 @@ class PersonaAdmin:
                 handle=handle,
                 display_name=name,
                 description=description,
-                voice_config=voice_config,
+                voice_config=self._with_tts(voice_config, tts_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
     def update_local(
         self,
         *,
+        persona_id: str | UUID | None = None,
         handle: str | None,
         display_name: str | None,
         description: str | None,
         voice_config: dict[str, Any] | None,
+        tts_voice: str | None = None,
     ) -> dict[str, Any]:
-        current = self._require_active()
+        current = self._require_active(persona_id)
+        merged_voice = (
+            as_voice_config(current["voice_config"])
+            if voice_config is None
+            else as_voice_config(voice_config)
+        )
         with connect(self._settings) as conn:
             local = upsert_persona(
                 conn,
@@ -190,16 +274,71 @@ class PersonaAdmin:
                 description=(
                     current["description"] if description is None else description
                 ),
-                voice_config=(
-                    current["voice_config"]
-                    if voice_config is None
-                    else voice_config
-                ),
+                voice_config=self._with_tts(merged_voice, tts_voice),
             )
         return {"persona": _row(local)}
 
-    def teach(self, text: str) -> dict[str, Any]:
-        persona = self._require_active()
+    def publish(
+        self,
+        *,
+        published: bool,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        current = self._require_active(persona_id)
+        with connect(self._settings) as conn:
+            local = set_persona_published(conn, str(current["id"]), published)
+        if local is None:
+            raise AdminError(
+                self._settings.persona_error_not_found,
+                status=404,
+                reason="persona_missing",
+            )
+        return {"persona": _row(local)}
+
+    def destroy(
+        self,
+        *,
+        confirmation: str,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        """Wipe a persona: Engram pools first, then our record of it.
+
+        Engram `delete` removes the shared pool **and** every member's private
+        pool for this persona, so there is nothing to unsubscribe afterwards.
+        Our rows go last: while they exist we can still name what to delete.
+        """
+        persona = self._require_active(persona_id)
+        if not confirmation_matches(confirmation, str(persona["handle"])):
+            raise AdminError(
+                self._settings.admin_error_destroy_confirmation,
+                status=400,
+                reason="confirmation_mismatch",
+            )
+        engram = "deleted"
+        try:
+            with self._brain() as brain:
+                brain.delete_persona(str(persona["engram_persona_id"]))
+        except NotFoundError:
+            # Already gone on their side; our row is the only thing left.
+            engram = "missing"
+        except BrainError as exc:
+            raise _brain_error(exc) from exc
+        with connect(self._settings) as conn:
+            removed = delete_persona_cascade(conn, str(persona["id"]))
+        return {
+            "ok": True,
+            "persona": _row(persona),
+            "engram": engram,
+            "removed": removed,
+        }
+
+    def teach(
+        self,
+        text: str,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.teach(persona["engram_persona_id"], text)
@@ -207,8 +346,12 @@ class PersonaAdmin:
             raise _brain_error(exc) from exc
         return {"ok": True, "result": _jsonable(result)}
 
-    def questions(self) -> dict[str, Any]:
-        persona = self._require_active()
+    def questions(
+        self,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.questions(persona["engram_persona_id"])
@@ -222,8 +365,14 @@ class PersonaAdmin:
             "raw": _jsonable(payload),
         }
 
-    def answer(self, question_key: str, text: str) -> dict[str, Any]:
-        persona = self._require_active()
+    def answer(
+        self,
+        question_key: str,
+        text: str,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.answer(
@@ -239,8 +388,10 @@ class PersonaAdmin:
         self,
         source: Any,
         metadata: dict[str, Any] | None = None,
+        *,
+        persona_id: str | UUID | None = None,
     ) -> dict[str, Any]:
-        persona = self._require_active()
+        persona = self._require_active(persona_id)
         try:
             with self._brain() as brain:
                 result = brain.ingest_shared_document(
@@ -256,9 +407,9 @@ class PersonaAdmin:
         self,
         identifier: str,
         *,
-        record_local: bool = False,
+        persona_id: str | UUID | None = None,
     ) -> dict[str, Any]:
-        persona = self._require_active()
+        persona = self._require_active(persona_id)
         with connect(self._settings) as conn:
             user = find_user(conn, identifier)
         if user is None:
@@ -267,22 +418,29 @@ class PersonaAdmin:
                 status=404,
                 reason="user_missing",
             )
+        email = str(user["email"])
+        if skip_org_join(self._settings, email):
+            raise AdminError(
+                self._settings.failure_message_engram_join,
+                status=403,
+                reason="engram_join_skipped",
+            )
+        stored = str(user["engram_user_id"])
+        engine_id = self._ensure_member_id(email)
+        engine_id = self._persist_people_id(user, stored, engine_id)
+        user = {**user, "engram_user_id": engine_id}
         try:
-            with self._brain() as brain:
-                result = brain.subscribe(
-                    persona["engram_persona_id"],
-                    str(user["engram_user_id"]),
-                )
+            result = self._subscribe_engine(persona, engine_id)
+        except ValidationError:
+            engine_id = self._ensure_member_id(email)
+            engine_id = self._persist_people_id(user, stored, engine_id)
+            user = {**user, "engram_user_id": engine_id}
+            try:
+                result = self._subscribe_engine(persona, engine_id)
+            except BrainError as exc:
+                raise _brain_error(exc) from exc
         except ConflictError:
             result = {"already": True}
-        except ForbiddenError as exc:
-            if not record_local:
-                raise AdminError(
-                    "Engram refused subscribe; use the dashboard then record locally",
-                    status=403,
-                    reason="subscribe_forbidden",
-                ) from exc
-            result = {"recorded_local": True}
         except BrainError as exc:
             raise _brain_error(exc) from exc
         with connect(self._settings) as conn:
@@ -297,3 +455,36 @@ class PersonaAdmin:
             "user": _row(user),
             "result": _jsonable(result),
         }
+
+    def _ensure_member_id(self, email: str) -> str:
+        try:
+            if self._roster_factory is not None:
+                roster = self._roster_factory(self._settings)
+                try:
+                    return ensure_org_member(roster, self._settings, email=email)
+                finally:
+                    roster.close()
+            with open_org_roster(self._settings) as roster:
+                return ensure_org_member(roster, self._settings, email=email)
+        except BrainError as exc:
+            raise _brain_error(exc) from exc
+
+    def _persist_people_id(
+        self,
+        user: dict[str, Any],
+        stored: str,
+        engine_id: str,
+    ) -> str:
+        engine_id = persona_engine_user_id(engine_id)
+        if engine_id == persona_engine_user_id(stored):
+            return engine_id
+        with connect(self._settings) as conn:
+            set_engram_user_id(conn, str(user["id"]), engine_id)
+        return engine_id
+
+    def _subscribe_engine(self, persona: dict[str, Any], engine_id: str) -> Any:
+        with self._brain() as brain:
+            return brain.subscribe(
+                persona["engram_persona_id"],
+                persona_engine_user_id(engine_id),
+            )

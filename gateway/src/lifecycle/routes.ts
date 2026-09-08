@@ -15,7 +15,7 @@ import { getUserById } from "../auth/users.js";
 import { callWorker } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
 import { resolvePageSize } from "../insights/parse.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { listLocalPersonas } from "../personas.js";
 import { SESSION_KIND } from "../schema.js";
 import {
   canDeleteAccount,
@@ -147,10 +147,15 @@ export async function registerLifecycleRoutes(
     if (!archive) {
       return reply.code(404).send({ error: config.ACCESS_ERROR_UNAUTHORIZED });
     }
-    let memories: unknown = null;
+    let memories: unknown = [];
     try {
-      const persona = await resolveActivePersona(sql, config);
-      if (persona) {
+      const personas = await listLocalPersonas(sql);
+      const collected: {
+        persona_id: string;
+        handle: string;
+        memories: unknown;
+      }[] = [];
+      for (const persona of personas) {
         const response = await callWorker(config, "/internal/memories", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -161,18 +166,21 @@ export async function registerLifecycleRoutes(
           }),
         });
         if (response.ok) {
-          memories = await response.json();
+          collected.push({
+            persona_id: persona.id,
+            handle: persona.handle,
+            memories: await response.json(),
+          });
         } else {
           request.log.warn(
-            { status: response.status },
+            { status: response.status, personaId: persona.id },
             "export memories unavailable",
           );
         }
       }
+      memories = collected;
     } catch (error) {
-      if (!(error instanceof MultiplePersonasError)) {
-        request.log.warn({ err: error }, "export memories lookup failed");
-      }
+      request.log.warn({ err: error }, "export memories lookup failed");
     }
     const body = { ...archive, memories };
     return reply
@@ -260,10 +268,16 @@ export async function registerLifecycleRoutes(
         .code(409)
         .send({ error: config.LIFECYCLE_ERROR_INVALID_TRANSITION });
     }
-    await markDeletionCompleted(sql, pending.id, user.id);
     const erased = await eraseMemberAccount(sql, config, request.log, user);
+    if (!erased.ok) {
+      // The request stays pending so a retry, or the owner, can finish it.
+      return reply
+        .code(503)
+        .send({ error: config.LIFECYCLE_ERROR_PURGE_INCOMPLETE });
+    }
+    await markDeletionCompleted(sql, pending.id, user.id);
     await destroySession(redis, request, reply, config);
-    return { deleted: true, ...erased };
+    return { deleted: true, sessions: erased.sessions, engram: erased.engram };
   });
 
   app.post("/api/me/deletion-requests", async (request, reply) => {
@@ -481,7 +495,19 @@ export async function registerLifecycleRoutes(
                   });
                   continue;
                 }
-                await eraseMemberAccount(sql, config, request.log, target);
+                const erased = await eraseMemberAccount(
+                  sql,
+                  config,
+                  request.log,
+                  target,
+                );
+                if (!erased.ok) {
+                  errors.push({
+                    id,
+                    error: config.LIFECYCLE_ERROR_PURGE_INCOMPLETE,
+                  });
+                  continue;
+                }
               }
             }
             await markDeletionCompleted(sql, row.id, actor.id);

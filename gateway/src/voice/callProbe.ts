@@ -169,6 +169,13 @@ async function main(): Promise<number> {
     const authSessionId = await persistAuthSession(redis, config, user.id);
     const cookie = `${config.SESSION_COOKIE_NAME}=${signSessionCookieValue(config, authSessionId)}`;
     console.log(`user=${user.email}`);
+    const [persona] = await sql<{ id: string }[]>`
+      SELECT id FROM personas WHERE published = true ORDER BY created_at LIMIT 1
+    `;
+    if (!persona) {
+      console.error("FAIL: no published persona recorded locally");
+      return 1;
+    }
 
     const transcripts: { role: string; content: string }[] = [];
     const events: string[] = [];
@@ -177,7 +184,7 @@ async function main(): Promise<number> {
     let userStartedCount = 0;
     let audioDoneCount = 0;
 
-    socket = new WebSocket(clientVoiceWsUrl(config), {
+    socket = new WebSocket(clientVoiceWsUrl(config, persona.id), {
       headers: { Cookie: cookie },
     });
     const client = socket;

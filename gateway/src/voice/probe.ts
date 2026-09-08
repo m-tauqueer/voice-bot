@@ -115,13 +115,21 @@ async function main(): Promise<number> {
     const authSessionId = await persistAuthSession(redis, config, user.id);
     const cookie = `${config.SESSION_COOKIE_NAME}=${signSessionCookieValue(config, authSessionId)}`;
     console.log(`user=${user.email}`);
+    const [persona] = await sql<{ id: string }[]>`
+      SELECT id FROM personas WHERE published = true ORDER BY created_at LIMIT 1
+    `;
+    if (!persona) {
+      console.error("FAIL: no published persona recorded locally");
+      return 1;
+    }
+    const authedUrl = clientVoiceWsUrl(config, persona.id);
 
     const opened = await new Promise<{
       socket: WebSocket;
       sessionId: string;
       requestId: string | null;
     }>((resolve, reject) => {
-      const client = new WebSocket(voiceUrl, { headers: { Cookie: cookie } });
+      const client = new WebSocket(authedUrl, { headers: { Cookie: cookie } });
       const timer = setTimeout(() => {
         client.terminate();
         reject(new Error("timed out waiting for voice ready"));

@@ -49,7 +49,9 @@ Taxonomy/auth pages still describe `{org}` and `{org}:{user}` plus isolation mod
 
 **Never build a tenant string with an f-string.** `scoped(f"{org}:{persona}:{user}")` is refused on generic `/t/{tenant}` routes **by design** (403). Those routes have no subscription check; serving them would let a member read another member’s chats by editing a URL.
 
-Our worker already binds `EngramClient(org_id, engram_user_id)` and then calls `personas.*`. That is correct: the client identity is the member; the persona id is an argument, not a hand-built tenant.
+Our worker binds `EngramClient(org_id, engram_user_id)` and then calls `personas.*`. The persona id is an argument, not a hand-built tenant — that part is right. **But the bind does not choose the private pool.** See §2.4.
+
+Each member’s Engram `user_id` is the app user UUID as **32 hex characters** (no hyphens). App `users.id` stays a Postgres uuid. Subscribe `body.user_id` is capped at 32 characters; a hyphenated UUID is 36 and Engram returns 422. The same hex string is used for the client bind and for `personas.subscribe`, so grant and retrieve address one identity.
 
 ### 2.2 Shared vs private (the product rule)
 
@@ -64,7 +66,22 @@ Read `tenant` and `text` off **each result row**. The top-level `tenants` list o
 
 Each pool numbers `gid`s from 1001 independently. `404 engine 404: gid 1023` means **wrong pool**, not deleted. `personas.node(pid, gid, scope="shared"|"private")` must name the pool.
 
-### 2.3 What we never ingest where
+### 2.3 “Caller private” means the API key, not the bound user (measured 8 Sep 2026)
+
+`chat`, `converse`, and `retrieve` send **only** the persona id and the message. There is no `user_id` in the body, the query, or a header. The subject is whoever the API key authenticates as. `EngramClient(org, user_id)` uses `user_id` for the generic `/t/{tenant}` routes and as the default metrics subject — **the persona routes ignore it** (SDK 0.4.0, `resources.py`, section comment “conversation (writes the CALLER's private pool)”).
+
+With one `org_admin` key on the server, that means **every member shares the org admin’s private pool**. Measured against the live alpha:
+
+- `retrieve` bound to a user id that does not exist still returned `{org}:{persona}:{org_admin}` rows.
+- `user_memories(pid, member_id)` returned 0 while `user_memories(pid, org_admin_id)` held other members’ turns.
+
+This was invisible for months because our isolation probe asserted only that the returned private tenant was **not** user B’s id, and the admin’s stored id was a placeholder that matched nobody. Assert the positive: the private tenant a member reads must **equal** that member’s Engram `user_id`.
+
+Which surfaces do accept a subject (workspace-admin only): `pool(pid, scope, user_id=)`, `private(pid, user_id=)`, `user_memories`, `forget_user_memory`, `node`, `conversations`, `conversation`, `compress`. **There is no semantic retrieve on behalf of a member** — that gap is what blocks per-member private memory.
+
+Neither `tokens.create` (inherits the creator’s identity) nor a member password we discard can act as a member. Status: we have asked Engram for a subject on the conversation endpoints, or an admin endpoint that mints a member-scoped token. Until then the private pool is not per-member, and any private memory written under the shared admin identity is disposable. The memory panel therefore returns **only** rows whose tenant ends in the acting member’s id, which is empty rather than someone else’s history.
+
+### 2.4 What we never ingest where
 
 | Intent | Call | Lands in |
 | --- | --- | --- |
@@ -110,13 +127,18 @@ These are different.
 
 > `personas.unsubscribe(pid, user_id)` — their private pool is untouched.
 
-Subscribe / unsubscribe / subscribers are **workspace-admin** on the docs. The public docs **never name** a permission string `org:manage`. Our live key has returned `403 missing permission(s): ['org:manage']` on `subscribe`, and independently `chat` / `retrieve` / `converse` still worked without a subscription. So:
+Subscribe / unsubscribe / subscribers are **workspace-admin** on the docs. The live API names `org:manage` for subscribe and `members:manage` for `members.add` / `members.update`. Independently, `chat` / `retrieve` / `converse` have worked without a subscription on this alpha; we no longer rely on that.
+
+**First talk (and admin Subscribe tester)** joins Engram People if needed (`members.add` by Google email), persists Engram’s `user_id`, binds `EngramClient` as that id, then `personas.subscribe` for **that** persona. New People rows get a random password that is never stored, logged, or emailed. Existing Engram emails are added with no password. Fail the turn if add or subscribe fails (except subscribe already-granted). Waitlist accounts are never added to People. Isolation probe `probe-*@example.test` addresses must not call `members.add`. Do not treat our `subscriptions` table as isolation.
+
+So:
 
 1. **Published list in our app is who may see the persona.**
-2. **On first talk** we still call `personas.subscribe(engram_persona_id, engram_user_id)` so a future Engram 403 cannot surprise us.
-3. If subscribe 403s for missing manage scope: log it, do not block the member **while** retrieve/chat still succeed.
-4. If retrieve/chat return `ForbiddenError` (not subscribed): fail the turn honestly. Isolation still holds. Owner needs a key that can subscribe.
+2. **On first talk** ensure People membership, persist Engram’s `user_id`, then `personas.subscribe(engram_persona_id, that id)`.
+3. If add or subscribe fails (`members:manage` 403, 422, 5xx): fail the turn. Do not talk under a minted placeholder id.
+4. If retrieve/chat return `ForbiddenError` (not subscribed): fail the turn honestly. Isolation still holds.
 5. **Never treat our `subscriptions` table as the isolation control.** It is a mirror for admin visibility.
+6. **Delete-my-data** forgets and unsubscribes; it does not `members.remove`. Never remove the Engram org admin from People.
 
 `persona_subscriptions` on Engram’s side: `(id, org_id, persona_id, user_id, created_at)`, unique `(persona_id, user_id)`.
 
@@ -136,7 +158,7 @@ For this product:
 | Draft / hide from members | local `published = false` | leave pools alone; optional `status=archived` |
 | Stop one member using it | unpublished already covers all members; do not build per-member assign | optional `unsubscribe` (private pool remains) |
 | Destroy the persona | delete local row after confirm | `personas.delete` — **all members lose that private history** |
-| Member deletes their account | already: `user_memories` + `forget_user_memory` + `unsubscribe` | must run **for every persona they used**, not “the active one” |
+| Member deletes their account | local sessions ∪ subscriptions, then `user_memories` + `forget_user_memory` + `unsubscribe` per Engram persona id | every persona that member used, not one active row |
 
 Admin-only (member naming anyone else → `ForbiddenError: cannot access another user's private memory`): `users`, `user_memories`, `forget_user_memory`, `node(..., user_id=)`, `conversations(..., user_id=)`, `compress(..., user_id=)`, `private(pid, user_id=)`, `compress_all`.
 
@@ -148,7 +170,7 @@ Admin-only (member naming anyone else → `ForbiddenError: cannot access another
 
 Roles: `member` | `org_admin` | `superadmin`. Permission shape is `resource:action`. Named scopes in the docs: `memory:read`, `memory:write`, `metrics:read`, `audit:read`. Empty scopes or `"*"` = full role of the creator. Scopes cannot exceed the creator.
 
-`org:manage` is **not** in the public docs; it is what the live API returned on subscribe. Treat subscribe as workspace-admin / org-admin until a key with that scope exists.
+`org:manage` is **not** in the public docs; it is what the live API returned on subscribe. `members:manage` is what the live API returned on `members.add`/`update`. Check `account.me().permissions`. See §4.
 
 Our product org is one Engram org. Each approved Google member maps to one Engram `user_id`. The **persona** is not a second Engram user.
 
@@ -169,7 +191,7 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private | shared + caller private |
 | `teach` / `answer` / `questions` | owner admin | shared | — |
 | `pool(pid, "shared").document/text` | owner ingest | shared | — |
-| `subscribe` / `unsubscribe` | first talk / account delete | grant only | — |
+| `members.add` then `subscribe` / `unsubscribe` | first talk / account delete | People + grant | — |
 | `user_memories` / `forget_user_memory` | member delete-my-data | forget private | one member’s private |
 | `delete` | owner destroy | destroys shared + all private | — |
 | `create` / `update` / `list` / `get` | owner admin | persona row | — |
@@ -187,7 +209,10 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | 401 | bad key | fix key; no retry |
 | 402 | org over allowance | stop writes |
 | 403 `ForbiddenError` on chat | not subscribed, or wrong pool | typed not-subscribed; do not invent a tenant |
-| 403 `org:manage` on subscribe | key cannot admin-subscribe | log; isolation still app-side |
+| 403 `org:manage` on subscribe / list subscribers | key cannot grant Engram audience | fail the turn; fix the key |
+| 403 `members:manage` on `members.add` | key cannot join People | fail the turn; fix the key |
+| 422 `user is not a member of this org` | subscribe id is not on People | join People, persist Engram id, subscribe again once |
+| retrieve returns a private tenant that is **not** the acting member | conversation endpoints resolved the subject from the API key | §2.3; do not show it to the member |
 | 403 persona-private on `/t/` | someone built a three-segment tenant | use persona endpoints |
 | 404 `engine 404: gid N` | wrong pool | pass `scope=` |
 | 404 unknown `session_id` on `conversation()` | bad thread id | do not treat as empty chat |
@@ -218,8 +243,9 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 3. Isolation unknown flag: taxonomy says fallback `strict`; admin `set_flag` rejects unknown.
 4. Two “subscriptions”: persona access vs billing plan.
 5. Two `session_id`s: `sessions.open` vs persona conversation.
-6. `org:manage` live vs undocumented in public docs.
-7. Subscribe required for chat (docs) vs our alpha key still serving chat without subscribe (measured). Product policy: subscribe on first talk; app published list is the member-facing gate; fail closed if Engram starts enforcing 403.
+6. `org:manage` and `members:manage` live vs undocumented in public docs. The role name `org_admin` is not enough — check `account.me().permissions`.
+7. Subscribe required for chat (docs) vs alpha serving chat without subscribe (measured). Product policy: first talk joins People then subscribes; fail closed if that fails. App published list is the member-facing gate. Chat also *appeared* to work unsubscribed because the caller was always the subscribed admin — see §2.3.
+8. Docs describe `{org}:{persona}:{user}` as per-member, and the admin surfaces honour a `user_id`, but the conversation endpoints have no subject at all. Both cannot be true for a server holding one key. §2.3.
 
 ---
 
@@ -227,4 +253,8 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 `worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), converse. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
 
-The gap is the **app**: `resolveActivePersona` throws on >1 row; chat/voice/memory/lifecycle all call it; admit subscribe uses `ENGRAM_PERSONA_ID`; purge forgets one persona. Engram is already multi-persona. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, publish or unpublish locally, and destroy. Destroy calls `personas.delete` (shared pool plus every member's private pool) after the owner types the handle, then clears the local subscriptions, sittings and persona row. The gateway does not guess one local row.
+
+Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+
+App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. Engram-side per-member private memory does **not** hold yet, for the reason in §2.3. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.

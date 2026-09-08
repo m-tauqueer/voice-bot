@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/Segmented";
+import { api } from "../../lib/gateway";
 import { loadNavConfig } from "../../lib/nav";
+import { personaPinField } from "../../lib/personaVoice";
+import {
+  parsePublishedDirectory,
+  type PublishedPersona,
+} from "../../lib/publishedPersonas";
 import {
   matchPattern,
   navigate,
@@ -16,7 +22,8 @@ import {
   type SessionListItem,
 } from "../../lib/insights";
 import { loadUiCopy } from "../../lib/uiCopy";
-import { FetchError } from "../dashboard/FetchState";
+import { PersonaPicker } from "../PersonaPicker";
+import { EmptyNote, FetchError } from "../dashboard/FetchState";
 import { SessionRows } from "../dashboard/SessionRows";
 import { SessionReconstruct } from "../dashboard/Transcripts";
 
@@ -33,13 +40,20 @@ function ConversationList() {
   const nav = loadNavConfig();
   const copy = loadUiCopy();
   const search = useSearchParams();
+  const pinField = personaPinField();
   const range = search.get("range") ?? copy.defaultRange;
   const channelRaw = search.get("channel") ?? copy.filterAnyId;
   const userId = search.get("user_id") ?? "";
+  const rawPin = search.get(pinField);
+  const [directory, setDirectory] = useState<PublishedPersona[]>([]);
+  const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [rows, setRows] = useState<SessionListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const loadGen = useRef(0);
+  const pickedId =
+    rawPin && directory.some((row) => row.id === rawPin) ? rawPin : null;
 
   const title =
     nav.adminItems.find((item) => item.to === ROUTES.adminConversations)?.label ??
@@ -47,8 +61,38 @@ function ConversationList() {
 
   const channelParam = channelRaw === copy.filterAnyId ? undefined : channelRaw;
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await api<{ personas?: unknown }>("/api/personas");
+        if (!cancelled) {
+          setDirectory(parsePublishedDirectory(payload));
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setError(caught);
+        }
+      } finally {
+        if (!cancelled) {
+          setBoot("ready");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const load = useCallback(
     async (nextCursor?: string) => {
+      const gen = ++loadGen.current;
+      if (!pickedId) {
+        setRows([]);
+        setCursor(null);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -57,28 +101,45 @@ function ConversationList() {
           cursor: nextCursor,
           channel: channelParam,
           userId: userId || undefined,
+          personaId: pickedId,
         });
+        if (gen !== loadGen.current) {
+          return;
+        }
         setRows((current) =>
           nextCursor ? [...current, ...page.sessions] : page.sessions,
         );
         setCursor(page.next_cursor);
       } catch (caught) {
+        if (gen !== loadGen.current) {
+          return;
+        }
         setError(caught);
       } finally {
-        setLoading(false);
+        if (gen === loadGen.current) {
+          setLoading(false);
+        }
       }
     },
-    [channelParam, range, userId],
+    [channelParam, pickedId, range, userId],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const queryFor = (next: { range?: string; channel?: string }) => {
+  const queryFor = (next: {
+    range?: string;
+    channel?: string;
+    personaId?: string | null;
+  }) => {
     const query = new URLSearchParams();
     query.set("range", next.range ?? range);
     query.set("channel", next.channel ?? channelRaw);
+    const pin = next.personaId === undefined ? pickedId : next.personaId;
+    if (pin) {
+      query.set(pinField, pin);
+    }
     if (userId) {
       query.set("user_id", userId);
     }
@@ -110,8 +171,23 @@ function ConversationList() {
           onChange={(value) => navigate(queryFor({ channel: value }))}
         />
       </div>
+      {boot === "loading" ? <p>{nav.loadingLabel}</p> : null}
+      {boot === "ready" ? (
+        <PersonaPicker
+          directory={directory}
+          pickedId={pickedId}
+          locked={false}
+          title={copy.personaPickerTitle}
+          empty={copy.personaPickerEmpty}
+          help={copy.personaPickerHistoryHelp}
+          onPick={(id) => navigate(queryFor({ personaId: id }))}
+        />
+      ) : null}
       {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
-      {!error ? (
+      {!error && !pickedId && boot === "ready" ? (
+        <EmptyNote text={copy.personaNeedPick} />
+      ) : null}
+      {!error && pickedId ? (
         <SessionRows
           sessions={rows}
           showUser

@@ -12,7 +12,11 @@ import {
   parseList,
   parseRangeWindows,
 } from "./parse.js";
-import { sessionDetailScope, sessionListScope } from "./scope.js";
+import {
+  sessionDetailPublishedOnly,
+  sessionDetailScope,
+  sessionListScope,
+} from "./scope.js";
 import type {
   ActivitySeries,
   BudgetModeRow,
@@ -316,6 +320,7 @@ async function listSessions(
     userId: string | null;
     channel: string | null;
     scopeUserId: string | null;
+    personaId: string;
   },
 ): Promise<SessionList> {
   const inRange = sessionInRange(sql, config, args.rangeId);
@@ -326,6 +331,7 @@ async function listSessions(
   const channelFilter = args.channel
     ? sql`AND s.channel = ${args.channel}`
     : sql``;
+  const personaFilter = sql`AND s.persona_id = ${args.personaId}`;
   const cursorFilter = args.cursor
     ? sql`AND (s.started_at, s.id) < (${args.cursor.startedAt}, ${args.cursor.id}::uuid)`
     : sql``;
@@ -351,6 +357,7 @@ async function listSessions(
       ${ownerScope}
       ${userFilter}
       ${channelFilter}
+      ${personaFilter}
       ${cursorFilter}
     GROUP BY s.id, u.email
     ORDER BY s.started_at DESC, s.id DESC
@@ -370,7 +377,12 @@ export async function personalSessions(
   sql: Sql,
   config: GatewayConfig,
   userId: string,
-  args: { rangeId: string; limit: number; cursor: SessionCursor | null },
+  args: {
+    rangeId: string;
+    limit: number;
+    cursor: SessionCursor | null;
+    personaId: string;
+  },
 ): Promise<SessionList> {
   return listSessions(sql, config, {
     ...args,
@@ -388,6 +400,7 @@ export async function ownerSessions(
     cursor: SessionCursor | null;
     userId: string | null;
     channel: string | null;
+    personaId: string;
   },
 ): Promise<SessionList> {
   return listSessions(sql, config, {
@@ -435,8 +448,15 @@ async function sessionDetail(
   sql: Sql,
   sessionId: string,
   scopeUserId: string | null,
+  publishedOnly: boolean,
 ): Promise<SessionDetail | null> {
   const ownerScope = scopeUserId ? sql`AND s.user_id = ${scopeUserId}` : sql``;
+  const publishedScope = publishedOnly
+    ? sql`AND EXISTS (
+        SELECT 1 FROM personas p
+        WHERE p.id = s.persona_id AND p.published = true
+      )`
+    : sql``;
   const [session] = await sql<
     {
       id: string;
@@ -462,6 +482,7 @@ async function sessionDetail(
     INNER JOIN users u ON u.id = s.user_id
     WHERE s.id = ${sessionId}
       ${ownerScope}
+      ${publishedScope}
   `;
   if (!session) {
     return null;
@@ -592,14 +613,24 @@ export async function personalSessionDetail(
   sessionId: string,
   userId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, sessionDetailScope(false, userId));
+  return sessionDetail(
+    sql,
+    sessionId,
+    sessionDetailScope(false, userId),
+    sessionDetailPublishedOnly(false),
+  );
 }
 
 export async function ownerSessionDetail(
   sql: Sql,
   sessionId: string,
 ): Promise<SessionDetail | null> {
-  return sessionDetail(sql, sessionId, sessionDetailScope(true, ""));
+  return sessionDetail(
+    sql,
+    sessionId,
+    sessionDetailScope(true, ""),
+    sessionDetailPublishedOnly(true),
+  );
 }
 
 export async function ownerActivity(

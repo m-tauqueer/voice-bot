@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input, Textarea } from "../../components/ui/Input";
 import { ApiError, api } from "../../lib/gateway";
 import { loadNavConfig } from "../../lib/nav";
+import {
+  adminPersonaQuery,
+  mergeVoiceConfig,
+  personaPinField,
+  personaTtsKey,
+  splitVoiceConfig,
+} from "../../lib/personaVoice";
+import { loadUiCopy } from "../../lib/uiCopy";
 import { useSession } from "../session";
 
 type Persona = {
@@ -14,10 +22,12 @@ type Persona = {
   display_name: string;
   description: string | null;
   voice_config: Record<string, unknown>;
+  published: boolean;
 };
 
 type ShowResponse = {
   persona: Persona | null;
+  personas?: Persona[];
   engram: Record<string, unknown> | null;
   subscriptions: Array<{
     status: string;
@@ -43,6 +53,20 @@ const headStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 16,
+};
+
+const listButtonStyle: CSSProperties = {
+  width: "100%",
+  textAlign: "left",
+  background: "transparent",
+  border: 0,
+  color: "var(--text-hi)",
+  cursor: "pointer",
+  padding: "10px 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
 };
 
 function questionKey(item: unknown): string | null {
@@ -76,29 +100,54 @@ function questionLabel(item: unknown): string {
   return JSON.stringify(item);
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "request failed";
+  return fallback;
+}
+
+function emptyForm() {
+  return {
+    engramPersonaId: "",
+    handle: "",
+    displayName: "",
+    description: "",
+    ttsVoice: "",
+    voiceConfig: "{}",
+  };
+}
+
+function formFromPersona(persona: Persona, ttsKey: string) {
+  const split = splitVoiceConfig(persona.voice_config ?? {}, ttsKey);
+  return {
+    engramPersonaId: persona.engram_persona_id,
+    handle: persona.handle,
+    displayName: persona.display_name,
+    description: persona.description ?? "",
+    ttsVoice: split.ttsVoice,
+    voiceConfig: JSON.stringify(split.style, null, 2),
+  };
 }
 
 export function AdminPage() {
   const session = useSession();
+  const copy = loadUiCopy();
   const { loadingLabel, notOwnerMessage, signIn } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
+  const ttsKey = personaTtsKey();
+  const pinField = personaPinField();
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
-  const [engramPersonaId, setEngramPersonaId] = useState("");
-  const [handle, setHandle] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [description, setDescription] = useState("");
-  const [voiceConfig, setVoiceConfig] = useState("{}");
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
   const [subscriptions, setSubscriptions] = useState<ShowResponse["subscriptions"]>([]);
 
   const [teachText, setTeachText] = useState("");
@@ -108,22 +157,51 @@ export function AdminPage() {
   const [answerText, setAnswerText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [subscribeUser, setSubscribeUser] = useState("");
+  const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
+  const [destroyConfirm, setDestroyConfirm] = useState("");
+  const loadSeq = useRef(0);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
 
-  const loadPersona = useCallback(async () => {
-    const shown = await api<ShowResponse>("/api/admin/persona");
-    if (shown.persona) {
-      setEngramPersonaId(shown.persona.engram_persona_id);
-      setHandle(shown.persona.handle);
-      setDisplayName(shown.persona.display_name);
-      setDescription(shown.persona.description ?? "");
-      setVoiceConfig(JSON.stringify(shown.persona.voice_config ?? {}, null, 2));
-    }
-    setSubscriptions(shown.subscriptions ?? []);
-    return shown;
-  }, []);
+  const selected = personas.find((row) => row.id === selectedId) ?? null;
 
-  const loadQuestions = useCallback(async () => {
-    const payload = await api<QuestionsResponse>("/api/admin/questions");
+  const applyShown = useCallback(
+    (shown: ShowResponse, preferId?: string | null) => {
+      const rows = shown.personas ?? (shown.persona ? [shown.persona] : []);
+      setPersonas(rows);
+      const nextId =
+        preferId ??
+        shown.persona?.id ??
+        (rows.length === 1 ? rows[0]?.id : selectedIdRef.current);
+      const next = rows.find((row) => row.id === nextId) ?? null;
+      setSelectedId(next?.id ?? null);
+      if (next) {
+        setForm(formFromPersona(next, ttsKey));
+        setAdding(false);
+      }
+      setSubscriptions(shown.subscriptions ?? []);
+      return next;
+    },
+    [ttsKey],
+  );
+
+  const loadPersona = useCallback(
+    async (personaId?: string | null) => {
+      const seq = ++loadSeq.current;
+      const query = personaId ? `?${adminPersonaQuery(personaId)}` : "";
+      const shown = await api<ShowResponse>(`/api/admin/persona${query}`);
+      if (seq !== loadSeq.current) {
+        return null;
+      }
+      return applyShown(shown, personaId);
+    },
+    [applyShown],
+  );
+
+  const loadQuestions = useCallback(async (personaId: string) => {
+    const payload = await api<QuestionsResponse>(
+      `/api/admin/questions?${adminPersonaQuery(personaId)}`,
+    );
     setQuestions(payload.questions ?? []);
     setCoverage(payload.coverage);
     return payload;
@@ -140,16 +218,18 @@ export function AdminPage() {
         return;
       }
       try {
-        await loadPersona();
+        const next = await loadPersona();
+        if (next) {
+          try {
+            await loadQuestions(next.id);
+          } catch {
+            // questions require a recorded persona that Engram still has
+          }
+        }
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 404)) {
-          setStatus(errorMessage(error));
+          setStatus(errorMessage(error, copy.fetchError));
         }
-      }
-      try {
-        await loadQuestions();
-      } catch {
-        // questions require a recorded persona
       }
       if (!cancelled) {
         setBoot("ready");
@@ -158,7 +238,7 @@ export function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPersona, loadQuestions, me]);
+  }, [copy.fetchError, loadPersona, loadQuestions, me]);
 
   async function run(label: string, op: () => Promise<void>) {
     setBusy(label);
@@ -166,18 +246,99 @@ export function AdminPage() {
     try {
       await op();
     } catch (error) {
-      setStatus(errorMessage(error));
+      setStatus(errorMessage(error, copy.fetchError));
     } finally {
       setBusy(null);
     }
   }
 
-  function parseVoiceConfig(): Record<string, unknown> {
-    const parsed = JSON.parse(voiceConfig) as unknown;
+  function parseStyle(): Record<string, unknown> {
+    const parsed = JSON.parse(form.voiceConfig) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("voice_config must be a JSON object");
+      throw new Error(copy.personaVoiceInvalid);
     }
     return parsed as Record<string, unknown>;
+  }
+
+  function writePayload(extra: Record<string, unknown> = {}) {
+    return {
+      handle: form.handle || undefined,
+      display_name: form.displayName || undefined,
+      description: form.description,
+      voice_config: mergeVoiceConfig(parseStyle(), form.ttsVoice, ttsKey),
+      tts_voice: form.ttsVoice,
+      ...extra,
+    };
+  }
+
+  async function selectExisting(id: string) {
+    setAdding(false);
+    setStatus(null);
+    const next = await loadPersona(id);
+    if (next) {
+      try {
+        await loadQuestions(next.id);
+      } catch {
+        setQuestions([]);
+        setCoverage(null);
+      }
+    }
+  }
+
+  function startAdd() {
+    loadSeq.current += 1;
+    setAdding(true);
+    setSelectedId(null);
+    setForm(emptyForm());
+    setSubscriptions([]);
+    setQuestions([]);
+    setCoverage(null);
+    setStatus(null);
+  }
+
+  async function togglePublished(persona: Persona) {
+    const nextPublished = !persona.published;
+    await api("/api/admin/persona/publish", {
+      method: "POST",
+      body: JSON.stringify({
+        [pinField]: persona.id,
+        published: nextPublished,
+      }),
+    });
+    await loadPersona(persona.id);
+    await session.reloadPersona();
+    setStatus(nextPublished ? copy.personaPublished : copy.personaUnpublished);
+  }
+
+  // Publishing is safe. Taking a persona away from members mid-call is not,
+  // so that direction asks first.
+  function requestPublishToggle(persona: Persona) {
+    if (persona.published) {
+      setConfirmingUnpublish(true);
+      return;
+    }
+    void run("publish", async () => {
+      await togglePublished(persona);
+    });
+  }
+
+  async function destroyPersona(persona: Persona) {
+    await api("/api/admin/persona/destroy", {
+      method: "POST",
+      body: JSON.stringify({
+        [pinField]: persona.id,
+        confirmation: destroyConfirm,
+      }),
+    });
+    setDestroyConfirm("");
+    loadSeq.current += 1;
+    setSelectedId(null);
+    setSubscriptions([]);
+    setQuestions([]);
+    setCoverage(null);
+    await loadPersona();
+    await session.reloadPersona();
+    setStatus(copy.personaDestroyed);
   }
 
   if (!me || boot === "loading") {
@@ -195,270 +356,557 @@ export function AdminPage() {
           <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
             {signIn.personaTitle}
           </h1>
-          <p style={{ color: "var(--text-mid)" }}>
-            {notOwnerMessage}
-          </p>
+          <p style={{ color: "var(--text-mid)" }}>{notOwnerMessage}</p>
         </Card>
       </div>
     );
   }
 
+  const canOperate = selected !== null && !adding;
+
   return (
     <div style={wrapStyle}>
-        <div style={headStyle}>
-          <div>
-            <h1 className="mc-pagehead__title">{signIn.personaTitle}</h1>
-          </div>
-          <Badge tone="accent">Owner</Badge>
-        </div>
-
-        {status && (
-          <Card>
-            <p className="ui-field__error">{status}</p>
-          </Card>
-        )}
-
-        <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
-            Record persona
-          </h2>
-          <p style={{ color: "var(--text-mid)", marginBottom: 16 }}>
-            Create the persona in the Engram dashboard, then record its id here.
+      <div style={headStyle}>
+        <div>
+          <h1 className="mc-pagehead__title">{signIn.personaTitle}</h1>
+          <p style={{ color: "var(--text-mid)", marginTop: 8 }}>
+            {copy.personaCatalogHelp}
           </p>
-          <div style={{ display: "grid", gap: 12 }}>
-            <Input
-              label="Engram persona id"
-              value={engramPersonaId}
-              onChange={(event) => setEngramPersonaId(event.target.value)}
-            />
-            <Input label="Handle" value={handle} onChange={(event) => setHandle(event.target.value)} />
-            <Input
-              label="Display name"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-            <Textarea
-              label="Description"
-              rows={3}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-            <Textarea
-              label="Voice config (JSON)"
-              rows={6}
-              value={voiceConfig}
-              onChange={(event) => setVoiceConfig(event.target.value)}
-            />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        </div>
+        <Badge tone="accent">Owner</Badge>
+      </div>
+
+      {status && (
+        <Card>
+          <p className="ui-field__error">{status}</p>
+        </Card>
+      )}
+
+      <Card>
+        <div style={{ ...headStyle, marginBottom: 14 }}>
+          <h2 className="mc-sec__title">{copy.personaListTitle}</h2>
+          <Button size="sm" disabled={busy !== null} onClick={startAdd}>
+            {copy.personaAddLabel}
+          </Button>
+        </div>
+        {personas.length === 0 ? (
+          <p style={{ color: "var(--text-mid)" }}>{copy.personaListEmpty}</p>
+        ) : (
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {personas.map((row) => (
+              <li key={row.id} style={{ borderTop: "1px solid var(--line, #333)" }}>
+                <button
+                  type="button"
+                  style={listButtonStyle}
+                  aria-pressed={row.id === selectedId}
+                  onClick={() => {
+                    setAdding(false);
+                    setStatus(null);
+                    setSelectedId(row.id);
+                    setForm(formFromPersona(row, ttsKey));
+                    void run("select", async () => {
+                      await selectExisting(row.id);
+                    });
+                  }}
+                >
+                  <span>
+                    {row.display_name}{" "}
+                    <span style={{ color: "var(--text-mid)" }}>@{row.handle}</span>
+                  </span>
+                  <Badge tone={row.published ? "positive" : "neutral"}>
+                    {row.published
+                      ? copy.personaPublishedBadge
+                      : copy.personaDraftBadge}
+                  </Badge>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {adding && (
+        <>
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
+              {copy.personaCreateTitle}
+            </h2>
+            <p style={{ color: "var(--text-mid)", marginBottom: 16 }}>
+              {copy.personaCreateHelp}
+            </p>
+            <div style={{ display: "grid", gap: 12 }}>
+              <Input
+                label={copy.personaNameLabel}
+                value={form.displayName}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, displayName: event.target.value }))
+                }
+              />
+              <Input
+                label={copy.personaHandleLabel}
+                value={form.handle}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, handle: event.target.value }))
+                }
+              />
+              <Textarea
+                label={copy.personaDescriptionLabel}
+                rows={3}
+                value={form.description}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+              <Input
+                label={copy.personaTtsLabel}
+                value={form.ttsVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, ttsVoice: event.target.value }))
+                }
+              />
               <Button
                 variant="solid"
                 disabled={busy !== null}
                 onClick={() =>
-                  run("save", async () => {
-                    await api("/api/admin/persona", {
+                  run("create", async () => {
+                    try {
+                      const created = await api<ShowResponse>("/api/admin/persona", {
+                        method: "PUT",
+                        body: JSON.stringify(
+                          writePayload({ create_remote: true }),
+                        ),
+                      });
+                      if (created.persona?.id) {
+                        await loadPersona(created.persona.id);
+                        try {
+                          await loadQuestions(created.persona.id);
+                        } catch {
+                          setQuestions([]);
+                          setCoverage(null);
+                        }
+                      }
+                      await session.reloadPersona();
+                      setStatus(copy.personaCreated);
+                    } catch (error) {
+                      if (error instanceof ApiError && error.status === 403) {
+                        setStatus(copy.personaCreateForbidden);
+                        return;
+                      }
+                      throw error;
+                    }
+                  })
+                }
+              >
+                {busy === "create" ? copy.personaCreatingLabel : copy.personaCreateLabel}
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
+              {copy.personaLinkTitle}
+            </h2>
+            <p style={{ color: "var(--text-mid)", marginBottom: 16 }}>
+              {copy.personaLinkHelp}
+            </p>
+            <div style={{ display: "grid", gap: 12 }}>
+              <Input
+                label={copy.personaEngramIdLabel}
+                value={form.engramPersonaId}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    engramPersonaId: event.target.value,
+                  }))
+                }
+              />
+              <Button
+                variant="solid"
+                disabled={busy !== null}
+                onClick={() =>
+                  run("link", async () => {
+                    const linked = await api<ShowResponse>("/api/admin/persona", {
                       method: "PUT",
+                      body: JSON.stringify(
+                        writePayload({
+                          engram_persona_id: form.engramPersonaId || undefined,
+                        }),
+                      ),
+                    });
+                    if (linked.persona?.id) {
+                      await loadPersona(linked.persona.id);
+                      try {
+                        await loadQuestions(linked.persona.id);
+                      } catch {
+                        setQuestions([]);
+                        setCoverage(null);
+                      }
+                    }
+                    await session.reloadPersona();
+                    setStatus(copy.personaLinked);
+                  })
+                }
+              >
+                {busy === "link" ? copy.personaLinkingLabel : copy.personaLinkLabel}
+              </Button>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {canOperate && selected && (
+        <>
+          <Card>
+            <div style={{ ...headStyle, marginBottom: 14 }}>
+              <h2 className="mc-sec__title">{selected.display_name}</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <Badge tone={selected.published ? "positive" : "neutral"}>
+                  {selected.published
+                    ? copy.personaPublishedBadge
+                    : copy.personaDraftBadge}
+                </Badge>
+                <Button
+                  variant="solid"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => requestPublishToggle(selected)}
+                >
+                  {selected.published
+                    ? copy.personaUnpublishLabel
+                    : copy.personaPublishLabel}
+                </Button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 12 }}>
+              <Input
+                label={copy.personaEngramIdLabel}
+                value={form.engramPersonaId}
+                readOnly
+              />
+              <Input
+                label={copy.personaHandleLabel}
+                value={form.handle}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, handle: event.target.value }))
+                }
+              />
+              <Input
+                label={copy.personaNameLabel}
+                value={form.displayName}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, displayName: event.target.value }))
+                }
+              />
+              <Textarea
+                label={copy.personaDescriptionLabel}
+                rows={3}
+                value={form.description}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+              <Input
+                label={copy.personaTtsLabel}
+                value={form.ttsVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, ttsVoice: event.target.value }))
+                }
+              />
+              <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaTtsHelp}</p>
+              <Textarea
+                label={copy.personaVoiceJsonLabel}
+                rows={6}
+                value={form.voiceConfig}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, voiceConfig: event.target.value }))
+                }
+              />
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Button
+                  variant="solid"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run("save", async () => {
+                      await api("/api/admin/persona", {
+                        method: "PUT",
+                        body: JSON.stringify(
+                          writePayload({ [pinField]: selected.id }),
+                        ),
+                      });
+                      await loadPersona(selected.id);
+                      await session.reloadPersona();
+                      setStatus(copy.personaSaved);
+                    })
+                  }
+                >
+                  {busy === "save" ? copy.personaSavingLabel : copy.personaSaveLabel}
+                </Button>
+                <Button
+                  disabled={busy !== null}
+                  onClick={() => requestPublishToggle(selected)}
+                >
+                  {selected.published
+                    ? copy.personaUnpublishLabel
+                    : copy.personaPublishLabel}
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {confirmingUnpublish && (
+            <Card>
+              <h2 className="mc-sec__title" style={{ marginBottom: 10 }}>
+                {copy.personaUnpublishConfirmTitle}
+              </h2>
+              <p style={{ color: "var(--text-mid)", marginTop: 0 }}>
+                {copy.personaUnpublishConfirmBody}
+              </p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Button
+                  variant="danger"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run("unpublish", async () => {
+                      await togglePublished(selected);
+                      setConfirmingUnpublish(false);
+                    })
+                  }
+                >
+                  {copy.personaUnpublishConfirmLabel}
+                </Button>
+                <Button
+                  disabled={busy !== null}
+                  onClick={() => setConfirmingUnpublish(false)}
+                >
+                  {copy.personaConfirmCancelLabel}
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
+              {copy.personaTeachTitle}
+            </h2>
+            <Textarea
+              label={copy.personaTeachLabel}
+              rows={4}
+              value={teachText}
+              onChange={(event) => setTeachText(event.target.value)}
+            />
+            <div style={{ marginTop: 12 }}>
+              <Button
+                disabled={busy !== null}
+                onClick={() =>
+                  run("teach", async () => {
+                    await api("/api/admin/teach", {
+                      method: "POST",
                       body: JSON.stringify({
-                        engram_persona_id: engramPersonaId || undefined,
-                        handle: handle || undefined,
-                        display_name: displayName || undefined,
-                        description,
-                        voice_config: parseVoiceConfig(),
+                        [pinField]: selected.id,
+                        text: teachText,
                       }),
                     });
-                    await loadPersona();
-                    await session.reloadPersona();
-                    setStatus("Persona saved.");
+                    setTeachText("");
+                    setStatus(copy.personaTaught);
                   })
                 }
               >
-                {busy === "save" ? "Saving…" : "Save persona"}
+                {busy === "teach" ? copy.personaTeachingLabel : copy.personaTeachButton}
               </Button>
             </div>
-          </div>
-        </Card>
+          </Card>
 
-        <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
-            Teach
-          </h2>
-          <Textarea
-            label="Fact"
-            rows={4}
-            value={teachText}
-            onChange={(event) => setTeachText(event.target.value)}
-          />
-          <div style={{ marginTop: 12 }}>
-            <Button
-              disabled={busy !== null}
-              onClick={() =>
-                run("teach", async () => {
-                  await api("/api/admin/teach", {
-                    method: "POST",
-                    body: JSON.stringify({ text: teachText }),
-                  });
-                  setTeachText("");
-                  setStatus("Fact taught.");
-                })
-              }
-            >
-              {busy === "teach" ? "Teaching…" : "Teach fact"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
-            Question bank
-          </h2>
-          <p style={{ color: "var(--text-mid)", marginBottom: 12 }}>
-            Coverage: {coverage === null || coverage === undefined ? "—" : String(coverage)}
-          </p>
-          {questions.length === 0 ? (
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
+              {copy.personaQuestionsTitle}
+            </h2>
             <p style={{ color: "var(--text-mid)", marginBottom: 12 }}>
-              No open questions. Answer by key if you have one.
+              {copy.personaQuestionsCoverage}:{" "}
+              {coverage === null || coverage === undefined ? "—" : String(coverage)}
             </p>
-          ) : (
-            <ul style={{ margin: "0 0 16px", paddingLeft: 18, color: "var(--text-mid)" }}>
-              {questions.map((item, index) => (
-                <li key={questionKey(item) ?? String(index)} style={{ marginBottom: 8 }}>
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn--ghost ui-btn--sm"
-                    onClick={() => {
-                      const key = questionKey(item);
-                      if (key) setAnswerKey(key);
-                    }}
-                  >
-                    Use key
-                  </button>{" "}
-                  {questionLabel(item)}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div style={{ display: "grid", gap: 12 }}>
-            <Input
-              label="Question key"
-              value={answerKey}
-              onChange={(event) => setAnswerKey(event.target.value)}
+            {questions.length === 0 ? (
+              <p style={{ color: "var(--text-mid)", marginBottom: 12 }}>
+                {copy.personaQuestionsEmpty}
+              </p>
+            ) : (
+              <ul style={{ margin: "0 0 16px", paddingLeft: 18, color: "var(--text-mid)" }}>
+                {questions.map((item, index) => (
+                  <li key={questionKey(item) ?? String(index)} style={{ marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--ghost ui-btn--sm"
+                      onClick={() => {
+                        const key = questionKey(item);
+                        if (key) setAnswerKey(key);
+                      }}
+                    >
+                      {copy.personaQuestionsUseKey}
+                    </button>{" "}
+                    {questionLabel(item)}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div style={{ display: "grid", gap: 12 }}>
+              <Input
+                label={copy.personaQuestionsKey}
+                value={answerKey}
+                onChange={(event) => setAnswerKey(event.target.value)}
+              />
+              <Textarea
+                label={copy.personaQuestionsAnswer}
+                rows={3}
+                value={answerText}
+                onChange={(event) => setAnswerText(event.target.value)}
+              />
+              <div style={{ display: "flex", gap: 10 }}>
+                <Button
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run("questions", async () => {
+                      await loadQuestions(selected.id);
+                      setStatus(copy.personaQuestionsRefreshed);
+                    })
+                  }
+                >
+                  {copy.personaQuestionsRefresh}
+                </Button>
+                <Button
+                  variant="solid"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run("answer", async () => {
+                      await api("/api/admin/answer", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          [pinField]: selected.id,
+                          question_key: answerKey,
+                          text: answerText,
+                        }),
+                      });
+                      setAnswerText("");
+                      await loadQuestions(selected.id);
+                      setStatus(copy.personaQuestionsSaved);
+                    })
+                  }
+                >
+                  {copy.personaQuestionsSave}
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
+              {copy.personaIngestTitle}
+            </h2>
+            <input
+              type="file"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
-            <Textarea
-              label="Answer"
-              rows={3}
-              value={answerText}
-              onChange={(event) => setAnswerText(event.target.value)}
-            />
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ marginTop: 12 }}>
               <Button
-                disabled={busy !== null}
+                disabled={busy !== null || !file}
                 onClick={() =>
-                  run("questions", async () => {
-                    await loadQuestions();
-                    setStatus("Questions refreshed.");
+                  run("ingest", async () => {
+                    if (!file) return;
+                    const body = new FormData();
+                    body.append("file", file);
+                    await api(
+                      `/api/admin/ingest?${adminPersonaQuery(selected.id)}`,
+                      { method: "POST", body },
+                    );
+                    setStatus(copy.personaIngested);
                   })
                 }
               >
-                Refresh
+                {busy === "ingest" ? copy.personaIngestingLabel : copy.personaIngestButton}
               </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
+              {copy.personaSubscribeTitle}
+            </h2>
+            <Input
+              label={copy.personaSubscribeUser}
+              value={subscribeUser}
+              onChange={(event) => setSubscribeUser(event.target.value)}
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
               <Button
                 variant="solid"
-                disabled={busy !== null}
+                disabled={busy !== null || subscribeUser.trim().length === 0}
                 onClick={() =>
-                  run("answer", async () => {
-                    await api("/api/admin/answer", {
+                  run("subscribe", async () => {
+                    await api("/api/admin/subscribe", {
                       method: "POST",
-                      body: JSON.stringify({ question_key: answerKey, text: answerText }),
+                      body: JSON.stringify({
+                        [pinField]: selected.id,
+                        user: subscribeUser,
+                      }),
                     });
-                    setAnswerText("");
-                    await loadQuestions();
-                    setStatus("Answer saved.");
+                    await loadPersona(selected.id);
+                    setStatus(copy.personaSubscribed);
                   })
                 }
               >
-                {busy === "answer" ? "Saving…" : "Save answer"}
+                {copy.personaSubscribeButton}
               </Button>
             </div>
-          </div>
-        </Card>
+            {subscriptions.length > 0 && (
+              <ul style={{ marginTop: 16, paddingLeft: 18, color: "var(--text-mid)" }}>
+                {subscriptions.map((row) => (
+                  <li key={row.engram_user_id}>
+                    {row.email} · {row.status}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
-        <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
-            Shared document
-          </h2>
-          <input
-            type="file"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-          <div style={{ marginTop: 12 }}>
-            <Button
-              disabled={busy !== null || !file}
-              onClick={() =>
-                run("ingest", async () => {
-                  if (!file) return;
-                  const body = new FormData();
-                  body.append("file", file);
-                  await api("/api/admin/ingest", { method: "POST", body });
-                  setStatus("Document ingested.");
-                })
-              }
-            >
-              {busy === "ingest" ? "Ingesting…" : "Ingest document"}
-            </Button>
-          </div>
-        </Card>
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 10 }}>
+              {copy.personaDestroyTitle}
+            </h2>
+            <p style={{ color: "var(--text-mid)", marginTop: 0 }}>
+              {copy.personaDestroyBody}
+            </p>
+            <p style={{ color: "var(--text-mid)" }}>
+              {copy.personaDestroyHint} <code>{selected.handle}</code>
+            </p>
+            <Input
+              label={copy.personaDestroyConfirmLabel}
+              value={destroyConfirm}
+              onChange={(event) => setDestroyConfirm(event.target.value)}
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <Button
+                variant="danger"
+                disabled={
+                  busy !== null || destroyConfirm.trim() !== selected.handle
+                }
+                onClick={() =>
+                  run("destroy", async () => {
+                    await destroyPersona(selected);
+                  })
+                }
+              >
+                {busy === "destroy"
+                  ? copy.personaDestroyingLabel
+                  : copy.personaDestroyLabel}
+              </Button>
+            </div>
+          </Card>
+        </>
+      )}
 
+      {!canOperate && !adding && personas.length > 1 && (
         <Card>
-          <h2 className="mc-sec__title" style={{ marginBottom: 14 }}>
-            Subscribe tester
-          </h2>
-          <Input
-            label="Email or user id"
-            value={subscribeUser}
-            onChange={(event) => setSubscribeUser(event.target.value)}
-          />
-          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-            <Button
-              variant="solid"
-              disabled={busy !== null}
-              onClick={() =>
-                run("subscribe", async () => {
-                  await api("/api/admin/subscribe", {
-                    method: "POST",
-                    body: JSON.stringify({ user: subscribeUser }),
-                  });
-                  await loadPersona();
-                  setStatus("Tester subscribed.");
-                })
-              }
-            >
-              {busy === "subscribe" ? "Subscribing…" : "Subscribe in Engram"}
-            </Button>
-            <Button
-              disabled={busy !== null}
-              onClick={() =>
-                run("record", async () => {
-                  await api("/api/admin/subscribe", {
-                    method: "POST",
-                    body: JSON.stringify({ user: subscribeUser, record_local: true }),
-                  });
-                  await loadPersona();
-                  setStatus("Local subscription recorded.");
-                })
-              }
-            >
-              Record local only
-            </Button>
-          </div>
-          {subscriptions.length > 0 && (
-            <ul style={{ marginTop: 16, paddingLeft: 18, color: "var(--text-mid)" }}>
-              {subscriptions.map((row) => (
-                <li key={row.engram_user_id}>
-                  {row.email} · {row.status}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p style={{ color: "var(--text-mid)" }}>{copy.personaSelectFirst}</p>
         </Card>
+      )}
     </div>
   );
 }

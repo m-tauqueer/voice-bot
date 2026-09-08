@@ -27,6 +27,13 @@ def _print(payload: Any) -> None:
     print(json.dumps(payload, indent=2, default=str))
 
 
+def _add_persona_id(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--persona-id",
+        help="local persona UUID when more than one row exists",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m worker.admin")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -40,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--display-name")
     create.add_argument("--description")
     create.add_argument("--voice-config")
+    create.add_argument("--tts-voice")
     create.add_argument(
         "--create-remote",
         action="store_true",
@@ -48,15 +56,19 @@ def main(argv: list[str] | None = None) -> int:
 
     teach = sub.add_parser("teach")
     teach.add_argument("--text", required=True)
+    _add_persona_id(teach)
 
     answer = sub.add_parser("answer")
     answer.add_argument("--question-key", required=True)
     answer.add_argument("--text", required=True)
+    _add_persona_id(answer)
 
-    sub.add_parser("list-questions")
+    questions = sub.add_parser("list-questions")
+    _add_persona_id(questions)
 
     ingest = sub.add_parser("ingest-doc")
     ingest.add_argument("--path", required=True)
+    _add_persona_id(ingest)
 
     subscribe = sub.add_parser("subscribe")
     subscribe.add_argument(
@@ -64,17 +76,35 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="email, app user id, or Engram user id",
     )
-    subscribe.add_argument(
-        "--record-local",
-        action="store_true",
-        help="write the local subscription row if Engram refuses subscribe",
-    )
+    _add_persona_id(subscribe)
 
-    sub.add_parser("show")
+    publish = sub.add_parser("publish")
+    publish.add_argument(
+        "--published",
+        required=True,
+        choices=("true", "false"),
+        help="local catalog visibility; does not call Engram delete",
+    )
+    _add_persona_id(publish)
+
+    destroy = sub.add_parser(
+        "destroy",
+        help="wipe Engram pools for a persona and delete its local rows",
+    )
+    destroy.add_argument(
+        "--confirm",
+        required=True,
+        help="the persona handle, typed exactly",
+    )
+    _add_persona_id(destroy)
+
+    show = sub.add_parser("show")
+    _add_persona_id(show)
 
     args = parser.parse_args(argv)
     settings = load_settings()
     admin = PersonaAdmin(settings)
+    pin = getattr(args, "persona_id", None)
 
     try:
         if args.command == "create-persona":
@@ -91,13 +121,15 @@ def main(argv: list[str] | None = None) -> int:
                         handle=args.handle,
                         description=args.description or "",
                         voice_config=voice,
+                        tts_voice=args.tts_voice,
                     ),
                 )
                 return 0
-            persona_id = args.engram_persona_id or settings.engram_persona_id
+            persona_id = args.engram_persona_id or admin.seed_persona_id()
             if not persona_id:
                 raise AdminError(
-                    "pass --engram-persona-id or set ENGRAM_PERSONA_ID",
+                    "pass --engram-persona-id "
+                    "(ENGRAM_PERSONA_ID only seeds an empty catalog)",
                     reason="missing_persona_id",
                 )
             _print(
@@ -107,29 +139,46 @@ def main(argv: list[str] | None = None) -> int:
                     display_name=args.display_name,
                     description=args.description,
                     voice_config=voice,
+                    tts_voice=args.tts_voice,
                 ),
             )
             return 0
         if args.command == "teach":
-            _print(admin.teach(args.text))
+            _print(admin.teach(args.text, persona_id=pin))
             return 0
         if args.command == "answer":
-            _print(admin.answer(args.question_key, args.text))
+            _print(admin.answer(args.question_key, args.text, persona_id=pin))
             return 0
         if args.command == "list-questions":
-            _print(admin.questions())
+            _print(admin.questions(persona_id=pin))
             return 0
         if args.command == "ingest-doc":
             path = Path(args.path)
             if not path.is_file():
                 raise AdminError("ingest path is not a file", reason="missing_file")
-            _print(admin.ingest_document(path))
+            _print(admin.ingest_document(path, persona_id=pin))
             return 0
         if args.command == "subscribe":
-            _print(admin.subscribe(args.user, record_local=args.record_local))
+            _print(
+                admin.subscribe(
+                    args.user,
+                    persona_id=pin,
+                ),
+            )
+            return 0
+        if args.command == "publish":
+            _print(
+                admin.publish(
+                    published=args.published == "true",
+                    persona_id=pin,
+                ),
+            )
+            return 0
+        if args.command == "destroy":
+            _print(admin.destroy(confirmation=args.confirm, persona_id=pin))
             return 0
         if args.command == "show":
-            _print(admin.show())
+            _print(admin.show(pin))
             return 0
     except AdminError as exc:
         print(json.dumps({"error": str(exc), "reason": exc.reason}), file=sys.stderr)

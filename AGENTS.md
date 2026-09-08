@@ -67,7 +67,7 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Current work is personas.** Architecture is locked in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md). Tauqueer names a part from that file to start coding. Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
+**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Phase 5 (personas) is built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green and a logic review found no remaining product isolation gaps in our code. What remains is the live sitting checklist in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4 — plus one blocker outside this repo: Engram's `chat` / `converse` / `retrieve` take no subject and resolve a persona's private pool from the API key, so per-member private memory is not real yet ([`docs/ENGRAM.md`](docs/ENGRAM.md) §2.3). Read that before touching memory. Tauqueer names the next work. Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
 
 Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
@@ -103,6 +103,7 @@ npm run budgets      # First-word p50/p90 vs budget, plus Engram request-log rev
 npm run observe      # Postgres/Redis health, optional gateway/worker ping, forced alert row
 npm run security     # Cookie/CORS/secrets, think-endpoint unauth, OpenAPI hidden, then isolation
 npm run admin -- show
+npm run admin -- destroy --persona-id <uuid> --confirm <handle> # irreversible
 
 # Dev processes (need a filled .env; bind ports come from that file)
 npm run infra:up       # Postgres + Redis (or: make infra-up)

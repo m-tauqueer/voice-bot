@@ -5,8 +5,10 @@
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
 import pino from "pino";
+import { nextSignInAction } from "../access/decision.js";
 import { createGatewayApp } from "../app.js";
 import { persistAuthSession, signSessionCookieValue } from "../auth/session.js";
+import { personaEngineUserId } from "../auth/users.js";
 import { createPostgres, createRedis } from "../clients.js";
 import {
   isOwnerEmail,
@@ -23,7 +25,7 @@ import {
   ownerOverview,
   personalSessionDetail,
 } from "../insights/queries.js";
-import { SESSION_CHANNEL } from "../schema.js";
+import { type AccessStatus, SESSION_CHANNEL } from "../schema.js";
 
 let failed = 0;
 
@@ -34,6 +36,13 @@ function check(name: string, ok: boolean, detail = ""): void {
   }
   console.error(`${name}=FAIL${detail ? ` ${detail}` : ""}`);
   failed += 1;
+}
+
+function tenantMentionsPersona(
+  tenant: unknown,
+  engramPersonaId: string,
+): boolean {
+  return typeof tenant === "string" && tenant.includes(engramPersonaId);
 }
 
 const config = loadGatewayConfig();
@@ -88,15 +97,32 @@ try {
   check("session_cursor_rejects_garbage", decodeSessionCursor("nope") === null);
 
   const users = await sql<
-    { id: string; email: string; engram_user_id: string }[]
+    {
+      id: string;
+      email: string;
+      engram_user_id: string;
+      access_status: AccessStatus | null;
+    }[]
   >`
-    SELECT id, email, engram_user_id FROM users ORDER BY created_at
+    SELECT u.id, u.email, u.engram_user_id, a.status AS access_status
+    FROM users u
+    LEFT JOIN access_requests a ON a.google_sub = u.google_sub
+    ORDER BY u.created_at
   `;
   const owner = users.find((user) => isOwnerEmail(user.email, config)) ?? null;
   const other =
-    users.find((user) => !isOwnerEmail(user.email, config)) ??
-    users.find((user) => user.id !== owner?.id) ??
-    null;
+    users.find((user) => {
+      if (isOwnerEmail(user.email, config)) {
+        return false;
+      }
+      return (
+        nextSignInAction({
+          owner: false,
+          hasUser: true,
+          requestStatus: user.access_status,
+        }).type === "provision"
+      );
+    }) ?? null;
 
   const cookieFor = async (userId: string) => {
     const id = await persistAuthSession(redis, config, userId);
@@ -229,11 +255,131 @@ try {
     );
     check("me_omits_google_sub", !Object.hasOwn(ownerBody, "google_sub"));
 
-    const ownerMem = await get("/api/me/memories", ownerCookie);
-    const otherMem = await get("/api/me/memories", otherCookie);
+    const directory = await get("/api/personas", ownerCookie);
+    const directoryBody = directory.json() as {
+      personas?: { id?: string; published?: unknown }[];
+    };
+    check(
+      "directory_lists_published",
+      directory.statusCode === 200 && Array.isArray(directoryBody.personas),
+      `${directory.statusCode}`,
+    );
+    check(
+      "directory_omits_published_flag",
+      (directoryBody.personas ?? []).every(
+        (row) => !Object.hasOwn(row, "published"),
+      ),
+    );
+    const chatUnpinned = await get("/api/chat", ownerCookie);
+    check(
+      "chat_without_pin_is_404",
+      chatUnpinned.statusCode === 404,
+      `${chatUnpinned.statusCode}`,
+    );
+    const chatConflict = chatUnpinned.json() as { error?: string };
+    check(
+      "chat_without_pin_matches_missing_session",
+      chatConflict.error === config.INSIGHTS_ERROR_NOT_FOUND,
+      `${chatConflict.error ?? ""}`,
+    );
 
-    if (ownerMem.statusCode === 404 || otherMem.statusCode === 404) {
+    const marker = randomUUID();
+    const [draft] = await sql<{ id: string }[]>`
+      INSERT INTO personas (
+        engram_persona_id, handle, display_name, published
+      )
+      VALUES (
+        ${`probe-${marker}`},
+        ${`probe-${marker}`},
+        ${"unpublished probe"},
+        ${false}
+      )
+      RETURNING id
+    `;
+    try {
+      if (draft) {
+        const hidden = await get("/api/personas", ownerCookie);
+        const hiddenBody = hidden.json() as { personas?: { id?: string }[] };
+        check(
+          "directory_hides_unpublished",
+          hidden.statusCode === 200 &&
+            !(hiddenBody.personas ?? []).some((row) => row.id === draft.id),
+        );
+        const unpublishedChat = await get(
+          `/api/chat?${config.PERSONA_ID_QUERY}=${draft.id}`,
+          ownerCookie,
+        );
+        check(
+          "unpublished_persona_chat_is_404",
+          unpublishedChat.statusCode === 404,
+          `${unpublishedChat.statusCode}`,
+        );
+        const unpublishedBody = unpublishedChat.json() as { error?: string };
+        check(
+          "unpublished_persona_matches_missing_session",
+          unpublishedBody.error === config.INSIGHTS_ERROR_NOT_FOUND,
+        );
+        const unpublishedMem = await get(
+          `/api/me/memories?${config.PERSONA_ID_QUERY}=${draft.id}`,
+          ownerCookie,
+        );
+        check(
+          "unpublished_persona_memories_is_404",
+          unpublishedMem.statusCode === 404,
+          `${unpublishedMem.statusCode}`,
+        );
+
+        // Unpublish hides transcripts too, not just the picker. The owner
+        // still needs the draft visible to inspect it.
+        const [draftSitting] = await sql<{ id: string }[]>`
+          INSERT INTO sessions (user_id, persona_id, channel)
+          VALUES (${other.id}, ${draft.id}, ${SESSION_CHANNEL.TEXT})
+          RETURNING id
+        `;
+        if (draftSitting) {
+          try {
+            const memberRead = await get(
+              `/api/me/sessions/${draftSitting.id}`,
+              otherCookie,
+            );
+            check(
+              "unpublished_persona_transcript_is_404_for_its_member",
+              memberRead.statusCode === 404,
+              `${memberRead.statusCode}`,
+            );
+            const ownerRead = await get(
+              `/api/admin/sessions/${draftSitting.id}`,
+              ownerCookie,
+            );
+            check(
+              "unpublished_persona_transcript_stays_visible_to_owner",
+              ownerRead.statusCode === 200,
+              `${ownerRead.statusCode}`,
+            );
+          } finally {
+            await sql`DELETE FROM sessions WHERE id = ${draftSitting.id}`;
+          }
+        }
+      }
+    } finally {
+      if (draft) {
+        await sql`DELETE FROM personas WHERE id = ${draft.id}`;
+      }
+    }
+
+    const publishedId = (directoryBody.personas ?? []).find(
+      (row): row is { id: string } => typeof row.id === "string",
+    )?.id;
+    const memQuery = publishedId
+      ? `/api/me/memories?${config.PERSONA_ID_QUERY}=${publishedId}`
+      : "/api/me/memories";
+    const ownerMem = await get(memQuery, ownerCookie);
+    const otherMem = await get(memQuery, otherCookie);
+
+    if (config.MEMORY_PANEL_ENABLED !== "true") {
       console.log("memories_panel_probe=SKIP (MEMORY_PANEL_ENABLED is off)");
+    } else if (!publishedId) {
+      console.log("memories_panel_probe=SKIP (no published persona)");
     } else {
       check(
         "memory_panel_owner_ok",
@@ -277,12 +423,262 @@ try {
 
         check(
           "memory_panel_owner_never_leaks_other_private_tenant",
-          !ownerPrivateTenants.has(other.engram_user_id),
+          ![...ownerPrivateTenants].some(
+            (tenant) =>
+              personaEngineUserId(tenant) ===
+              personaEngineUserId(other.engram_user_id),
+          ),
         );
         check(
           "memory_panel_other_never_leaks_owner_private_tenant",
-          !otherPrivateTenants.has(owner.engram_user_id),
+          ![...otherPrivateTenants].some(
+            (tenant) =>
+              personaEngineUserId(tenant) ===
+              personaEngineUserId(owner.engram_user_id),
+          ),
         );
+
+        // The two checks above are negative: they passed for months while the
+        // panel served a third party's pool that matched neither id. Assert
+        // the positive — every private row belongs to the member reading it.
+        const ownsEveryPrivateRow = (
+          tenants: Set<string>,
+          engramUserId: string,
+        ) =>
+          [...tenants].every(
+            (tenant) =>
+              personaEngineUserId(tenant) === personaEngineUserId(engramUserId),
+          );
+        check(
+          "memory_panel_owner_private_rows_are_the_owners",
+          ownsEveryPrivateRow(ownerPrivateTenants, owner.engram_user_id),
+          [...ownerPrivateTenants].join(",") || "(none)",
+        );
+        check(
+          "memory_panel_other_private_rows_are_that_member's",
+          ownsEveryPrivateRow(otherPrivateTenants, other.engram_user_id),
+          [...otherPrivateTenants].join(",") || "(none)",
+        );
+      }
+    }
+
+    const publishedRows = await sql<
+      { id: string; engram_persona_id: string }[]
+    >`
+      SELECT id, engram_persona_id
+      FROM personas
+      WHERE published = true
+      ORDER BY created_at
+    `;
+    const firstPersona = publishedRows[0];
+    const secondPersona = publishedRows[1];
+    if (!firstPersona || !secondPersona) {
+      console.log("two_persona_isolation=SKIP (need two published personas)");
+    } else {
+      const inserted: string[] = [];
+      try {
+        const pairs: Array<{
+          userId: string;
+          personaId: string;
+          name: string;
+        }> = [
+          { userId: owner.id, personaId: firstPersona.id, name: "owner_first" },
+          {
+            userId: owner.id,
+            personaId: secondPersona.id,
+            name: "owner_second",
+          },
+          { userId: other.id, personaId: firstPersona.id, name: "other_first" },
+          {
+            userId: other.id,
+            personaId: secondPersona.id,
+            name: "other_second",
+          },
+        ];
+        const byName: Record<string, string> = {};
+        for (const pair of pairs) {
+          const [row] = await sql<{ id: string }[]>`
+            INSERT INTO sessions (user_id, persona_id, channel)
+            VALUES (${pair.userId}, ${pair.personaId}, ${SESSION_CHANNEL.TEXT})
+            RETURNING id
+          `;
+          if (row) {
+            inserted.push(row.id);
+            byName[pair.name] = row.id;
+          }
+        }
+        const pin = (personaId: string) =>
+          `${config.PERSONA_ID_QUERY}=${encodeURIComponent(personaId)}`;
+        const ownerFirstList = await get(
+          `/api/me/sessions?${pin(firstPersona.id)}`,
+          ownerCookie,
+        );
+        const ownerFirstBody = ownerFirstList.json() as {
+          sessions?: { id?: string; user_id?: string }[];
+        };
+        const ownerFirstIds = new Set(
+          (ownerFirstBody.sessions ?? [])
+            .map((row) => row.id)
+            .filter((id): id is string => typeof id === "string"),
+        );
+        check(
+          "owner_first_list_includes_own_sitting",
+          ownerFirstList.statusCode === 200 &&
+            typeof byName.owner_first === "string" &&
+            ownerFirstIds.has(byName.owner_first),
+          `${ownerFirstList.statusCode}`,
+        );
+        check(
+          "owner_first_list_excludes_second_persona",
+          typeof byName.owner_second === "string" &&
+            !ownerFirstIds.has(byName.owner_second),
+        );
+        check(
+          "owner_first_list_excludes_other_user",
+          typeof byName.other_first === "string" &&
+            !ownerFirstIds.has(byName.other_first),
+        );
+
+        const otherFirstList = await get(
+          `/api/me/sessions?${pin(firstPersona.id)}`,
+          otherCookie,
+        );
+        const otherFirstBody = otherFirstList.json() as {
+          sessions?: { id?: string }[];
+        };
+        const otherFirstIds = new Set(
+          (otherFirstBody.sessions ?? [])
+            .map((row) => row.id)
+            .filter((id): id is string => typeof id === "string"),
+        );
+        check(
+          "other_first_list_excludes_owner_sitting",
+          otherFirstList.statusCode === 200 &&
+            typeof byName.owner_first === "string" &&
+            !otherFirstIds.has(byName.owner_first),
+          `${otherFirstList.statusCode}`,
+        );
+
+        const otherSecondList = await get(
+          `/api/me/sessions?${pin(secondPersona.id)}`,
+          otherCookie,
+        );
+        const otherSecondIds = new Set(
+          (otherSecondList.json() as { sessions?: { id?: string }[] }).sessions
+            ?.map((row) => row.id)
+            .filter((id): id is string => typeof id === "string") ?? [],
+        );
+        check(
+          "other_second_list_includes_own_sitting",
+          otherSecondList.statusCode === 200 &&
+            typeof byName.other_second === "string" &&
+            otherSecondIds.has(byName.other_second),
+          `${otherSecondList.statusCode}`,
+        );
+        check(
+          "other_second_list_excludes_owner_sitting",
+          typeof byName.owner_second === "string" &&
+            !otherSecondIds.has(byName.owner_second),
+        );
+        check(
+          "other_second_list_excludes_first_persona",
+          typeof byName.other_first === "string" &&
+            !otherSecondIds.has(byName.other_first),
+        );
+
+        // Both directions, both personas: a leak in either one is a leak.
+        for (const [name, cookie, label] of [
+          ["owner_second", otherCookie, "other_user_cannot_read_owner_second"],
+          ["other_first", ownerCookie, "owner_cannot_read_other_first"],
+          ["other_second", ownerCookie, "owner_cannot_read_other_second"],
+        ] as const) {
+          const sessionId = byName[name];
+          if (!sessionId) {
+            continue;
+          }
+          const stolen = await get(`/api/me/sessions/${sessionId}`, cookie);
+          check(
+            `${label}_session`,
+            stolen.statusCode === 404,
+            `${stolen.statusCode}`,
+          );
+          const stolenChat = await get(
+            `/api/chat?session_id=${sessionId}`,
+            cookie,
+          );
+          check(
+            `${label}_chat`,
+            stolenChat.statusCode === 404,
+            `${stolenChat.statusCode}`,
+          );
+        }
+
+        if (byName.owner_first) {
+          const stolenPinned = await get(
+            `/api/me/sessions/${byName.owner_first}`,
+            otherCookie,
+          );
+          check(
+            "other_user_cannot_read_owner_first_session",
+            stolenPinned.statusCode === 404,
+            `${stolenPinned.statusCode}`,
+          );
+          const stolenChat = await get(
+            `/api/chat?session_id=${byName.owner_first}`,
+            otherCookie,
+          );
+          check(
+            "other_user_cannot_read_owner_first_chat",
+            stolenChat.statusCode === 404,
+            `${stolenChat.statusCode}`,
+          );
+          const mismatched = await post("/api/chat", ownerCookie, {
+            text: "persona pin must match the sitting",
+            session_id: byName.owner_first,
+            [config.PERSONA_ID_QUERY]: secondPersona.id,
+          });
+          check(
+            "sitting_pin_mismatch_is_409",
+            mismatched.statusCode === 409,
+            `${mismatched.statusCode}`,
+          );
+        }
+
+        if (config.MEMORY_PANEL_ENABLED === "true") {
+          const firstMem = await get(
+            `/api/me/memories?${pin(firstPersona.id)}`,
+            ownerCookie,
+          );
+          const secondMem = await get(
+            `/api/me/memories?${pin(secondPersona.id)}`,
+            ownerCookie,
+          );
+          if (firstMem.statusCode === 200 && secondMem.statusCode === 200) {
+            const firstHits = firstMem.json() as {
+              memories?: { tenant?: string | null }[];
+            };
+            const secondHits = secondMem.json() as {
+              memories?: { tenant?: string | null }[];
+            };
+            const firstLeaksSecond = (firstHits.memories ?? []).some((hit) =>
+              tenantMentionsPersona(
+                hit.tenant,
+                secondPersona.engram_persona_id,
+              ),
+            );
+            const secondLeaksFirst = (secondHits.memories ?? []).some((hit) =>
+              tenantMentionsPersona(hit.tenant, firstPersona.engram_persona_id),
+            );
+            check("first_persona_memory_omits_second_pool", !firstLeaksSecond);
+            check("second_persona_memory_omits_first_pool", !secondLeaksFirst);
+          } else {
+            console.log("two_persona_memory=SKIP (memory panel non-200)");
+          }
+        }
+      } finally {
+        for (const id of inserted) {
+          await sql`DELETE FROM sessions WHERE id = ${id}`;
+        }
       }
     }
 
@@ -412,10 +808,35 @@ try {
     check("other_user_lists_own_sessions", meSessions.statusCode === 200);
     if (meSessions.statusCode === 200) {
       const listed = meSessions.json() as { sessions?: { user_id?: string }[] };
+      check(
+        "session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
       const leakedList = (listed.sessions ?? []).some(
         (session) => session.user_id !== other.id,
       );
       check("other_user_session_list_scoped", !leakedList);
+    }
+
+    const ownerUnpinned = await get("/api/me/sessions", ownerCookie);
+    if (ownerUnpinned.statusCode === 200) {
+      const listed = ownerUnpinned.json() as { sessions?: unknown[] };
+      check(
+        "owner_session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
+    }
+
+    const adminUnpinned = await get("/api/admin/sessions", ownerCookie);
+    if (adminUnpinned.statusCode === 200) {
+      const listed = adminUnpinned.json() as { sessions?: unknown[] };
+      check(
+        "owner_admin_session_list_without_pin_empty",
+        (listed.sessions ?? []).length === 0,
+        `${listed.sessions?.length ?? 0} rows`,
+      );
     }
 
     const meOverview = await get("/api/me/overview", otherCookie);
@@ -493,7 +914,7 @@ try {
   }
 
   const [persona] = await sql<{ id: string }[]>`
-    SELECT id FROM personas ORDER BY created_at LIMIT 1
+    SELECT id FROM personas WHERE published = true ORDER BY created_at LIMIT 1
   `;
   const scopeUser = other ?? owner ?? users[0] ?? null;
   if (persona && scopeUser) {

@@ -14,6 +14,7 @@ export type ThinkIdentity = {
 export function buildVoiceAgentSettings(
   config: GatewayConfig,
   identity: ThinkIdentity,
+  speakModel: string | undefined,
 ): Record<string, unknown> {
   const think: Record<string, unknown> = {
     provider: {
@@ -43,7 +44,7 @@ export function buildVoiceAgentSettings(
       provider: {
         type: config.DEEPGRAM_SPEAK_PROVIDER_TYPE,
         version: config.DEEPGRAM_SPEAK_PROVIDER_VERSION,
-        model: config.DEEPGRAM_TTS_VOICE,
+        model: speakModel,
       },
     },
   };

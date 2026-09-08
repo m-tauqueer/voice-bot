@@ -18,7 +18,6 @@ class FakePersonas:
 
     def user_memories(self, persona_id: str, user_id: str, **params: object):
         assert persona_id == "persona-1"
-        assert user_id == "user-1"
         if params.get("cursor") == "c2":
             return self.pages[1]
         return self.pages[0]
@@ -60,6 +59,26 @@ def test_purge_forgets_each_gid_then_unsubscribes(settings) -> None:
         ("persona-1", "user-1", 1002),
     ]
     assert personas.unsubscribed == [("persona-1", "user-1")]
+
+
+def test_purge_hyphenated_uuid_clears_engine_and_legacy_ids(settings) -> None:
+    personas = FakePersonas()
+    hyphenated = "3a07018e-b5c2-483a-b80f-07e90488b5f4"
+    hex_id = "3a07018eb5c2483ab80f07e90488b5f4"
+    result = purge_private_pool(
+        settings,
+        engram_user_id=hyphenated,
+        engram_persona_id="persona-1",
+        personas=personas,
+    )
+    assert result["engram"] == "ok"
+    assert result["forgotten"] == 4
+    assert result["unsubscribed"] is True
+    assert {user_id for _, user_id, _ in personas.forgotten} == {hex_id, hyphenated}
+    assert personas.unsubscribed == [
+        ("persona-1", hex_id),
+        ("persona-1", hyphenated),
+    ]
 
 
 def test_purge_is_partial_when_forget_fails(settings) -> None:

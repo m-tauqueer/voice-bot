@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
+from worker.engram.user_id import persona_engine_user_id
 
 
 class BrainRegistry:
@@ -21,21 +22,22 @@ class BrainRegistry:
         self._brains: OrderedDict[str, EngramBrain] = OrderedDict()
 
     def get(self, engram_user_id: str) -> EngramBrain:
+        key = persona_engine_user_id(engram_user_id)
         with self._lock:
-            existing = self._brains.get(engram_user_id)
+            existing = self._brains.get(key)
             if existing is not None:
-                self._brains.move_to_end(engram_user_id)
+                self._brains.move_to_end(key)
                 return existing
-        brain = EngramBrain(self._settings, engram_user_id)
+        brain = EngramBrain(self._settings, key)
         evicted: EngramBrain | None = None
         with self._lock:
-            racer = self._brains.get(engram_user_id)
+            racer = self._brains.get(key)
             if racer is not None:
-                self._brains.move_to_end(engram_user_id)
+                self._brains.move_to_end(key)
                 evicted = brain
                 brain = racer
             else:
-                self._brains[engram_user_id] = brain
+                self._brains[key] = brain
                 while len(self._brains) > self._settings.engram_client_cache_size:
                     _, evicted = self._brains.popitem(last=False)
         if evicted is not None:

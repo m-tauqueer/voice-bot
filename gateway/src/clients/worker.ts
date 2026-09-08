@@ -1,5 +1,21 @@
 import type { GatewayConfig } from "../config.js";
 
+/**
+ * A member must not learn from a relayed worker reply whether a persona exists
+ * as an unpublished draft. The worker names the case (`persona_not_found` vs
+ * `session_not_found`) for its own logs; every 404 leaves here identical.
+ */
+export function memberFacingBody(
+  status: number,
+  body: unknown,
+  notFoundError: string,
+): unknown {
+  if (status === 404) {
+    return { error: notFoundError };
+  }
+  return body;
+}
+
 export async function callWorker(
   config: GatewayConfig,
   path: string,

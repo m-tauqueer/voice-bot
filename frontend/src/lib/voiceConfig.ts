@@ -28,6 +28,7 @@ function requiredBool(name: string, value: string | undefined): boolean {
 
 export type VoiceClientConfig = {
   wsUrl: string;
+  personaIdQuery: string;
   inputEncoding: string;
   inputSampleRate: number;
   outputEncoding: string;
@@ -72,6 +73,10 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
 
   return {
     wsUrl: ws.toString(),
+    personaIdQuery: requiredString(
+      "VITE_PERSONA_ID_QUERY",
+      import.meta.env.VITE_PERSONA_ID_QUERY,
+    ),
     inputEncoding: requiredString(
       "VITE_DEEPGRAM_AUDIO_INPUT_ENCODING",
       import.meta.env.VITE_DEEPGRAM_AUDIO_INPUT_ENCODING,
@@ -185,4 +190,13 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
       import.meta.env.VITE_VOICE_CONNECTION_DROPPED,
     ),
   };
+}
+
+export function voiceSocketUrl(
+  config: VoiceClientConfig,
+  personaId: string,
+): string {
+  const url = new URL(config.wsUrl);
+  url.searchParams.set(config.personaIdQuery, personaId);
+  return url.toString();
 }

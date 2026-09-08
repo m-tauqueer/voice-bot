@@ -79,6 +79,22 @@ def user_engram_id(conn: psycopg.Connection, user_id: UUID) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def set_user_engram_id(
+    conn: psycopg.Connection,
+    user_id: UUID,
+    engram_user_id: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET engram_user_id = %s
+            WHERE id = %s
+            """,
+            (engram_user_id, str(user_id)),
+        )
+
+
 def user_email(conn: psycopg.Connection, user_id: UUID) -> str | None:
     with conn.cursor() as cur:
         cur.execute("SELECT email FROM users WHERE id = %s", (str(user_id),))

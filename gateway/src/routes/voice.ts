@@ -2,10 +2,12 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import WebSocket from "ws";
+import { z } from "zod";
 import { createRequireAppUser } from "../auth/guard.js";
 import { createVoiceSession } from "../chat/sessions.js";
 import {
   type GatewayConfig,
+  readPersonaIdQuery,
   suppressedWarningCodes,
   voiceAudioPersistEnabled,
   voiceAudioReady,
@@ -21,7 +23,7 @@ import {
 import { buildVoiceAgentSettings } from "../deepgram/settings.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
-import { MultiplePersonasError, resolveActivePersona } from "../personas.js";
+import { getPublishedPersonaById, resolveSpeakModel } from "../personas.js";
 import {
   type Utterance,
   VoiceAudioCapture,
@@ -149,35 +151,40 @@ export async function registerVoiceRoutes(
         socket.on("close", markClientGone);
         socket.on("error", markClientGone);
         try {
-          let persona: Awaited<ReturnType<typeof resolveActivePersona>>;
+          const parsedPin = z
+            .string()
+            .uuid()
+            .safeParse(readPersonaIdQuery(request.query, config));
+          if (!parsedPin.success) {
+            sendJson(socket, {
+              type: config.VOICE_CLIENT_ERROR_TYPE,
+              error: config.INSIGHTS_ERROR_NOT_FOUND,
+            });
+            closeClient(socket);
+            return;
+          }
+          let persona: Awaited<ReturnType<typeof getPublishedPersonaById>>;
           try {
-            persona = await resolveActivePersona(sql, config);
+            persona = await getPublishedPersonaById(sql, parsedPin.data);
           } catch (error) {
-            if (error instanceof MultiplePersonasError) {
-              sendJson(socket, {
-                type: config.VOICE_CLIENT_ERROR_TYPE,
-                error: "multiple personas",
-              });
-            } else {
-              request.log.error({ err: error }, "voice persona lookup failed");
-              reportVoiceFailure(
-                sql,
-                config,
-                request.log,
-                config.FAILURE_CODE_DATABASE,
-              );
-              sendJson(
-                socket,
-                voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
-              );
-            }
+            request.log.error({ err: error }, "voice persona lookup failed");
+            reportVoiceFailure(
+              sql,
+              config,
+              request.log,
+              config.FAILURE_CODE_DATABASE,
+            );
+            sendJson(
+              socket,
+              voiceFailurePayload(config, config.FAILURE_CODE_DATABASE),
+            );
             closeClient(socket);
             return;
           }
           if (!persona) {
             sendJson(socket, {
               type: config.VOICE_CLIENT_ERROR_TYPE,
-              error: "persona not recorded",
+              error: config.INSIGHTS_ERROR_NOT_FOUND,
             });
             closeClient(socket);
             return;
@@ -202,12 +209,20 @@ export async function registerVoiceRoutes(
             return;
           }
           sessionId = session.id;
-          const settings = buildVoiceAgentSettings(config, {
-            appUserId: user.id,
-            engramUserId: user.engramUserId,
-            personaId: persona.id,
-            sessionId: session.id,
-          });
+          const settings = buildVoiceAgentSettings(
+            config,
+            {
+              appUserId: user.id,
+              engramUserId: user.engramUserId,
+              personaId: persona.id,
+              sessionId: session.id,
+            },
+            resolveSpeakModel(
+              persona.voiceConfig,
+              config.PERSONA_VOICE_TTS_KEY,
+              config.DEEPGRAM_TTS_VOICE,
+            ),
+          );
           let opened: Awaited<
             ReturnType<typeof openVoiceAgentSessionWithRetry>
           >;

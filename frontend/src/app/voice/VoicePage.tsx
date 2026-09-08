@@ -9,20 +9,15 @@ import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
-import { loadVoiceClientConfig, type VoiceClientConfig } from "../../lib/voiceConfig";
+import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
+import { loadUiCopy, type UiCopy } from "../../lib/uiCopy";
+import {
+  parsePublishedDirectory,
+  type PublishedPersona,
+} from "../../lib/publishedPersonas";
+import { PersonaPicker } from "../PersonaPicker";
 import { useSession } from "../session";
-
-type Persona = {
-  id: string;
-  handle: string;
-  display_name: string;
-  description: string | null;
-};
-
-type ChatGetResponse = {
-  persona: Persona;
-};
 
 type CallPhase =
   | "idle"
@@ -60,36 +55,36 @@ const bubbleStyle = (fromUser: boolean): CSSProperties => ({
   whiteSpace: "pre-wrap",
 });
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "request failed";
+  return fallback;
 }
 
-function phaseLabel(phase: CallPhase): string {
+function phaseLabel(phase: CallPhase, copy: UiCopy): string {
   if (phase === "starting") {
-    return "Connecting";
+    return copy.callPhaseConnecting;
   }
   if (phase === "listening") {
-    return "Listening";
+    return copy.callPhaseListening;
   }
   if (phase === "thinking") {
-    return "Thinking";
+    return copy.callPhaseThinking;
   }
   if (phase === "speaking") {
-    return "Speaking";
+    return copy.callPhaseSpeaking;
   }
   if (phase === "reconnecting") {
-    return "Reconnecting";
+    return copy.callPhaseReconnecting;
   }
   if (phase === "error") {
-    return "Error";
+    return copy.callPhaseError;
   }
-  return "Idle";
+  return copy.callPhaseIdle;
 }
 
 function phaseTone(phase: CallPhase): BadgeTone {
@@ -127,16 +122,16 @@ function eventContent(event: Record<string, unknown>): string | null {
 
 export function VoicePage() {
   const identity = useSession();
-  const { loadingLabel, appName } = loadNavConfig();
+  const copy = loadUiCopy();
+  const { loadingLabel } = loadNavConfig();
   const me = identity.status === "ready" ? identity.me : null;
-  const [persona, setPersona] = useState<Persona | null>(
-    identity.status === "ready" ? identity.persona : null,
-  );
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptLine[]>([]);
+  const [directory, setDirectory] = useState<PublishedPersona[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [vu, setVu] = useState(0);
   const [levels, setLevels] = useState<number[]>([]);
   const [clientConfig, setClientConfig] = useState<VoiceClientConfig | null>(
@@ -161,23 +156,31 @@ export function VoicePage() {
     levelRaf: null,
     pendingLevel: 0,
   });
+  const picked = directory.find((row) => row.id === pickedId) ?? null;
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!me) {
+      setBoot("ready");
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const context = await api<ChatGetResponse>("/api/chat");
-        if (cancelled) return;
-        setPersona(context.persona);
+        const payload = await api<{ personas?: unknown }>("/api/personas");
+        if (cancelled) {
+          return;
+        }
+        setDirectory(parsePublishedDirectory(payload));
       } catch (error) {
-        if (cancelled) return;
-        setBanner({ tone: "error", text: errorMessage(error) });
+        if (!cancelled) {
+          setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
+        }
+      } finally {
+        if (!cancelled) {
+          setBoot("ready");
+        }
       }
-      setBoot("ready");
     })();
     return () => {
       cancelled = true;
@@ -191,7 +194,7 @@ export function VoicePage() {
   }, []);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    bottom.current?.scrollIntoView?.({ block: "end" });
   }, [turns, phase]);
 
   function publishLevel(level: number) {
@@ -235,6 +238,8 @@ export function VoicePage() {
     await current.playback?.stop();
     setVu(0);
     setLevels([]);
+    setTurns([]);
+    setSessionId(null);
     setPhase("idle");
   }
 
@@ -296,7 +301,7 @@ export function VoicePage() {
   }
 
   async function startCall() {
-    if (phase !== "idle" && phase !== "error") {
+    if ((phase !== "idle" && phase !== "error") || !picked) {
       return;
     }
     setPhase("starting");
@@ -324,7 +329,9 @@ export function VoicePage() {
         onLevel: publishLevel,
       });
       session.current.mic = mic;
-      const socket = openVoiceSocket(config, {
+      const socket = openVoiceSocket(
+        { ...config, wsUrl: voiceSocketUrl(config, picked.id) },
+        {
         onReady: (ready) => {
           live.current = true;
           setSessionId(ready.sessionId);
@@ -366,7 +373,7 @@ export function VoicePage() {
       });
       session.current.socket = socket;
     } catch (error) {
-      setBanner({ tone: "error", text: errorMessage(error) });
+      setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
       setPhase("error");
       await endCall();
     }
@@ -386,13 +393,16 @@ export function VoicePage() {
     phase === "speaking" ||
     phase === "reconnecting";
   const starting = phase === "starting";
+  const pickingLocked = inCall || starting;
 
   return (
     <div style={wrapStyle}>
         <div>
-          <h1 className="mc-pagehead__title">{persona?.display_name ?? appName}</h1>
+          <h1 className="mc-pagehead__title">
+            {picked?.display_name ?? copy.personaPickerTitle}
+          </h1>
           <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-            {persona?.handle ? `@${persona.handle}` : null}
+            {picked?.handle ? `@${picked.handle}` : copy.personaPickerHelp}
           </p>
         </div>
 
@@ -411,29 +421,43 @@ export function VoicePage() {
           </Card>
         )}
 
+        <PersonaPicker
+          directory={directory}
+          pickedId={pickedId}
+          locked={pickingLocked}
+          title={copy.personaPickerTitle}
+          empty={copy.personaPickerEmpty}
+          help={copy.personaPickerHelp}
+          onPick={setPickedId}
+        />
+
         <Card>
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {inCall ? (
                 <Button type="button" variant="danger" onClick={() => void endCall()}>
-                  End call
+                  {copy.callEndLabel}
                 </Button>
               ) : (
                 <Button
                   type="button"
                   variant="solid"
-                  disabled={starting}
+                  disabled={starting || !picked}
                   onClick={() => void startCall()}
                 >
-                  {starting ? "Starting…" : "Start call"}
+                  {starting ? copy.callStartingLabel : copy.callStartLabel}
                 </Button>
               )}
-              <Badge tone={phaseTone(phase)}>{phaseLabel(phase)}</Badge>
-              {sessionId && <Badge>Session saved</Badge>}
+              <Badge tone={phaseTone(phase)}>{phaseLabel(phase, copy)}</Badge>
+              {sessionId && <Badge>{copy.callSessionSavedBadge}</Badge>}
             </div>
             {(inCall || starting) && (
               <>
-                <BarMeter value={vu} label="Mic" accent={phase === "listening"} />
+                <BarMeter
+                  value={vu}
+                  label={copy.callMicLabel}
+                  accent={phase === "listening"}
+                />
                 {levels.length > 0 && (
                   <div
                     aria-hidden="true"
@@ -468,8 +492,8 @@ export function VoicePage() {
             {turns.length === 0 && (
               <p style={{ color: "var(--text-mid)" }}>
                 {inCall
-                  ? "Speak when the badge says Listening."
-                  : "Start a call to see the live transcript."}
+                  ? copy.callTranscriptListening
+                  : copy.callTranscriptIdle}
               </p>
             )}
             {turns.map((turn, index) => (

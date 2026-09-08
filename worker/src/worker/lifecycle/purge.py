@@ -7,6 +7,7 @@ import structlog
 from worker.config import WorkerSettings
 from worker.engram.errors import BrainError
 from worker.engram.factory import create_org_engram
+from worker.engram.user_id import persona_engine_user_ids
 from worker.lifecycle.gids import memory_gids, next_cursor
 
 log = structlog.get_logger(__name__)
@@ -49,47 +50,50 @@ def purge_private_pool(
         surface = client.personas
     forgotten = 0
     failed = 0
+    engine_user_ids = persona_engine_user_ids(engram_user_id)
     try:
-        cursor: str | None = None
-        while True:
-            params: dict[str, object] = {
-                "limit": settings.lifecycle_memory_page_size,
-            }
-            if cursor:
-                params["cursor"] = cursor
-            page = surface.user_memories(
-                engram_persona_id,
-                engram_user_id,
-                **params,
-            )
-            for gid in memory_gids(page):
-                try:
-                    surface.forget_user_memory(
-                        engram_persona_id,
-                        engram_user_id,
-                        gid,
-                    )
-                    forgotten += 1
-                except BrainError:
-                    failed += 1
-                    log.warning(
-                        "engram forget failed",
-                        gid=str(gid),
-                        user_id=engram_user_id,
-                    )
-                except Exception:
-                    failed += 1
-                    log.warning(
-                        "engram forget failed",
-                        gid=str(gid),
-                        user_id=engram_user_id,
-                    )
-            cursor = next_cursor(page)
-            if not cursor:
-                break
+        for engine_user_id in engine_user_ids:
+            cursor: str | None = None
+            while True:
+                params: dict[str, object] = {
+                    "limit": settings.lifecycle_memory_page_size,
+                }
+                if cursor:
+                    params["cursor"] = cursor
+                page = surface.user_memories(
+                    engram_persona_id,
+                    engine_user_id,
+                    **params,
+                )
+                for gid in memory_gids(page):
+                    try:
+                        surface.forget_user_memory(
+                            engram_persona_id,
+                            engine_user_id,
+                            gid,
+                        )
+                        forgotten += 1
+                    except BrainError:
+                        failed += 1
+                        log.warning(
+                            "engram forget failed",
+                            gid=str(gid),
+                            user_id=engine_user_id,
+                        )
+                    except Exception:
+                        failed += 1
+                        log.warning(
+                            "engram forget failed",
+                            gid=str(gid),
+                            user_id=engine_user_id,
+                        )
+                cursor = next_cursor(page)
+                if not cursor:
+                    break
         unsubscribed = False
         try:
-            surface.unsubscribe(engram_persona_id, engram_user_id)
+            for engine_user_id in engine_user_ids:
+                surface.unsubscribe(engram_persona_id, engine_user_id)
             unsubscribed = True
         except Exception:
             log.warning("engram unsubscribe failed", user_id=engram_user_id)

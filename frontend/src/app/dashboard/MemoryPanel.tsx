@@ -8,14 +8,15 @@ import { loadUiCopy } from "../../lib/uiCopy";
 import { EmptyNote } from "./FetchState";
 import { useSession } from "../session";
 
-export function MemoryPanel() {
+export function MemoryPanel({ personaId }: { personaId: string | null }) {
   const copy = loadUiCopy();
   const session = useSession();
   const [hits, setHits] = useState<MemoryHit[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   const userId = session.status === "ready" ? session.me.id : undefined;
-  const reloadKey = memoryPanelReloadKey(userId, session.status);
+  const pin = personaId ?? undefined;
+  const reloadKey = memoryPanelReloadKey(userId, session.status, pin);
 
   const load = useCallback(async () => {
     if (session.status !== "ready") {
@@ -25,15 +26,20 @@ export function MemoryPanel() {
       setHits([]);
       return;
     }
+    if (!pin) {
+      setHits([]);
+      setUnavailable(false);
+      return;
+    }
     try {
-      const panel = await fetchPersonalMemories();
+      const panel = await fetchPersonalMemories(pin);
       setHits(panel.memories);
       setUnavailable(false);
     } catch (error) {
       setHits([]);
       setUnavailable(!(error instanceof ApiError && error.status === 404));
     }
-  }, [copy.memoryEnabled, reloadKey, session.status]);
+  }, [copy.memoryEnabled, pin, reloadKey, session.status]);
 
   useEffect(() => {
     void load();
@@ -46,7 +52,10 @@ export function MemoryPanel() {
   return (
     <Section title={copy.memoryTitle}>
       {unavailable ? <EmptyNote text={copy.memoryUnavailable} /> : null}
-      {!unavailable && hits && hits.length === 0 ? (
+      {!unavailable && !pin ? (
+        <EmptyNote text={copy.personaNeedPick} />
+      ) : null}
+      {!unavailable && pin && hits && hits.length === 0 ? (
         <EmptyNote text={copy.emptyMemory} />
       ) : null}
       {hits && hits.length > 0 ? (

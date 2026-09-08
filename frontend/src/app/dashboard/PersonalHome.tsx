@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Section } from "../../components/Section";
+import { api } from "../../lib/gateway";
 import { loadNavConfig } from "../../lib/nav";
 import { matchPattern, navigate, useRoute } from "../../lib/router";
 import { dashboardSessionPath, PATTERNS, ROUTES } from "../../lib/routes";
@@ -10,9 +11,14 @@ import {
   type SessionDetail,
   type SessionListItem,
 } from "../../lib/insights";
+import {
+  parsePublishedDirectory,
+  type PublishedPersona,
+} from "../../lib/publishedPersonas";
 import { loadUiCopy } from "../../lib/uiCopy";
+import { PersonaPicker } from "../PersonaPicker";
 import { useSession } from "../session";
-import { FetchError } from "./FetchState";
+import { EmptyNote, FetchError } from "./FetchState";
 import { MemoryPanel } from "./MemoryPanel";
 import { SessionRows } from "./SessionRows";
 import { SpokenTranscript } from "./Transcripts";
@@ -30,48 +36,116 @@ function PersonalIndex() {
   const session = useSession();
   const nav = loadNavConfig();
   const copy = loadUiCopy();
-  const personaName =
-    session.status === "ready" && session.persona
-      ? session.persona.display_name
-      : nav.appName;
+  const me = session.status === "ready" ? session.me : null;
+  const [boot, setBoot] = useState<"loading" | "ready">("loading");
+  const [directory, setDirectory] = useState<PublishedPersona[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [rows, setRows] = useState<SessionListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const loadGen = useRef(0);
+  const picked = directory.find((row) => row.id === pickedId) ?? null;
 
-  const load = useCallback(async (nextCursor?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const page = await fetchPersonalSessions({
-        range: copy.defaultRange,
-        cursor: nextCursor,
-      });
-      setRows((current) =>
-        nextCursor ? [...current, ...page.sessions] : page.sessions,
-      );
-      setCursor(page.next_cursor);
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!me) {
+      return;
     }
-  }, [copy.defaultRange]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await api<{ personas?: unknown }>("/api/personas");
+        if (!cancelled) {
+          setDirectory(parsePublishedDirectory(payload));
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setError(caught);
+        }
+      } finally {
+        if (!cancelled) {
+          setBoot("ready");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [me]);
+
+  const load = useCallback(
+    async (nextCursor?: string) => {
+      const gen = ++loadGen.current;
+      if (!pickedId) {
+        setRows([]);
+        setCursor(null);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const page = await fetchPersonalSessions({
+          range: copy.defaultRange,
+          cursor: nextCursor,
+          personaId: pickedId,
+        });
+        if (gen !== loadGen.current) {
+          return;
+        }
+        setRows((current) =>
+          nextCursor ? [...current, ...page.sessions] : page.sessions,
+        );
+        setCursor(page.next_cursor);
+      } catch (caught) {
+        if (gen !== loadGen.current) {
+          return;
+        }
+        setError(caught);
+      } finally {
+        if (gen === loadGen.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [copy.defaultRange, pickedId],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  if (!me || boot === "loading") {
+    return (
+      <div className="mc-wrap">
+        <p>{nav.loadingLabel}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mc-wrap">
       <div className="mc-pagehead">
         <div>
-          <h1 className="mc-pagehead__title">{personaName}</h1>
+          <h1 className="mc-pagehead__title">
+            {picked?.display_name ?? copy.personaPickerTitle}
+          </h1>
         </div>
       </div>
+      <PersonaPicker
+        directory={directory}
+        pickedId={pickedId}
+        locked={false}
+        title={copy.personaPickerTitle}
+        empty={copy.personaPickerEmpty}
+        help={copy.personaPickerHistoryHelp}
+        onPick={setPickedId}
+      />
       <Section title={copy.recentTitle} first>
         {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
-        {!error ? (
+        {!error && !pickedId ? <EmptyNote text={copy.personaNeedPick} /> : null}
+        {!error && pickedId ? (
           <SessionRows
             sessions={rows}
             showUser={false}
@@ -86,7 +160,7 @@ function PersonalIndex() {
           </div>
         ) : null}
       </Section>
-      <MemoryPanel />
+      <MemoryPanel personaId={pickedId} />
     </div>
   );
 }
