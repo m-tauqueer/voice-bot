@@ -8,7 +8,7 @@ import time
 
 from fastapi.testclient import TestClient
 
-from worker.admin.store import connect, probe_persona
+from worker.admin.store import connect, write_probe_persona
 from worker.config import load_settings
 from worker.main import app
 from worker.persistence.sessions import create_session
@@ -235,11 +235,22 @@ def main() -> int:
     else:
         print("missing_headers=400 ok")
 
+    if not settings.probe_persona_id:
+        print(f"think=SKIP {settings.probe_write_skip}")
+        if failed:
+            print(f"FAIL: {failed} check(s)", file=sys.stderr)
+            return 1
+        print("PROBE_OK")
+        return 0
+
     conn = connect(settings)
     try:
-        persona = probe_persona(conn, settings)
+        persona = write_probe_persona(conn, settings)
         if persona is None:
-            print("FAIL: no published persona recorded locally", file=sys.stderr)
+            print(
+                "FAIL: PROBE_PERSONA_ID is missing or unpublished locally",
+                file=sys.stderr,
+            )
             return 1
         with conn.cursor() as cur:
             cur.execute(

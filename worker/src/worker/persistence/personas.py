@@ -28,3 +28,18 @@ def visible_to_members(row: PersonaRow | None) -> PersonaRow | None:
     if row.get("published") is not True:
         return None
     return row
+
+
+def persona_id_for_engram(
+    conn: psycopg.Connection,
+    engram_persona_id: str,
+) -> UUID | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM personas WHERE engram_persona_id = %s",
+            (engram_persona_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return UUID(str(row["id"]))

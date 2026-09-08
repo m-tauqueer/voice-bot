@@ -1,6 +1,6 @@
 import type postgres from "postgres";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
-import { asJsonValue } from "../json.js";
+import { asJsonArray, asJsonValue } from "../json.js";
 import { TURN_SPEAKER } from "../schema.js";
 import {
   type LatencyColumn,
@@ -577,7 +577,7 @@ async function sessionDetail(
     ordinal: row.ordinal,
     speaker: row.speaker,
     text: row.text,
-    messages: asJsonValue(row.messages),
+    messages: asJsonArray(row.messages),
     controller_action: row.controller_action,
     controller_reasons: asReasonList(row.controller_reasons),
     stt_meta: asJsonValue(row.stt_meta),
@@ -590,7 +590,7 @@ async function sessionDetail(
       row.memory_session_id === null
         ? null
         : {
-            memories_used: asJsonValue(row.memories_used),
+            memories_used: asJsonArray(row.memories_used),
             engram_session_id: row.memory_session_id,
           },
     audio: audioByTurn.get(row.id) ?? [],

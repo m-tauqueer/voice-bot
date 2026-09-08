@@ -1,6 +1,7 @@
 from typing import Any
 
-from worker.admin.store import pick_probe_persona
+from worker.admin.store import pick_probe_persona, write_probe_persona
+from worker.config import WorkerSettings
 
 ADA = "11111111-1111-1111-1111-111111111111"
 NOVA = "22222222-2222-2222-2222-222222222222"
@@ -47,3 +48,10 @@ def test_missing_pin_or_no_published_row_returns_none() -> None:
     assert pick_probe_persona(rows) is None
     assert pick_probe_persona(rows, persona_id=NOVA) is None
     assert pick_probe_persona([]) is None
+
+
+def test_write_probe_persona_skips_when_unpinned(
+    settings: WorkerSettings,
+) -> None:
+    settings.probe_persona_id = None
+    assert write_probe_persona(None, settings) is None  # type: ignore[arg-type]

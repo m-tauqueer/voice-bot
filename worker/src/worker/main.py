@@ -87,7 +87,7 @@ app.include_router(build_subscribe_router(settings))
 app.include_router(build_admin_router(settings))
 app.include_router(build_turn_router(settings, runner))
 app.include_router(build_memories_router(settings, runner))
-app.include_router(build_lifecycle_router(settings))
+app.include_router(build_lifecycle_router(settings, runner))
 app.include_router(build_chat_completions_router(settings, runner))
 
 

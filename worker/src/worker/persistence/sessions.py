@@ -5,6 +5,8 @@ from uuid import UUID
 
 import psycopg
 
+from worker.engram.user_id import persona_engine_user_ids
+
 SessionRow = dict[str, Any]
 
 
@@ -103,3 +105,19 @@ def user_email(conn: psycopg.Connection, user_id: UUID) -> str | None:
         return None
     value = row["email"]
     return value if isinstance(value, str) else None
+
+
+def user_id_for_engram(
+    conn: psycopg.Connection,
+    engram_user_id: str,
+) -> UUID | None:
+    candidates = list(persona_engine_user_ids(engram_user_id))
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM users WHERE engram_user_id = ANY(%s)",
+            (candidates,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return UUID(str(row["id"]))

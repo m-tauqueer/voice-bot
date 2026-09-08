@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import { type JsonValue, asJsonValue } from "../json.js";
+import { asJsonArray } from "../json.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -139,7 +139,7 @@ export async function loadMemberArchive(sql: Sql, userId: string) {
     })),
     memory_refs: memoryRefs.map((ref) => ({
       turn_id: ref.turn_id,
-      memories_used: asJsonValue(ref.memories_used) as JsonValue,
+      memories_used: asJsonArray(ref.memories_used),
       engram_session_id: ref.engram_session_id,
     })),
   };

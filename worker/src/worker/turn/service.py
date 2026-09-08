@@ -26,14 +26,14 @@ from worker.engram.errors import (
     UnauthorizedError,
     ValidationError,
 )
-from worker.engram.interface import ChatOutcome
+from worker.engram.interface import ChatOutcome, RetrieveOutcome
 from worker.engram.org_member import (
     ensure_org_member,
     open_org_roster,
     skip_org_join,
 )
 from worker.engram.registry import BrainRegistry
-from worker.engram.tenant import is_own_private_pool
+from worker.engram.tenant import is_own_private_pool, may_ground
 from worker.engram.user_id import persona_engine_user_id
 from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
@@ -149,6 +149,9 @@ class TurnPlan:
     reframe_ms: int | None = None
     reframe_first_token_ms: int | None = None
     spoken: str | None = None
+    retrieve_hits: int | None = None
+    retrieve_hits_grounded: int | None = None
+    retrieve_hits_dropped: int | None = None
     speaks: bool = field(init=False)
 
     def __post_init__(self) -> None:
@@ -403,6 +406,7 @@ class TurnRunner:
 
         mode = self._settings.brain_mode
         memories: list[str] = []
+        hit_counts: tuple[int, int, int] | None = None
         outcome: ChatOutcome | BrainError
         try:
             if mode == "retrieve":
@@ -414,17 +418,10 @@ class TurnRunner:
                     text,
                     top_k=self._settings.engram_retrieve_top_k,
                 )
-                memories = [
-                    hit.text.strip()
-                    for hit in found.results
-                    if isinstance(hit.text, str) and hit.text.strip()
-                ]
-                outcome = ChatOutcome(
-                    messages=memories,
-                    text=self._settings.engram_message_join.join(memories),
-                    memories_used=[hit.raw for hit in found.results],
-                    session_id=prior_sid,
-                    raw=found.raw,
+                memories, outcome, hit_counts = self._ground_retrieve(
+                    found,
+                    engram_user_id=engram_user_id,
+                    prior_sid=prior_sid,
                     brain_ms=int((time.perf_counter() - started_read) * 1000),
                 )
             else:
@@ -486,6 +483,9 @@ class TurnRunner:
             outcome=outcome,
             engram_user_id=engram_user_id,
             engram_persona_id=engram_persona_id,
+            retrieve_hits=None if hit_counts is None else hit_counts[0],
+            retrieve_hits_grounded=None if hit_counts is None else hit_counts[1],
+            retrieve_hits_dropped=None if hit_counts is None else hit_counts[2],
         )
 
     def speak(self, plan: TurnPlan) -> str:
@@ -652,6 +652,9 @@ class TurnRunner:
                     "reframe_first_token_ms": plan.reframe_first_token_ms,
                     "brain_mode": plan.mode,
                     "recorded": result.recorded,
+                    "retrieve_hits": plan.retrieve_hits,
+                    "retrieve_hits_grounded": plan.retrieve_hits_grounded,
+                    "retrieve_hits_dropped": plan.retrieve_hits_dropped,
                 },
             ),
         )
@@ -756,6 +759,13 @@ class TurnRunner:
         return engine_id
 
     def _should_write_back(self, plan: TurnPlan) -> bool:
+        # converse writes the authenticated caller's private pool. Until each
+        # member authenticates as themselves, that caller is the API key owner,
+        # so every member turn would land in one shared admin pool
+        # (docs/ENGRAM.md §2.3). Suppress write-back even when
+        # ENGRAM_CONVERSE_WRITEBACK is true.
+        if not self._settings.engram_member_session_auth:
+            return False
         # chat writes the caller's private pool itself; only retrieve owes one.
         if plan.mode != "retrieve":
             return False
@@ -822,6 +832,52 @@ class TurnRunner:
                 )
                 return
 
+    def _ground_retrieve(
+        self,
+        found: RetrieveOutcome,
+        *,
+        engram_user_id: str,
+        prior_sid: str | None,
+        brain_ms: int,
+    ) -> tuple[list[str], ChatOutcome, tuple[int, int, int]]:
+        """Keep only retrieve rows this member is allowed to hear.
+
+        `memories` and `memories_used` are built from the same filtered list so
+        a dropped row cannot still be persisted and re-served.
+        """
+        grounded = [
+            hit
+            for hit in found.results
+            if may_ground(
+                hit.tenant,
+                engram_user_id=engram_user_id,
+                member_authenticated=self._settings.engram_member_session_auth,
+            )
+        ]
+        hits = len(found.results)
+        kept = len(grounded)
+        dropped = hits - kept
+        log.info(
+            self._settings.log_retrieve_grounded_event,
+            retrieve_hits=hits,
+            retrieve_hits_grounded=kept,
+            retrieve_hits_dropped=dropped,
+        )
+        memories = [
+            hit.text.strip()
+            for hit in grounded
+            if isinstance(hit.text, str) and hit.text.strip()
+        ]
+        outcome = ChatOutcome(
+            messages=memories,
+            text=self._settings.engram_message_join.join(memories),
+            memories_used=[hit.raw for hit in grounded],
+            session_id=prior_sid,
+            raw=found.raw,
+            brain_ms=brain_ms,
+        )
+        return memories, outcome, (hits, kept, dropped)
+
     def retrieve_memories(
         self,
         *,
@@ -836,12 +892,20 @@ class TurnRunner:
             self._settings.memory_panel_query,
             top_k=self._settings.memory_panel_top_k,
         )
-        # retrieve answers from the shared pool as well. This panel says what
-        # the persona remembers about *this* member, so only their own private
-        # pool belongs here — and nobody else's ever can.
+        # retrieve answers from the shared pool as well. This panel is what
+        # the persona remembers about *this* member, so shared teach stays off
+        # it. Ownership uses `may_ground` — the same helper as the answer path,
+        # so a private row is trusted only when we reached Engram as that
+        # member — then `is_own_private_pool` keeps the panel to their rows.
         memories: list[dict[str, str | None]] = []
         for hit in outcome.results:
             if not hit.text:
+                continue
+            if not may_ground(
+                hit.tenant,
+                engram_user_id=bound,
+                member_authenticated=self._settings.engram_member_session_auth,
+            ):
                 continue
             if not is_own_private_pool(hit.tenant, engram_user_id=bound):
                 continue
@@ -878,6 +942,28 @@ class TurnRunner:
             status=403,
             reason="identity_mismatch",
         )
+
+    def forget_grant_attempts(
+        self,
+        *,
+        app_user_id: UUID,
+        persona_id: UUID | None = None,
+    ) -> None:
+        """Drop cached subscribe attempts after delete-my-data.
+
+        Called even when Engram forget/unsubscribe is partial, so a member who
+        talks again is not stuck on a stale (user, persona) pair until restart.
+        """
+        user_key = str(app_user_id)
+        if persona_id is None:
+            self._grant_tried = {
+                pair for pair in self._grant_tried if pair[0] != user_key
+            }
+            return
+        self._grant_tried.discard((user_key, str(persona_id)))
+
+    def forget_grant_attempts_all(self) -> None:
+        self._grant_tried.clear()
 
     def close(self) -> None:
         self._writers.shutdown(wait=True)

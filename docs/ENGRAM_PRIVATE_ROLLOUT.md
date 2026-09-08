@@ -1,6 +1,6 @@
 # Engram per-member private memory — production rollout
 
-Owner: Tauqueer. Status: **plan rewritten 8 Sep 2026** — the previous two-phase workaround plan is withdrawn. Do not implement until he names a phase and a part. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3.
+Owner: Tauqueer. Status: **Phase 1 code-complete 8 Sep 2026; its live two-account sitting is still outstanding. Phase 2 not started.** The previous two-phase workaround plan is withdrawn. Do not implement until he names a phase and a part. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3.
 
 Working rule (same as the rest of Cognora): Tauqueer names **one phase and one part**. Finish only that part, run its manual test, stop. Commit only when he asks. Do not mention phase/part numbers in commit messages.
 
@@ -62,6 +62,29 @@ The credential can be set exactly once — an org admin cannot reset a member's 
 | `insights.logs` | org key |
 
 A member token holds `["memory:read","memory:write"]` only. Asking it to subscribe or teach returns 403 — correctly.
+
+---
+
+## Phase 1 — what actually shipped
+
+Code-complete. The live two-account sitting has **not** been run, so Phase 1 is not closed out.
+
+| Part | State |
+| --- | --- |
+| One grounding rule, used everywhere | shipped — `may_ground` in `worker/src/worker/engram/tenant.py`, applied to both `memories` and `memories_used` |
+| Stop writing into the admin pool | shipped — write-back suppressed, `BRAIN_MODE=chat` refused at boot |
+| Purge what already leaked | shipped — migration `0013`; 197 `memory_refs` and 440 `turns.messages` cleared locally |
+| Keep probes off the live persona | shipped — write-capable probes require `PROBE_PERSONA_ID`; grant cache invalidated on purge |
+| Sitting and close-out | **outstanding** |
+
+One rule was tightened beyond the original plan. A private row now grounds only when `ENGRAM_MEMBER_SESSION_AUTH` is true — that is, only when we actually reached Engram as that member. On one org key the only private pool `retrieve` can return is the key owner's, and it holds every member's turns; `is_own_private_pool` matches it for whoever signs in as that owner. Ownership is only meaningful once we authenticate as the member, so private rows are refused until then. `npm run isolation` now reports `memory_panel_other_private_rows_are_that_member's=ok (none)` where it previously named the admin id.
+
+Still outstanding after Phase 1:
+
+- The live two-account sitting on `/chat` and `/voice`.
+- The Engram-side admin-pool forget — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §10.
+- The `turns.text` decision — same doc, §11.
+- Throwaway-persona probe writes unconfirmed (`PROBE_PERSONA_ID` intentionally unset).
 
 ---
 

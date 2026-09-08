@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,7 +115,8 @@ class WorkerSettings(BaseSettings):
     log_turn_fields: str = Field(
         default=(
             "correlation_id,session_id,turn_ids,action,reasons,"
-            "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded"
+            "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,"
+            "retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped"
         ),
         min_length=1,
     )
@@ -127,6 +128,10 @@ class WorkerSettings(BaseSettings):
     log_subscribe_failed: str = Field(default="subscribe_failed", min_length=1)
     log_engram_join_failed: str = Field(default="engram_join_failed", min_length=1)
     log_engram_join_skipped: str = Field(default="engram_join_skipped", min_length=1)
+    log_retrieve_grounded_event: str = Field(
+        default="retrieve grounded",
+        min_length=1,
+    )
     failure_message_engram_join: str = Field(
         default=(
             "Could not join this member to the persona memory workspace. "
@@ -160,6 +165,11 @@ class WorkerSettings(BaseSettings):
     # writing the turn back with converse. "chat" lets Engram compose it, which
     # costs about ten more seconds a turn.
     brain_mode: Literal["chat", "retrieve"] = "retrieve"
+    # When true, member turns authenticate as that member (session token).
+    # Leave false until that credential path exists. False is containment:
+    # converse write-back is off and BRAIN_MODE=chat cannot boot, so we stop
+    # growing the API key owner's private pool. See docs/ENGRAM.md §2.3.
+    engram_member_session_auth: bool = False
     engram_retrieve_top_k: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
@@ -168,8 +178,22 @@ class WorkerSettings(BaseSettings):
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
-    # Pins which published persona the probes talk to. Unset means the oldest.
+    # Local personas.id of a throwaway persona. Write-capable probes require
+    # this and skip when it is unset, so they never write a member-facing pool.
     probe_persona_id: str | None = None
+    probe_write_skip: str = Field(
+        default=(
+            "PROBE_PERSONA_ID is unset; skipping writes so a member-facing "
+            "persona is not used."
+        ),
+        min_length=1,
+    )
+    probe_chat_mode_skip: str = Field(
+        default=(
+            "BRAIN_MODE=chat refused while ENGRAM_MEMBER_SESSION_AUTH is false."
+        ),
+        min_length=1,
+    )
     persona_error_not_found: str = Field(default="persona not found", min_length=1)
     admin_error_persona_pin_required: str = Field(
         default="persona_id is required when several personas exist",
@@ -271,6 +295,7 @@ class WorkerSettings(BaseSettings):
         "engram_api_key",
         "engram_org_id",
         "engram_persona_id",
+        "probe_persona_id",
         "openai_api_key",
         "openai_base_url",
         "openai_api_base_url",
@@ -323,6 +348,17 @@ class WorkerSettings(BaseSettings):
         if not value.startswith("/"):
             raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
+
+    @model_validator(mode="after")
+    def refuse_chat_without_member_session_auth(self) -> WorkerSettings:
+        if self.brain_mode == "chat" and not self.engram_member_session_auth:
+            raise ValueError(
+                "BRAIN_MODE=chat is refused while ENGRAM_MEMBER_SESSION_AUTH is "
+                "false: personas.chat writes the authenticated caller's private "
+                "pool, and without per-member session auth that caller is the "
+                "API key owner (see docs/ENGRAM.md §2.3)."
+            )
+        return self
 
 
 def load_settings() -> WorkerSettings:

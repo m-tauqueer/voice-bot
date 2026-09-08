@@ -193,3 +193,53 @@ One question is still open because it needs a domain decision from Tauqueer: **c
 - One Engram org per Cognora user.
 - Treating the Private-tab UI as an API.
 - Migrating the admin pool's historical turns into member pools. They are mixed-owner by construction; they get deleted, not sorted.
+
+---
+
+## 10. Ops checklist — forget the admin private pool (run once)
+
+The Postgres migration `infra/migrations/0013_clear_leaked_memory_text.sql` clears `memory_refs.memories_used` (to `[]`) and `turns.messages` (to NULL). That is our copy of the leak. **Engram still holds the mixed-owner product traffic in the API key owner's private pool.** Do not migrate those rows into member pools — they belong to no single member. Forget them.
+
+This is an operator procedure, not a request path. There is no product button and no automatic mass-delete.
+
+### Who and where
+
+- Org / API key owner People id (measured): `8de1b2b278724e0bba19000086f8bef2` (`mohammadtuti655@gmail.com`). Confirm with `account.me()` if unsure.
+- Personas that took real member traffic. The live member-facing persona in `.env` is `ENGRAM_PERSONA_ID`. Throwaway probe personas can be destroyed instead of forgotten.
+- Org API key (workspace admin). A member token cannot read or forget another user's private pool.
+
+### Option A — Engram dashboard
+
+1. Open People → Private for each persona that took product traffic.
+2. Select the **admin** subscriber, not a member.
+3. Forget / delete the product-traffic rows. Do not copy them anywhere.
+
+### Option B — API on the org key
+
+Same surfaces delete-my-data already uses (`docs/ENGRAM.md` §2.3): `personas.user_memories(persona_id, admin_user_id)` then `personas.forget_user_memory(persona_id, admin_user_id, gid)` for each gid, paging until the list is empty. Then `personas.users(persona_id)` should no longer show leftover product-traffic under the admin id (the admin may still be listed as a subscriber).
+
+Do **not** call `unsubscribe` on the org admin. Do **not** `members.remove` the org admin. Do **not** run this against a member People id — those pools are empty; every turn went to the admin.
+
+Confirm: `user_memories(persona_id, admin_user_id)` returns `{"memories": []}` (or equivalent empty) for each persona that served members.
+
+### Afterward
+
+New member turns must not write this pool again (converse write-back is off until members authenticate as themselves). If new rows appear under the admin id after that, a write path is still open — stop and find it before another sitting.
+
+
+---
+
+## 11. Residual: `turns.text` still holds what was spoken
+
+Migration 0013 cleared `turns.messages` and `memory_refs.memories_used` — the retrieved memory blobs. It did **not** touch `turns.text`, which is the spoken transcript of the conversation. Some of those persona replies were composed from another member's private facts, so a name like "Harish" can still sit inside a different member's transcript.
+
+This was left as a deliberate decision for Tauqueer rather than folded into the migration, because the tradeoff is not obvious:
+
+| Leave it | Wipe it |
+| --- | --- |
+| A name that already reached the member stays in that member's own transcript. Nobody new can read it — session detail and export are scoped to the acting member. | Every conversation transcript in the product is destroyed. There is no way to tell which turns are contaminated. |
+| Residual retention issue: the fact survives the *speaker's* delete-my-data, inside the *listener's* rows. | Session detail, the owner conversation list, and `/api/me/export` go blank for all history. |
+
+For pre-launch data (two test accounts, one operator) the retention exposure is negligible and the transcript is worth keeping. Before any real member is onboarded, decide explicitly: either wipe `turns.text` for turns created before the containment shipped, or accept it in writing. Do not let it be decided by nobody.
+
+`personas.delete` on a persona also destroys every member's private pool, which is a blunter version of the same choice — see [ENGRAM.md](ENGRAM.md) §5.
