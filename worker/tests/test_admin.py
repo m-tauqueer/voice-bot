@@ -133,10 +133,14 @@ class Catalog:
         _conn: object,
         user_id: str,
         engram_user_id: str,
+        *,
+        member_secret: str | None = None,
     ) -> None:
         for user in self.users:
             if user["id"] == user_id:
                 user["engram_user_id"] = engram_user_id
+                if member_secret is not None:
+                    user["engram_member_secret"] = member_secret
 
     def delete_persona_cascade(
         self,
@@ -177,6 +181,10 @@ class FakeRoster:
 
     def list_members(self) -> list[tuple[str, str]]:
         return []
+
+    def login(self, email: str, password: str) -> None:
+        del email, password
+        return None
 
     def close(self) -> None:
         self.closed = True
@@ -495,8 +503,10 @@ def test_subscribe_persists_engram_people_id(
     admin = _admin(settings, monkeypatch, catalog, brain, roster)
     admin.subscribe("a@example.com")
     assert catalog.users[0]["engram_user_id"] == "8de1b2b278724e0bba19000086f8bef2"
+    assert catalog.users[0]["engram_member_secret"]
+    assert catalog.users[0]["engram_member_secret"] != "tok"
     assert brain.subscribed == [("eng-ada", "8de1b2b278724e0bba19000086f8bef2")]
-    assert roster.added == [("a@example.com", "a@example.com", "member", False)]
+    assert roster.added == [("a@example.com", "a@example.com", "member", True)]
 
 
 def test_seed_persona_id_only_fills_an_empty_catalog(

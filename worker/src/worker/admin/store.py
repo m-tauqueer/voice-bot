@@ -241,15 +241,18 @@ def set_engram_user_id(
     conn: psycopg.Connection,
     user_id: str,
     engram_user_id: str,
+    *,
+    member_secret: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE users
-            SET engram_user_id = %s
+            SET engram_user_id = %s,
+                engram_member_secret = COALESCE(%s, engram_member_secret)
             WHERE id = %s
             """,
-            (engram_user_id, user_id),
+            (engram_user_id, member_secret, user_id),
         )
     conn.commit()
 

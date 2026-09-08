@@ -1,8 +1,8 @@
 # Engram member private memory — the leak was ours, and the fix already exists
 
-Owner: Tauqueer. Status: **research redone 8 Sep 2026 — earlier conclusion withdrawn.** The workaround this file used to recommend is **not needed**. Engram already supports per-member private memory for a backend serving many end users; we were not using the credential model it is built on. Rollout: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Personas sittings: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
+Owner: Tauqueer. Status: **research redone 8 Sep 2026, fix shipped the same day.** The workaround this file used to recommend was **not needed**. Engram already supports per-member private memory for a backend serving many end users; we were not using the credential model it is built on. Each member now authenticates with their own session token, and per-subscriber isolation plus per-member private writes are live-verified. Rollout and what shipped: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Personas sittings: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
 
-**Do not implement** until Tauqueer names a phase and a part from the rollout plan.
+This file is the evidence record. The operator tasks it describes in §10 are still open.
 
 ---
 
@@ -229,17 +229,28 @@ New member turns must not write this pool again (converse write-back is off unti
 
 ---
 
-## 11. Residual: `turns.text` still holds what was spoken
+## 11. Resolved: `turns.text` was redacted
 
 Migration 0013 cleared `turns.messages` and `memory_refs.memories_used` — the retrieved memory blobs. It did **not** touch `turns.text`, which is the spoken transcript of the conversation. Some of those persona replies were composed from another member's private facts, so a name like "Harish" can still sit inside a different member's transcript.
 
-This was left as a deliberate decision for Tauqueer rather than folded into the migration, because the tradeoff is not obvious:
+**Decision taken:** wipe it. In production that is one member's personal data, retained in another member's exportable record, outliving an erasure request. We cannot tell which turns are contaminated, and after containment new turns are clean by construction.
 
-| Leave it | Wipe it |
-| --- | --- |
-| A name that already reached the member stays in that member's own transcript. Nobody new can read it — session detail and export are scoped to the acting member. | Every conversation transcript in the product is destroyed. There is no way to tell which turns are contaminated. |
-| Residual retention issue: the fact survives the *speaker's* delete-my-data, inside the *listener's* rows. | Session detail, the owner conversation list, and `/api/me/export` go blank for all history. |
+Migration `infra/migrations/0015_redact_pre_containment_transcripts.sql` sets `turns.text` to `[redacted: recorded before private memory was isolated]` for every turn whose `created_at` is before `schema_migrations.applied_at` for `0013_clear_leaked_memory_text.sql`. `turns.text` is `NOT NULL`; the placeholder is obviously redacted so session detail, the owner conversation list, and `/api/me/export` still render. Re-running the migration does not touch later turns.
 
-For pre-launch data (two test accounts, one operator) the retention exposure is negligible and the transcript is worth keeping. Before any real member is onboarded, decide explicitly: either wipe `turns.text` for turns created before the containment shipped, or accept it in writing. Do not let it be decided by nobody.
+What is gone: the spoken wording of every pre-cutoff turn. What is not: later turns, audio blobs, session metadata, Engram pools.
 
-`personas.delete` on a persona also destroys every member's private pool, which is a blunter version of the same choice — see [ENGRAM.md](ENGRAM.md) §5.
+---
+
+## 12. Delete-my-data clears the Engram password we stored
+
+Delete-my-data still purges Engram on the org key (`user_memories` + `forget_user_memory` + `unsubscribe`), then wipes our rows only if that purge reported clean.
+
+It now also **nulls `users.engram_member_secret`** in the same transaction that deletes the user, and drops any in-memory session token on the worker. Engram cannot reissue that password. A returning Google account is joined again by email (`409 already a member`), we store the Engram id with a **null** secret, and they talk **shared-only forever**. That is a one-way door, not a bug.
+
+Known stranded accounts that already have no recoverable password: `getcognora@gmail.com`, `tauqueer655@gmail.com`, `mohammadtuti655@gmail.com` (API key owner). They degrade the same way.
+
+Proposed member-facing copy (not shipped — ask before changing a screen):
+
+- Empty memory panel can stay `Nothing stored about you yet.` A degraded member's panel is empty; that sentence is still true.
+- Delete confirmation should add: `Private memory cannot be restored afterwards. A later sign-in still works, but this persona will only use shared knowledge.`
+

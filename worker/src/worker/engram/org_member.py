@@ -3,15 +3,32 @@ from __future__ import annotations
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Protocol
 
+import structlog
 from engram_sdk.errors import EngramError as SdkEngramError
 
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import _map_sdk_error
-from worker.engram.errors import BrainError, ConflictError, ValidationError
+from worker.engram.errors import BrainError, ConflictError, UnauthorizedError
 from worker.engram.factory import create_org_engram
 from worker.engram.user_id import persona_engine_user_id
+
+log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class OrgMember:
+    """People row for this Google email.
+
+    ``password`` is set only when ``auth.login`` accepted it. Finding the
+    ``user_id`` (including via members.list after a 409) is not holding the
+    credential. ``password is None`` is the degrade-to-shared-only signal.
+    """
+
+    user_id: str
+    password: str | None
 
 
 class OrgRoster(Protocol):
@@ -26,7 +43,19 @@ class OrgRoster(Protocol):
 
     def list_members(self) -> list[tuple[str, str]]: ...
 
+    def login(self, email: str, password: str) -> None: ...
+
     def close(self) -> None: ...
+
+
+def _login_token(session: Any) -> str | None:
+    if isinstance(session, dict):
+        token = session.get("token")
+    else:
+        token = getattr(session, "token", None)
+    if isinstance(token, str) and token:
+        return token
+    return None
 
 
 class SdkOrgRoster:
@@ -65,6 +94,15 @@ class SdkOrgRoster:
                 found.append((email, user_id))
         return found
 
+    def login(self, email: str, password: str) -> None:
+        try:
+            session = self._client.auth.login(email, password)
+        except SdkEngramError as exc:
+            raise _map_sdk_error(exc) from exc
+        # Token is proof only. It is not returned or stored.
+        if _login_token(session) is None:
+            raise UnauthorizedError("auth.login returned no token")
+
     def close(self) -> None:
         closer = getattr(self._client, "close", None)
         if closer is not None:
@@ -99,41 +137,49 @@ def _member_id_for_email(roster: OrgRoster, email: str) -> str | None:
     return None
 
 
+def _password_accepted(roster: OrgRoster, email: str, password: str) -> bool:
+    try:
+        roster.login(email, password)
+    except BrainError:
+        return False
+    return True
+
+
 def ensure_org_member(
     roster: OrgRoster,
     settings: WorkerSettings,
     *,
     email: str,
-) -> str:
-    """Return the Engram People user_id for this Google email.
+) -> OrgMember:
+    """Join this Google email to Engram People and keep a credential if we can.
 
-    Tries add without a password first (email already on Engram). A 422 means
-    a new People row, which needs a one-time password we never log or keep.
+    Always generates a password for ``members.add``. ``auth.login`` is the
+    honest check that we hold it; that check runs here at provision time so a
+    stored secret is one we have already proven, not a value that might fail
+    later. A 409 or a login miss stores the id with no password — the member
+    keeps talking, shared-only. Finding the id is not holding the credential.
     """
     if skip_org_join(settings, email):
         raise BrainError(settings.log_engram_join_skipped)
     role = settings.engram_org_member_role
+    password = secrets.token_urlsafe(settings.engram_org_member_password_nbytes)
     try:
-        return roster.add_member(email, name=email, role=role, password="")
+        user_id = roster.add_member(email, name=email, role=role, password=password)
     except ConflictError:
         found = _member_id_for_email(roster, email)
         if found:
-            return found
-        raise
-    except ValidationError:
-        password = secrets.token_urlsafe(settings.engram_org_member_password_nbytes)
-        try:
-            return roster.add_member(
-                email,
-                name=email,
-                role=role,
-                password=password,
+            log.warning(
+                settings.log_engram_credential_unavailable,
+                reason="already_a_member",
+                engram_user_id=found,
             )
-        except ConflictError:
-            found = _member_id_for_email(roster, email)
-            if found:
-                return found
-            raise
-        finally:
-            password = ""
-    raise BrainError(settings.log_engram_join_failed)
+            return OrgMember(user_id=found, password=None)
+        raise
+    if _password_accepted(roster, email, password):
+        return OrgMember(user_id=user_id, password=password)
+    log.warning(
+        settings.log_engram_credential_unavailable,
+        reason="password_not_accepted",
+        engram_user_id=user_id,
+    )
+    return OrgMember(user_id=user_id, password=None)

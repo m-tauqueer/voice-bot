@@ -90,7 +90,7 @@ So a backend serving many end users needs **one credential per end user**. Engra
 
 `auth.login(email, password)` returns `{token, token_type: "bearer", expires_in: 43200, user, role, tenant}` — a 12-hour JWT whose `sub` is the member. `EngramClient(org, member_id, api_key=<token>)` is then that member for every persona route.
 
-**Our bug, for months:** the worker holds one `org_admin` key and talks as the key owner for every member, so every conversation landed in `…:8de1b2b278724e0bba19000086f8bef2`. `ensure_org_member` generates each member's Engram password (`worker/src/worker/engram/org_member.py:124`) and clears it (`:138`), so we destroyed the only credential that would have made isolation work.
+**Our bug, for months — now fixed.** The worker held one `org_admin` key and talked as the key owner for every member, so every conversation landed in `…:8de1b2b278724e0bba19000086f8bef2`. `ensure_org_member` generated each member's Engram password and then cleared it, destroying the only credential that would have made isolation work. It now keeps that password, encrypted, and mints a session token per member. Shipped and live-verified 8 Sep 2026 — see §11 and [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
 
 It stayed invisible because the isolation probe asserted only that the returned private tenant was **not** user B's id. Assert the positive: the private tenant a member reads must **equal** that member's Engram `user_id`.
 
@@ -99,6 +99,8 @@ It stayed invisible because the isolation probe asserted only that the returned 
 A member token is correctly confined: permissions are `memory:read, memory:write`, and it gets `403 cannot access another user's private memory` for another member's pool and `403` on a three-segment generic tenant.
 
 Which surfaces accept a subject with the **org key** (workspace-admin only): `pool(pid, scope, user_id=)`, `private(pid, user_id=)`, `user_memories`, `forget_user_memory`, `node`, `conversations`, `conversation`, `compress`, `subscribe`, `unsubscribe`. Use these for administration and for delete-my-data — **not** as a recall path.
+
+**The credential is per member and lives in our database.** First talk creates the Engram account with a password we generate and keep (AES-GCM at rest); `auth.login` mints a 12h JWT, cached in memory, refreshed before expiry, never logged or persisted. Conversation routes use that token; every admin surface stays on the org key. A member we cannot credential degrades to shared-only — never member-private under the key owner.
 
 Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Rollout: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). The earlier "admin subject-ingest workaround" is **withdrawn** — it traded semantic private retrieve, compression, and threads for a limitation that does not exist.
 
@@ -209,10 +211,11 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 
 | Call | When | Writes | Reads |
 | --- | --- | --- | --- |
-| `retrieve(pid, query, top_k)` | default brain | — | shared + caller private — **must run on the member's credential** |
-| `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private — **member credential** | — |
-| `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private — **member credential** | shared + caller private |
-| `auth.login(email, password)` | mint a member session before their first call of a turn | — | 12h bearer token for that member |
+| `retrieve(pid, query, top_k)` | default brain | — | shared + caller private — runs on the **member's** JWT |
+| `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private — **member JWT** | — |
+| `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private — **member JWT** | shared + caller private |
+| `auth.login(email, password)` | mint a member session on a cold cache (once per 12h) | — | bearer token for that member |
+| `members.add(email, password=)` | first talk | People row **and the only credential we will ever have** | — |
 | `teach` / `answer` / `questions` | owner admin | shared | — |
 | `pool(pid, "shared").document/text` | owner ingest | shared | — |
 | `members.add` then `subscribe` / `unsubscribe` | first talk / account delete | People + grant | — |
@@ -285,4 +288,6 @@ The owner catalog on `/admin/persona` can create or link more than one persona, 
 
 Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
-App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. Engram-side per-member private memory does **not** hold yet: every persona call still goes out on the one org key (`worker/src/worker/engram/factory.py:9-26`), so §2.3's leak is live. The fix is ours to make, not Engram's — see [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.
+App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel.
+
+Two layers, and the lower one is deliberately independent of the upper: `may_ground` (`worker/src/worker/engram/tenant.py`) refuses any private row that is not the acting member's *and* refuses every private row when we did not authenticate as that member. It is unconditional, so a regression in the credential path degrades to shared-only instead of leaking. Three accounts are permanently degraded — `getcognora@`, `tauqueer655@`, and the API key owner — because an org admin cannot reset an Engram password. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.

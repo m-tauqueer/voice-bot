@@ -40,6 +40,9 @@ def build_lifecycle_router(
             engram_user_id=body.engram_user_id,
             engram_persona_id=body.engram_persona_id,
         )
+        # Drop the in-memory JWT even when the remote purge was partial or
+        # skipped, so a live worker cannot keep writing as this member.
+        runner.forget_member_session(body.engram_user_id)
         # Invalidate even when forget/unsubscribe was partial or skipped, so a
         # later turn re-subscribes without a worker restart.
         try:

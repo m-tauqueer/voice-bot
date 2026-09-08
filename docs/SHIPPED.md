@@ -50,7 +50,7 @@ Failure handling and reconnect copy. Read API (personal history, owner reconstru
 
 Not built in 3.x: Azure deploy, multilingual, voice-clone (those are [FUTURE.md](FUTURE.md)).
 
-Engram subscribe **is** the product grant path now: first talk joins People (`members:manage`) then `personas.subscribe` (`org:manage`) and fails closed if either fails. Isolation for transcripts is still app session + identity match. Engram-side private pools are not yet per-member — see [ENGRAM.md](ENGRAM.md) §2.3 and §4, and the containment section below.
+Engram subscribe **is** the product grant path now: first talk joins People (`members:manage`) then `personas.subscribe` (`org:manage`) and fails closed if either fails. Isolation for transcripts is still app session + identity match. Engram-side private pools are per-member as of 8 Sep 2026 — see [ENGRAM.md](ENGRAM.md) §2.3 and §4, and the memory-isolation section below.
 
 ---
 
@@ -62,17 +62,27 @@ Not done (parked as Plan X in [FUTURE.md](FUTURE.md)): CI/CD, backups, security 
 
 ---
 
-## Engram private-memory containment
+## Engram per-member private memory
 
-Every member turn used one org API key, so Engram resolved every conversation to the key owner and members shared that one private pool under each persona. Contained (code-complete; the live two-account sitting is still outstanding):
+Every member turn used one org API key, so Engram resolved every conversation to the key owner and members shared that one private pool under each persona. Fixed in two layers, both live-verified 8 Sep 2026 on two Google accounts: per-subscriber isolation holds, and a member's private writes land in their own pool.
+
+**Containment** (unconditional, survives any regression in the layer above it):
 
 - A retrieve row grounds a reply only when it is shared persona knowledge, or private *and* we authenticated as that member (`may_ground`, `worker/src/worker/engram/tenant.py`). Unconditional — no flag turns it off. `memories` and `memories_used` come from the same filtered list, so a dropped row cannot still be persisted and re-served. Drop counts are logged (`retrieve_hits*`), never memory text.
 - Private rows are refused entirely while `ENGRAM_MEMBER_SESSION_AUTH` is false. On one key the only private pool `retrieve` returns is the key owner's, and it holds everyone's turns — including for the account that owns it.
 - `converse` write-back is suppressed and `BRAIN_MODE=chat` is refused at boot until members authenticate as themselves.
-- Migration `0013` destroyed the copies that reached our Postgres: `memory_refs.memories_used` → `[]`, `turns.messages` → NULL. Irreversible. `turns.text` was deliberately left — decision recorded in [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §11.
+- Migrations `0013` and `0015` destroyed the copies that reached our Postgres: `memory_refs.memories_used` → `[]`, `turns.messages` → NULL, and pre-containment `turns.text` replaced with a visible redaction placeholder. Irreversible. Reasoning in [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §11.
 - Write-capable probes require `PROBE_PERSONA_ID` and skip without it, so no probe writes a member-facing pool. The subscribe cache is invalidated after delete-my-data.
 
-Cost while this holds: **member-private recall is empty.** Shared teach still grounds replies. Real per-member memory returns with the credential work in [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) Phase 2. Latency is unchanged — the filter is in-process, no extra Engram call.
+**Per-member credentials** (`ENGRAM_MEMBER_SESSION_AUTH=true`):
+
+- First talk creates the member's Engram account with a password we generate and keep, encrypted at rest (AES-GCM, `ENGRAM_MEMBER_SECRET_KEY`, migration `0014`). The password can be set exactly once — an org admin cannot reset an Engram password — so it is stored, never derived from a master secret.
+- `auth.login` mints a 12h JWT per member, cached in memory with a per-member mint lock. A live token costs no database read on the reply path; a cold one costs one login. `401` re-logs in once, then that turn degrades.
+- `retrieve` / `converse` / `chat` run on `EngramClient(org, member_id, api_key=<JWT>)`. Everything admin-shaped — teach, shared ingest, subscribe, `user_memories`, purge, logs — stays on the org key. A member token only holds `memory:read` / `memory:write`.
+- A member we cannot credential degrades **per member**: org key, shared-only grounding, no write-back, `retrieve` forced. Never member-private under the key owner. `getcognora@`, `tauqueer655@`, and the API key owner are permanently in this state.
+- Delete-my-data clears the stored secret and drops the cached token. That member is shared-only afterwards — the password cannot be reissued.
+
+Latency is unchanged: the grounding filter is in-process, and the login is once per member per 12 hours, not per turn.
 
 ---
 

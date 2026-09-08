@@ -17,7 +17,7 @@ from engram_sdk.models import IngestResult, Persona, PersonaReply
 
 from worker.config import WorkerSettings
 from worker.engram import errors as app
-from worker.engram.factory import create_engram
+from worker.engram.factory import create_engram, create_member_engram
 from worker.engram.interface import (
     ChatOutcome,
     IngestOutcome,
@@ -99,12 +99,27 @@ class EngramBrain(PersonaBrain):
         settings: WorkerSettings,
         user_id: str,
         client: Any | None = None,
+        *,
+        api_key: str | None = None,
     ) -> None:
         self._settings = settings
         self._user_id = persona_engine_user_id(user_id)
-        self._client = (
-            client if client is not None else create_engram(settings, self._user_id)
-        )
+        # Member session token when this brain talks as the member; None means
+        # the org key (or a test-injected client). Never logged.
+        self._member_token = api_key
+        if client is not None:
+            self._client = client
+        elif api_key is not None:
+            self._client = create_member_engram(
+                settings,
+                self._user_id,
+                api_key=api_key,
+            )
+        else:
+            self._client = create_engram(settings, self._user_id)
+
+    def uses_member_token(self, api_key: str | None) -> bool:
+        return self._member_token == api_key
 
     def _read(self, op: Callable[[], T]) -> T:
         attempts = 0

@@ -23,6 +23,8 @@ def test_boot_accepts_retrieve_while_member_session_auth_is_false(
     kwargs = settings.model_dump()
     kwargs["brain_mode"] = "retrieve"
     kwargs["engram_member_session_auth"] = False
+    kwargs["engram_member_secret_key"] = None
     loaded = WorkerSettings(_env_file=None, **kwargs)
     assert loaded.brain_mode == "retrieve"
     assert loaded.engram_member_session_auth is False
+    assert loaded.engram_member_secret_key is None

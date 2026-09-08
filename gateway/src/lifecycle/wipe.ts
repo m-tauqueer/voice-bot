@@ -34,18 +34,28 @@ export async function wipeMemberRows(
   sql: Sql,
   userId: string,
 ): Promise<{ sessions: number }> {
-  const deleted = await sql`
-    DELETE FROM sessions
-    WHERE user_id = ${userId}
-    RETURNING id
-  `;
-  await sql`
-    DELETE FROM subscriptions
-    WHERE user_id = ${userId}
-  `;
-  await sql`
-    DELETE FROM users
-    WHERE id = ${userId}
-  `;
-  return { sessions: deleted.length };
+  return sql.begin(async (tx) => {
+    const deleted = await tx`
+      DELETE FROM sessions
+      WHERE user_id = ${userId}
+      RETURNING id
+    `;
+    await tx`
+      DELETE FROM subscriptions
+      WHERE user_id = ${userId}
+    `;
+    // Engram cannot reissue this password. Clearing the ciphertext is the
+    // degrade-to-shared-only signal if the user row somehow survives; the
+    // following DELETE removes the row for a completed erase.
+    await tx`
+      UPDATE users
+      SET engram_member_secret = NULL
+      WHERE id = ${userId}
+    `;
+    await tx`
+      DELETE FROM users
+      WHERE id = ${userId}
+    `;
+    return { sessions: deleted.length };
+  });
 }

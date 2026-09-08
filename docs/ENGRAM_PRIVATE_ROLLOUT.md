@@ -1,6 +1,6 @@
 # Engram per-member private memory — production rollout
 
-Owner: Tauqueer. Status: **Phase 1 code-complete 8 Sep 2026; its live two-account sitting is still outstanding. Phase 2 not started.** The previous two-phase workaround plan is withdrawn. Do not implement until he names a phase and a part. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3.
+Owner: Tauqueer. Status: **Both phases shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes were confirmed by hand on two Google accounts. The earlier subject-ingest workaround plan is withdrawn. Nothing here is left to implement — see §Outstanding for the operator tasks that remain. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3.
 
 Working rule (same as the rest of Cognora): Tauqueer names **one phase and one part**. Finish only that part, run its manual test, stop. Commit only when he asks. Do not mention phase/part numbers in commit messages.
 
@@ -10,7 +10,7 @@ Sibling plan to [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Personas product parts stay 
 
 ## Problem in one page
 
-Every Cognora member talks to Engram with **one org API key**, so Engram resolves every conversation to one principal — the key owner. All members share the key owner's private pool under each persona. That is the "Harish" leak.
+**Fixed.** Historically every Cognora member talked to Engram with **one org API key**, so Engram resolved every conversation to one principal — the key owner — and all members shared that private pool under each persona. That was the "Harish" leak. Each member now authenticates as themselves and writes their own pool.
 
 Engram is not missing an API. It derives the private pool from the authenticated principal and expects one credential per end user. We create each member's Engram account with a password (`worker/src/worker/engram/org_member.py:124`) and then throw it away (`:138`). Live-verified: with a session token from `auth.login`, `chat` / `converse` / `retrieve` land in `{org}:{persona}:{member}` and the admin pool stays empty.
 
@@ -67,7 +67,7 @@ A member token holds `["memory:read","memory:write"]` only. Asking it to subscri
 
 ## Phase 1 — what actually shipped
 
-Code-complete. The live two-account sitting has **not** been run, so Phase 1 is not closed out.
+Shipped. Phase 1 is the containment layer, and it stays in place under Phase 2 — it is what survives a Phase 2 regression.
 
 | Part | State |
 | --- | --- |
@@ -75,16 +75,43 @@ Code-complete. The live two-account sitting has **not** been run, so Phase 1 is 
 | Stop writing into the admin pool | shipped — write-back suppressed, `BRAIN_MODE=chat` refused at boot |
 | Purge what already leaked | shipped — migration `0013`; 197 `memory_refs` and 440 `turns.messages` cleared locally |
 | Keep probes off the live persona | shipped — write-capable probes require `PROBE_PERSONA_ID`; grant cache invalidated on purge |
-| Sitting and close-out | **outstanding** |
+| Sitting and close-out | shipped — live two-account sitting passed |
 
 One rule was tightened beyond the original plan. A private row now grounds only when `ENGRAM_MEMBER_SESSION_AUTH` is true — that is, only when we actually reached Engram as that member. On one org key the only private pool `retrieve` can return is the key owner's, and it holds every member's turns; `is_own_private_pool` matches it for whoever signs in as that owner. Ownership is only meaningful once we authenticate as the member, so private rows are refused until then. `npm run isolation` now reports `memory_panel_other_private_rows_are_that_member's=ok (none)` where it previously named the admin id.
 
-Still outstanding after Phase 1:
+The `turns.text` decision was taken (wipe — migration `0015`). See §Outstanding below for what is still on the operator.
 
-- The live two-account sitting on `/chat` and `/voice`.
-- The Engram-side admin-pool forget — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §10.
-- The `turns.text` decision — same doc, §11.
-- Throwaway-persona probe writes unconfirmed (`PROBE_PERSONA_ID` intentionally unset).
+---
+
+## Phase 2 — what shipped
+
+Every member now authenticates as themselves. Live-verified 8 Sep 2026: **per-subscriber isolation holds and per-member private writes land in that member's own pool.**
+
+| Part | State |
+| --- | --- |
+| Credential storage | shipped — migration `0014`, AES-GCM in `worker/src/worker/engram/member_secret.py`, key from `ENGRAM_MEMBER_SECRET_KEY` |
+| Provision with a credential we keep | shipped — `ensure_org_member` stores the password encrypted alongside `engram_user_id` |
+| Session token cache and member client | shipped — `worker/src/worker/engram/session.py`, 12h JWT from `auth.login` |
+| Route member turns through the member client | shipped — per-turn `member_authenticated` gates grounding, write-back, and brain mode |
+| Panel, export, delete-my-data | shipped — erase clears the stored secret and drops the cached token |
+| Probes, tests, isolation gate | shipped — `npm run isolation` asserts turn grounding, not just the panel |
+| Pre-containment transcripts | shipped — migration `0015` |
+
+How a turn resolves its credential:
+
+1. `_resolve_member_client` asks `MemberSessionCache` for a token. A live token is returned without touching Postgres.
+2. On a miss it decrypts that member's stored password, calls `auth.login`, and caches the JWT with its own `expires_in`. The mint lock is **per member** — one member's cold login never stalls another's turn.
+3. `EngramClient(org, member_id, api_key=<JWT>)` serves `retrieve` / `converse` / `chat`. Everything admin-shaped stays on the org key.
+4. No credential → `member_authenticated=False` → org key, shared-only grounding, no write-back, `retrieve` forced. Never member-private under the key owner.
+
+A `401` re-logs in once, then that turn degrades. There is no path from a failed member credential to a member-private read or write on the org key.
+
+## Outstanding (operator, not code)
+
+- **Engram admin-pool forget** — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §10. The mixed-owner product traffic is still in the key owner's pool. Nothing writes to it any more.
+- **Three permanently stranded accounts:** `getcognora@gmail.com`, `tauqueer655@gmail.com`, and `mohammadtuti655@gmail.com` (the API key owner). We hold no credential for them and an org admin cannot reset an Engram password. They degrade to shared-only for good. Any new member is fine.
+- **Delete-my-data is a one-way door.** Erase clears the stored secret, and that member's Engram password can never be reissued, so they are shared-only afterwards. Member-facing copy for this is drafted but not shipped — see the wipe section of the workaround doc.
+- Still worth asking Engram for: an org-admin-scoped session mint for a member of their own org, which would remove password custody entirely. Not a blocker.
 
 ---
 
@@ -369,17 +396,20 @@ The leak did not stay in Engram. In retrieve mode `outcome.messages` is the retr
 ## Config summary
 
 ```bash
-# Phase 2 master switch. OFF = Phase 1 containment (no leak, no member-private memory).
-# ENGRAM_MEMBER_SESSION_AUTH=false
+# Master switch. ON = members authenticate as themselves (shipped, live).
+# OFF = Phase 1 containment: no leak, no member-private memory.
+ENGRAM_MEMBER_SESSION_AUTH=true
 
-# Phase 2: 32 random bytes, base64, encrypts each member's Engram password at rest.
-# Rotating this re-encrypts; it must never be used to derive a password.
-# ENGRAM_MEMBER_SECRET_KEY=
+# Required when the switch is on. 32 random bytes, base64. Encrypts each
+# member's Engram password at rest. Rotating this re-encrypts; it must never be
+# used to derive a password. Boot refuses a missing or malformed key.
+ENGRAM_MEMBER_SECRET_KEY=
 
-# Phase 2: refresh a 12h session token this long before it expires.
+# Refresh a 12h session token this long before it expires.
 # ENGRAM_MEMBER_TOKEN_REFRESH_SKEW_SECONDS=1800
 
-# Phase 1: write-capable probes must not target a member-facing persona.
+# Write-capable probes must not target a member-facing persona; they skip
+# when this is unset.
 # PROBE_PERSONA_ID=
 ```
 
@@ -400,10 +430,10 @@ Still worth asking Engram for, but not a blocker: an org-admin-scoped session mi
 
 ---
 
-## Order Tauqueer names work
+## Order the work was done in
 
 **Phase 1:** One grounding rule → Stop writing into the admin pool → Purge what already leaked → Keep probes off the live persona → Sitting and close-out.
 
-**Phase 2:** Credential storage → Provision members with a credential we keep → Session token cache and member client → Route member turns through the member client → Re-provision the two existing members → Panel, export, delete-my-data → Probes, tests, isolation gate.
+**Phase 2:** Credential storage → Provision members with a credential we keep → Session token cache and member client → Route member turns through the member client → Panel, export, delete-my-data → Probes, tests, isolation gate → Wipe pre-containment transcripts → Sitting and close-out.
 
-Name **one part at a time**. Do not start Phase 2 until Phase 1's sitting passes.
+Both are shipped. The part-by-part text below is kept as the record of what each step changed and how it was tested; it is no longer a queue of work.
