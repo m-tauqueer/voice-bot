@@ -41,4 +41,21 @@ describe("voice agent settings", () => {
     };
     expect(agent.speak.provider.model).toBe("aura-2-luna-en");
   });
+
+  it("speaks the Aura id even when a fish id is also on the persona", () => {
+    const config = testConfig({
+      BYO_LLM_PUBLIC_URL: "https://example.ngrok-free.app",
+      DEEPGRAM_TTS_VOICE: "aura-2-luna-en",
+    });
+    const settings = buildVoiceAgentSettings(
+      config,
+      identity,
+      "aura-2-thalia-en",
+    );
+    const agent = settings.agent as {
+      speak: { provider: { model?: string } };
+    };
+    expect(agent.speak.provider.model).toBe("aura-2-thalia-en");
+    expect(JSON.stringify(settings)).not.toContain("fish-ref-1");
+  });
 });

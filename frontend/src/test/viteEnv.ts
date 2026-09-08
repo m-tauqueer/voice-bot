@@ -167,6 +167,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_DELETIONS_EMPTY_QUEUE: "No pending deletions.",
   VITE_DELETIONS_SELECTED_NONE: "Select at least one request.",
   VITE_PERSONA_VOICE_TTS_KEY: "tts_voice",
+  VITE_PERSONA_VOICE_FISH_KEY: "fish_voice",
   VITE_PERSONA_CATALOG_HELP:
     "Create or link Engram personas here. Drafts stay off the member list until you publish.",
   VITE_PERSONA_LIST_TITLE: "Catalog",
@@ -234,6 +235,9 @@ export const viteTestEnv: Record<string, string> = {
   VITE_PERSONA_TTS_LABEL: "TTS voice id",
   VITE_PERSONA_TTS_HELP:
     "Deepgram voice id for this persona. The env voice is used only if this is empty.",
+  VITE_PERSONA_FISH_LABEL: "Fish voice id",
+  VITE_PERSONA_FISH_HELP:
+    "Hosted Fish Audio voice id for this persona. Leave empty to keep Deepgram Aura.",
   VITE_PERSONA_VOICE_JSON_LABEL: "Voice style (JSON)",
   VITE_PERSONA_VOICE_INVALID: "voice_config must be a JSON object",
   VITE_PERSONA_TEACH_TITLE: "Teach",

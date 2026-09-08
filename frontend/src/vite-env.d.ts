@@ -195,6 +195,7 @@ interface ImportMetaEnv {
   readonly VITE_DELETIONS_EMPTY_QUEUE: string;
   readonly VITE_DELETIONS_SELECTED_NONE: string;
   readonly VITE_PERSONA_VOICE_TTS_KEY: string;
+  readonly VITE_PERSONA_VOICE_FISH_KEY: string;
   readonly VITE_PERSONA_CATALOG_HELP: string;
   readonly VITE_PERSONA_LIST_TITLE: string;
   readonly VITE_PERSONA_LIST_EMPTY: string;
@@ -256,6 +257,8 @@ interface ImportMetaEnv {
   readonly VITE_PERSONA_ENGRAM_ID_LABEL: string;
   readonly VITE_PERSONA_TTS_LABEL: string;
   readonly VITE_PERSONA_TTS_HELP: string;
+  readonly VITE_PERSONA_FISH_LABEL: string;
+  readonly VITE_PERSONA_FISH_HELP: string;
   readonly VITE_PERSONA_VOICE_JSON_LABEL: string;
   readonly VITE_PERSONA_VOICE_INVALID: string;
   readonly VITE_PERSONA_TEACH_TITLE: string;

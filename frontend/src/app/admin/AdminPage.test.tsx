@@ -86,9 +86,38 @@ describe("AdminPage personas", () => {
     expect(await screen.findByLabelText("TTS voice id")).toBeTruthy();
     const tts = screen.getByLabelText("TTS voice id") as HTMLInputElement;
     expect(tts.value).toBe("aura-2-thalia-en");
+    expect((screen.getByLabelText("Fish voice id") as HTMLInputElement).value).toBe(
+      "",
+    );
     expect(
       screen.getAllByRole("button", { name: "Unpublish" }).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("saves a fish id on the fish key and leaves the Deepgram key alone", async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    const fish = (await screen.findByLabelText(
+      "Fish voice id",
+    )) as HTMLInputElement;
+    fireEvent.change(fish, { target: { value: "fish-ref-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save persona" }));
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(
+        ([path, init]) =>
+          path === "/api/admin/persona" && init?.method === "PUT",
+      );
+      expect(call).toBeTruthy();
+      const body = JSON.parse(String(call?.[1]?.body)) as {
+        tts_voice: string;
+        fish_voice: string;
+        voice_config: Record<string, string>;
+      };
+      expect(body.tts_voice).toBe("aura-2-thalia-en");
+      expect(body.fish_voice).toBe("fish-ref-1");
+      expect(body.voice_config.tts_voice).toBe("aura-2-thalia-en");
+      expect(body.voice_config.fish_voice).toBe("fish-ref-1");
+    });
   });
 
   it("puts publish next to the draft badge and posts the local flag", async () => {

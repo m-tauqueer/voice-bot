@@ -28,3 +28,19 @@ def test_boot_accepts_retrieve_while_member_session_auth_is_false(
     assert loaded.brain_mode == "retrieve"
     assert loaded.engram_member_session_auth is False
     assert loaded.engram_member_secret_key is None
+
+
+def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(
+    settings: WorkerSettings,
+) -> None:
+    kwargs = settings.model_dump()
+    kwargs["fish_api_key"] = None
+    loaded = WorkerSettings(_env_file=None, **kwargs)
+    assert loaded.fish_api_key is None
+    assert loaded.persona_voice_tts_key == "tts_voice"
+    assert loaded.persona_voice_fish_key == "fish_voice"
+    kwargs["persona_voice_tts_key"] = "voice"
+    kwargs["persona_voice_fish_key"] = "voice"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "PERSONA_VOICE_FISH_KEY" in str(caught.value)

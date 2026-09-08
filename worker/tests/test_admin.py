@@ -8,7 +8,7 @@ import pytest
 
 from worker.admin.errors import AdminError
 from worker.admin.service import PersonaAdmin
-from worker.admin.voice import as_voice_config, merge_tts_voice
+from worker.admin.voice import as_voice_config, merge_persona_voices, merge_tts_voice
 from worker.config import WorkerSettings
 from worker.engram.errors import ForbiddenError, NotFoundError, ValidationError
 from worker.engram.interface import IngestOutcome, PersonaRecord
@@ -318,6 +318,29 @@ def test_merge_tts_voice_writes_configured_key() -> None:
     assert as_voice_config("nope") == {}
 
 
+def test_merge_persona_voices_writes_fish_on_its_own_key() -> None:
+    merged = merge_persona_voices(
+        {"pace": "calm"},
+        tts_voice="aura-2-thalia-en",
+        tts_key="tts_voice",
+        fish_voice="fish-ref-1",
+        fish_key="fish_voice",
+    )
+    assert merged == {
+        "pace": "calm",
+        "tts_voice": "aura-2-thalia-en",
+        "fish_voice": "fish-ref-1",
+    }
+    cleared = merge_persona_voices(
+        merged,
+        tts_voice=None,
+        tts_key="tts_voice",
+        fish_voice=" ",
+        fish_key="fish_voice",
+    )
+    assert cleared == {"pace": "calm", "tts_voice": "aura-2-thalia-en"}
+
+
 def test_show_unknown_pin_is_missing(
     settings: WorkerSettings,
     monkeypatch: pytest.MonkeyPatch,
@@ -406,9 +429,11 @@ def test_create_and_link_start_unpublished(
         description="second",
         voice_config={"pace": "calm"},
         tts_voice="aura-2-aries-en",
+        fish_voice="fish-ref-nova",
     )
     assert created["persona"]["published"] is False
     assert created["persona"]["voice_config"]["tts_voice"] == "aura-2-aries-en"
+    assert created["persona"]["voice_config"]["fish_voice"] == "fish-ref-nova"
     assert created["persona"]["engram_persona_id"] == "eng-nova"
     assert brain.deleted == []
 
@@ -458,9 +483,12 @@ def test_publish_is_local_only(
         description=None,
         voice_config=None,
         tts_voice="aura-2-aries-en",
+        fish_voice="fish-ref-nova",
     )
     assert catalog.rows[0]["display_name"] == "Nova Two"
     assert catalog.rows[0]["voice_config"]["tts_voice"] == "aura-2-aries-en"
+    assert catalog.rows[0]["voice_config"]["fish_voice"] == "fish-ref-nova"
+    assert catalog.rows[0]["voice_config"]["tts_voice"] != "fish-ref-nova"
     assert catalog.rows[0]["published"] is False
 
 

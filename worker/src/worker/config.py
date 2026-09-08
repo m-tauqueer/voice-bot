@@ -223,6 +223,16 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
+    persona_voice_fish_key: str = Field(default="fish_voice", min_length=1)
+    fish_api_key: str | None = None
+    fish_api_base_url: str = Field(
+        default="https://api.fish.audio",
+        min_length=1,
+    )
+    fish_tts_model: str = Field(default="s2.1-pro-free", min_length=1)
+    fish_tts_format: str = Field(default="pcm", min_length=1)
+    fish_tts_sample_rate: int = Field(default=24000, gt=0)
+    fish_tts_latency: str = Field(default="balanced", min_length=1)
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)
@@ -311,6 +321,7 @@ class WorkerSettings(BaseSettings):
         "engram_member_secret_key",
         "probe_persona_id",
         "openai_api_key",
+        "fish_api_key",
         "openai_base_url",
         "openai_api_base_url",
         "reframe_system_prompt",
@@ -362,6 +373,14 @@ class WorkerSettings(BaseSettings):
         if not value.startswith("/"):
             raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
+
+    @model_validator(mode="after")
+    def distinct_persona_voice_keys(self) -> WorkerSettings:
+        if self.persona_voice_fish_key == self.persona_voice_tts_key:
+            raise ValueError(
+                "PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY"
+            )
+        return self
 
     @model_validator(mode="after")
     def refuse_chat_without_member_session_auth(self) -> WorkerSettings:

@@ -651,6 +651,31 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("tts_voice"),
   ),
+  PERSONA_VOICE_FISH_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_voice"),
+  ),
+  FISH_API_KEY: optionalNonEmpty,
+  FISH_API_BASE_URL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().url().default("https://api.fish.audio"),
+  ),
+  FISH_TTS_MODEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("s2.1-pro-free"),
+  ),
+  FISH_TTS_FORMAT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("pcm"),
+  ),
+  FISH_TTS_SAMPLE_RATE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(24000),
+  ),
+  FISH_TTS_LATENCY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("balanced"),
+  ),
   MEMORY_PANEL_ENABLED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.enum(["true", "false"]).default("true"),
@@ -1147,12 +1172,21 @@ export function loadGatewayConfig(
     validateOpsConfig(parsed.data);
     validateStatusCopy(parsed.data);
     validateStatusApiPath(parsed.data);
+    validatePersonaVoiceKeys(parsed.data);
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",
     );
   }
   return parsed.data;
+}
+
+export function validatePersonaVoiceKeys(config: GatewayConfig): void {
+  if (config.PERSONA_VOICE_FISH_KEY === config.PERSONA_VOICE_TTS_KEY) {
+    throw new Error(
+      "PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY",
+    );
+  }
 }
 
 export function validateAccessConfig(config: GatewayConfig): void {

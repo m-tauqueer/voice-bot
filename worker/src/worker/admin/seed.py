@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--description")
     create.add_argument("--voice-config")
     create.add_argument("--tts-voice")
+    create.add_argument("--fish-voice")
     create.add_argument(
         "--create-remote",
         action="store_true",
@@ -122,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
                         description=args.description or "",
                         voice_config=voice,
                         tts_voice=args.tts_voice,
+                        fish_voice=args.fish_voice,
                     ),
                 )
                 return 0
@@ -140,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                     description=args.description,
                     voice_config=voice,
                     tts_voice=args.tts_voice,
+                    fish_voice=args.fish_voice,
                 ),
             )
             return 0

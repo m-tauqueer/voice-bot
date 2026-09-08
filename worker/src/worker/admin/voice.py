@@ -24,3 +24,15 @@ def merge_tts_voice(
     else:
         merged.pop(key, None)
     return merged
+
+
+def merge_persona_voices(
+    voice_config: dict[str, Any],
+    *,
+    tts_voice: str | None,
+    tts_key: str,
+    fish_voice: str | None,
+    fish_key: str,
+) -> dict[str, Any]:
+    merged = merge_tts_voice(voice_config, tts_voice=tts_voice, key=tts_key)
+    return merge_tts_voice(merged, tts_voice=fish_voice, key=fish_key)

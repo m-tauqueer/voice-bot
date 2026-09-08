@@ -179,6 +179,8 @@ export type UiCopy = {
   personaEngramIdLabel: string;
   personaTtsLabel: string;
   personaTtsHelp: string;
+  personaFishLabel: string;
+  personaFishHelp: string;
   personaVoiceJsonLabel: string;
   personaVoiceInvalid: string;
   personaTeachTitle: string;
@@ -427,6 +429,8 @@ export function loadUiCopy(): UiCopy {
     personaEngramIdLabel: requiredVite("VITE_PERSONA_ENGRAM_ID_LABEL"),
     personaTtsLabel: requiredVite("VITE_PERSONA_TTS_LABEL"),
     personaTtsHelp: requiredVite("VITE_PERSONA_TTS_HELP"),
+    personaFishLabel: requiredVite("VITE_PERSONA_FISH_LABEL"),
+    personaFishHelp: requiredVite("VITE_PERSONA_FISH_HELP"),
     personaVoiceJsonLabel: requiredVite("VITE_PERSONA_VOICE_JSON_LABEL"),
     personaVoiceInvalid: requiredVite("VITE_PERSONA_VOICE_INVALID"),
     personaTeachTitle: requiredVite("VITE_PERSONA_TEACH_TITLE"),

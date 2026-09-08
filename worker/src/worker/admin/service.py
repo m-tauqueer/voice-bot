@@ -23,7 +23,7 @@ from worker.admin.store import (
     upsert_persona,
     upsert_subscription,
 )
-from worker.admin.voice import as_voice_config, merge_tts_voice
+from worker.admin.voice import as_voice_config, merge_persona_voices
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
 from worker.engram.errors import (
@@ -116,15 +116,18 @@ class PersonaAdmin:
 
         return _open()
 
-    def _with_tts(
+    def _with_voices(
         self,
         voice_config: dict[str, Any] | None,
         tts_voice: str | None,
+        fish_voice: str | None,
     ) -> dict[str, Any]:
-        return merge_tts_voice(
+        return merge_persona_voices(
             as_voice_config(voice_config),
             tts_voice=tts_voice,
-            key=self._settings.persona_voice_tts_key,
+            tts_key=self._settings.persona_voice_tts_key,
+            fish_voice=fish_voice,
+            fish_key=self._settings.persona_voice_fish_key,
         )
 
     def _require_active(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
@@ -202,6 +205,7 @@ class PersonaAdmin:
         description: str | None,
         voice_config: dict[str, Any],
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -220,7 +224,7 @@ class PersonaAdmin:
                 handle=resolved_handle,
                 display_name=resolved_name,
                 description=resolved_description,
-                voice_config=self._with_tts(voice_config, tts_voice),
+                voice_config=self._with_voices(voice_config, tts_voice, fish_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -232,6 +236,7 @@ class PersonaAdmin:
         description: str,
         voice_config: dict[str, Any],
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -251,7 +256,7 @@ class PersonaAdmin:
                 handle=handle,
                 display_name=name,
                 description=description,
-                voice_config=self._with_tts(voice_config, tts_voice),
+                voice_config=self._with_voices(voice_config, tts_voice, fish_voice),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -264,6 +269,7 @@ class PersonaAdmin:
         description: str | None,
         voice_config: dict[str, Any] | None,
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
     ) -> dict[str, Any]:
         current = self._require_active(persona_id)
         merged_voice = (
@@ -280,7 +286,7 @@ class PersonaAdmin:
                 description=(
                     current["description"] if description is None else description
                 ),
-                voice_config=self._with_tts(merged_voice, tts_voice),
+                voice_config=self._with_voices(merged_voice, tts_voice, fish_voice),
             )
         return {"persona": _row(local)}
 

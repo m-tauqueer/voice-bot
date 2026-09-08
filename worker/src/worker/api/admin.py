@@ -21,6 +21,7 @@ class PersonaWriteIn(BaseModel):
     description: str | None = None
     voice_config: dict[str, Any] | None = None
     tts_voice: str | None = None
+    fish_voice: str | None = None
     create_remote: bool = False
 
 
@@ -84,6 +85,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                     description=body.description or "",
                     voice_config=body.voice_config or {},
                     tts_voice=body.tts_voice,
+                    fish_voice=body.fish_voice,
                 )
             if body.engram_persona_id:
                 return admin.register(
@@ -93,6 +95,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                     description=body.description,
                     voice_config=body.voice_config or {},
                     tts_voice=body.tts_voice,
+                    fish_voice=body.fish_voice,
                 )
             return admin.update_local(
                 persona_id=body.persona_id,
@@ -101,6 +104,7 @@ def build_admin_router(settings: WorkerSettings) -> APIRouter:
                 description=body.description,
                 voice_config=body.voice_config,
                 tts_voice=body.tts_voice,
+                fish_voice=body.fish_voice,
             )
         except AdminError as exc:
             _raise_admin(exc)

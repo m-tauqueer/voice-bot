@@ -56,4 +56,21 @@ describe("config helpers", () => {
       "ws://localhost:5188/ws/voice?persona_id=11111111-1111-1111-1111-111111111111",
     );
   });
+
+  it("loads Fish env as optional and keeps catalog keys distinct", () => {
+    const config = testConfig();
+    expect(config.PERSONA_VOICE_TTS_KEY).toBe("tts_voice");
+    expect(config.PERSONA_VOICE_FISH_KEY).toBe("fish_voice");
+    expect(config.FISH_API_KEY).toBeUndefined();
+    expect(config.FISH_API_BASE_URL).toBe("https://api.fish.audio");
+    expect(testConfig({ FISH_API_KEY: "fish-test-key" }).FISH_API_KEY).toBe(
+      "fish-test-key",
+    );
+    expect(() =>
+      testConfig({
+        PERSONA_VOICE_TTS_KEY: "voice",
+        PERSONA_VOICE_FISH_KEY: "voice",
+      }),
+    ).toThrow("PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY");
+  });
 });

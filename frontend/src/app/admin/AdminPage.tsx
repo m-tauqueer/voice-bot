@@ -7,7 +7,8 @@ import { ApiError, api } from "../../lib/gateway";
 import { loadNavConfig } from "../../lib/nav";
 import {
   adminPersonaQuery,
-  mergeVoiceConfig,
+  mergePersonaVoices,
+  personaFishKey,
   personaPinField,
   personaTtsKey,
   splitVoiceConfig,
@@ -117,18 +118,20 @@ function emptyForm() {
     displayName: "",
     description: "",
     ttsVoice: "",
+    fishVoice: "",
     voiceConfig: "{}",
   };
 }
 
-function formFromPersona(persona: Persona, ttsKey: string) {
-  const split = splitVoiceConfig(persona.voice_config ?? {}, ttsKey);
+function formFromPersona(persona: Persona, ttsKey: string, fishKey: string) {
+  const split = splitVoiceConfig(persona.voice_config ?? {}, ttsKey, fishKey);
   return {
     engramPersonaId: persona.engram_persona_id,
     handle: persona.handle,
     displayName: persona.display_name,
     description: persona.description ?? "",
     ttsVoice: split.ttsVoice,
+    fishVoice: split.fishVoice,
     voiceConfig: JSON.stringify(split.style, null, 2),
   };
 }
@@ -139,6 +142,7 @@ export function AdminPage() {
   const { loadingLabel, notOwnerMessage, signIn } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
   const ttsKey = personaTtsKey();
+  const fishKey = personaFishKey();
   const pinField = personaPinField();
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [status, setStatus] = useState<string | null>(null);
@@ -176,13 +180,13 @@ export function AdminPage() {
       const next = rows.find((row) => row.id === nextId) ?? null;
       setSelectedId(next?.id ?? null);
       if (next) {
-        setForm(formFromPersona(next, ttsKey));
+        setForm(formFromPersona(next, ttsKey, fishKey));
         setAdding(false);
       }
       setSubscriptions(shown.subscriptions ?? []);
       return next;
     },
-    [ttsKey],
+    [ttsKey, fishKey],
   );
 
   const loadPersona = useCallback(
@@ -265,8 +269,15 @@ export function AdminPage() {
       handle: form.handle || undefined,
       display_name: form.displayName || undefined,
       description: form.description,
-      voice_config: mergeVoiceConfig(parseStyle(), form.ttsVoice, ttsKey),
+      voice_config: mergePersonaVoices(
+        parseStyle(),
+        form.ttsVoice,
+        ttsKey,
+        form.fishVoice,
+        fishKey,
+      ),
       tts_voice: form.ttsVoice,
+      fish_voice: form.fishVoice,
       ...extra,
     };
   }
@@ -403,7 +414,7 @@ export function AdminPage() {
                     setAdding(false);
                     setStatus(null);
                     setSelectedId(row.id);
-                    setForm(formFromPersona(row, ttsKey));
+                    setForm(formFromPersona(row, ttsKey, fishKey));
                     void run("select", async () => {
                       await selectExisting(row.id);
                     });
@@ -462,6 +473,13 @@ export function AdminPage() {
                 value={form.ttsVoice}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, ttsVoice: event.target.value }))
+                }
+              />
+              <Input
+                label={copy.personaFishLabel}
+                value={form.fishVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, fishVoice: event.target.value }))
                 }
               />
               <Button
@@ -613,6 +631,14 @@ export function AdminPage() {
                 }
               />
               <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaTtsHelp}</p>
+              <Input
+                label={copy.personaFishLabel}
+                value={form.fishVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, fishVoice: event.target.value }))
+                }
+              />
+              <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaFishHelp}</p>
               <Textarea
                 label={copy.personaVoiceJsonLabel}
                 rows={6}

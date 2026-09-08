@@ -84,6 +84,26 @@ describe("persona catalog", () => {
     );
   });
 
+  it("never sends a fish voice id to Aura", () => {
+    expect(
+      resolveSpeakModel(
+        {
+          tts_voice: "aura-2-thalia-en",
+          fish_voice: "fish-ref-1",
+        },
+        "tts_voice",
+        "aura-2-luna-en",
+      ),
+    ).toBe("aura-2-thalia-en");
+    expect(
+      resolveSpeakModel(
+        { fish_voice: "fish-ref-1" },
+        "tts_voice",
+        "aura-2-luna-en",
+      ),
+    ).toBe("aura-2-luna-en");
+  });
+
   it("parses a persona pin without treating a missing field as invalid", () => {
     expect(parseOptionalPersonaId({}, "persona_id")).toEqual({ ok: true });
     expect(
