@@ -34,7 +34,13 @@ from worker.engram.errors import (
     ValidationError,
 )
 from worker.engram.interface import IngestOutcome, PersonaBrain, PersonaRecord
+from worker.engram.member_secret import (
+    MemberSecretError,
+    ciphertext_for_password,
+    decode_member_secret_key,
+)
 from worker.engram.org_member import (
+    OrgMember,
     OrgRoster,
     ensure_org_member,
     open_org_roster,
@@ -426,14 +432,14 @@ class PersonaAdmin:
                 reason="engram_join_skipped",
             )
         stored = str(user["engram_user_id"])
-        engine_id = self._ensure_member_id(email)
-        engine_id = self._persist_people_id(user, stored, engine_id)
+        engine_member = self._ensure_org_member(email)
+        engine_id = self._persist_people_id(user, stored, engine_member)
         user = {**user, "engram_user_id": engine_id}
         try:
             result = self._subscribe_engine(persona, engine_id)
         except ValidationError:
-            engine_id = self._ensure_member_id(email)
-            engine_id = self._persist_people_id(user, stored, engine_id)
+            engine_member = self._ensure_org_member(email)
+            engine_id = self._persist_people_id(user, stored, engine_member)
             user = {**user, "engram_user_id": engine_id}
             try:
                 result = self._subscribe_engine(persona, engine_id)
@@ -456,7 +462,7 @@ class PersonaAdmin:
             "result": _jsonable(result),
         }
 
-    def _ensure_member_id(self, email: str) -> str:
+    def _ensure_org_member(self, email: str) -> OrgMember:
         try:
             if self._roster_factory is not None:
                 roster = self._roster_factory(self._settings)
@@ -469,17 +475,36 @@ class PersonaAdmin:
         except BrainError as exc:
             raise _brain_error(exc) from exc
 
+    def _member_secret_key(self) -> bytes | None:
+        raw = self._settings.engram_member_secret_key
+        if raw is None:
+            return None
+        try:
+            return decode_member_secret_key(raw)
+        except MemberSecretError:
+            return None
+
     def _persist_people_id(
         self,
         user: dict[str, Any],
         stored: str,
-        engine_id: str,
+        member: OrgMember,
     ) -> str:
-        engine_id = persona_engine_user_id(engine_id)
-        if engine_id == persona_engine_user_id(stored):
+        engine_id = persona_engine_user_id(member.user_id)
+        key = self._member_secret_key()
+        ciphertext = ciphertext_for_password(member.password, key=key)
+        if (
+            engine_id == persona_engine_user_id(stored)
+            and ciphertext is None
+        ):
             return engine_id
         with connect(self._settings) as conn:
-            set_engram_user_id(conn, str(user["id"]), engine_id)
+            set_engram_user_id(
+                conn,
+                str(user["id"]),
+                engine_id,
+                member_secret=ciphertext,
+            )
         return engine_id
 
     def _subscribe_engine(self, persona: dict[str, Any], engine_id: str) -> Any:

@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import time
 
-from worker.admin.store import connect, probe_persona
+from worker.admin.store import connect, write_probe_persona
 from worker.config import load_settings
 from worker.persistence.sessions import create_session
 from worker.schema import SESSION_CHANNEL_VOICE
@@ -56,47 +56,64 @@ def _spoken(runner: TurnRunner, **kwargs) -> tuple[str, float, object]:
 
 def main() -> int:
     base = load_settings()
+    if not base.probe_persona_id:
+        print(f"brains=SKIP {base.probe_write_skip}")
+        print("PROBE_OK")
+        return 0
     conn = connect(base)
-    persona = probe_persona(conn, base)
-    if persona is None:
-        print("FAIL: no published persona recorded locally", file=sys.stderr)
-        return 1
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, engram_user_id FROM users ORDER BY created_at LIMIT 1",
-        )
-        user = cur.fetchone()
-    if user is None:
-        print("FAIL: no app user in the database", file=sys.stderr)
-        return 1
+    try:
+        persona = write_probe_persona(conn, base)
+        if persona is None:
+            print(
+                "FAIL: PROBE_PERSONA_ID is missing or unpublished locally",
+                file=sys.stderr,
+            )
+            return 1
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, engram_user_id FROM users ORDER BY created_at LIMIT 1",
+            )
+            user = cur.fetchone()
+        if user is None:
+            print("FAIL: no app user in the database", file=sys.stderr)
+            return 1
 
-    print(f"default_brain_mode={base.brain_mode}")
-    print(f"retrieve_top_k={base.engram_retrieve_top_k}")
-    print(f"model={base.openai_model}\n")
+        print(f"default_brain_mode={base.brain_mode}")
+        print(f"retrieve_top_k={base.engram_retrieve_top_k}")
+        print(f"model={base.openai_model}\n")
 
-    timings: dict[str, list[float]] = {mode: [] for mode in MODES}
-    sessions: dict[str, str] = {}
-    runners: dict[str, TurnRunner] = {}
-    for mode in MODES:
-        settings = base.model_copy(update={"brain_mode": mode})
-        runners[mode] = TurnRunner(settings)
-        session = create_session(
-            conn,
-            user_id=user["id"],
-            persona_id=persona["id"],
-            channel=SESSION_CHANNEL_VOICE,
-        )
-        conn.commit()
-        sessions[mode] = str(session["id"])
-        print(f"{mode}_session={sessions[mode]}")
-    conn.close()
+        timings: dict[str, list[float]] = {}
+        sessions: dict[str, str] = {}
+        runners: dict[str, TurnRunner] = {}
+        for mode in MODES:
+            if mode == "chat" and not base.engram_member_session_auth:
+                print(f"chat=SKIP {base.probe_chat_mode_skip}")
+                continue
+            settings = base.model_copy(update={"brain_mode": mode})
+            runners[mode] = TurnRunner(settings)
+            session = create_session(
+                conn,
+                user_id=user["id"],
+                persona_id=persona["id"],
+                channel=SESSION_CHANNEL_VOICE,
+            )
+            conn.commit()
+            sessions[mode] = str(session["id"])
+            timings[mode] = []
+            print(f"{mode}_session={sessions[mode]}")
+        if not runners:
+            print("brains=SKIP no brain mode left to run")
+            print("PROBE_OK")
+            return 0
+    finally:
+        conn.close()
     print()
 
     failed = 0
     for label, question in QUESTIONS:
         print("=" * 78)
         print(f"[{label}] {question}")
-        for mode in MODES:
+        for mode in runners:
             try:
                 spoken, first_ms, plan = _spoken(
                     runners[mode],

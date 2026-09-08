@@ -80,6 +80,20 @@ def probe_persona(
     )
 
 
+def write_probe_persona(
+    conn: psycopg.Connection,
+    settings: WorkerSettings,
+) -> PersonaRow | None:
+    """Persona for probes that write to Engram.
+
+    Requires `PROBE_PERSONA_ID`. Unset means None so the caller skips instead
+    of falling through to the oldest published (member-facing) row.
+    """
+    if not settings.probe_persona_id:
+        return None
+    return probe_persona(conn, settings)
+
+
 def get_persona(conn: psycopg.Connection, persona_id: str) -> PersonaRow | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -227,15 +241,18 @@ def set_engram_user_id(
     conn: psycopg.Connection,
     user_id: str,
     engram_user_id: str,
+    *,
+    member_secret: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE users
-            SET engram_user_id = %s
+            SET engram_user_id = %s,
+                engram_member_secret = COALESCE(%s, engram_member_secret)
             WHERE id = %s
             """,
-            (engram_user_id, user_id),
+            (engram_user_id, member_secret, user_id),
         )
     conn.commit()
 

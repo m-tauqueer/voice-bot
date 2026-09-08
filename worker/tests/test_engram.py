@@ -7,6 +7,7 @@ from engram_sdk.models import Persona, PersonaReply
 from worker.config import WorkerSettings
 from worker.engram import errors as app
 from worker.engram.engram_brain import EngramBrain, _map_sdk_error
+from worker.engram.tenant import private_pool_owner
 
 
 def _persona() -> Persona:
@@ -113,10 +114,11 @@ def test_retrieve_maps_hits_and_ignores_non_strings(
     settings: WorkerSettings,
 ) -> None:
     client = FakeClient()
-    brain = EngramBrain(settings, "user-1", client=client)
+    acting = "user-1"
+    brain = EngramBrain(settings, acting, client=client)
     outcome = brain.retrieve("persona-1", "what do you remember", top_k=7)
     assert client.personas.retrieves == [("persona-1", "what do you remember", 7)]
-    assert outcome.results[0].tenant == "org:persona:user-1"
+    assert private_pool_owner(outcome.results[0].tenant) == acting
     assert outcome.results[0].text == "I kept a diary"
     assert outcome.results[1].tenant is None
 

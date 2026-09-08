@@ -45,6 +45,38 @@ function tenantMentionsPersona(
   return typeof tenant === "string" && tenant.includes(engramPersonaId);
 }
 
+function privateEngramUserId(tenant: unknown): string | null {
+  if (typeof tenant !== "string") return null;
+  const parts = tenant.split(":");
+  // Engram private tenant is `{org}:{persona}:{user}`.
+  if (parts.length !== 3) return null;
+  return parts[2] ?? null;
+}
+
+function privateOwnersFromMemoriesUsed(memoriesUsed: unknown): string[] {
+  if (!Array.isArray(memoriesUsed)) {
+    return [];
+  }
+  const owners: string[] = [];
+  for (const row of memoriesUsed) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const owner = privateEngramUserId((row as { tenant?: unknown }).tenant);
+    if (owner) {
+      owners.push(owner);
+    }
+  }
+  return owners;
+}
+
+function ownsEveryPrivateRow(tenants: Iterable<string>, engramUserId: string) {
+  return [...tenants].every(
+    (tenant) =>
+      personaEngineUserId(tenant) === personaEngineUserId(engramUserId),
+  );
+}
+
 const config = loadGatewayConfig();
 const sql = createPostgres(config);
 const redis = createRedis(config);
@@ -395,14 +427,6 @@ try {
       if (ownerMem.statusCode !== 200 || otherMem.statusCode !== 200) {
         console.log("memory_panel_probe=SKIP (non-200 response)");
       } else {
-        function privateEngramUserId(tenant: unknown): string | null {
-          if (typeof tenant !== "string") return null;
-          const parts = tenant.split(":");
-          // Engram private tenant is `{org}:{persona}:{user}`.
-          if (parts.length !== 3) return null;
-          return parts[2] ?? null;
-        }
-
         const ownerPanel = ownerMem.json() as {
           memories?: { tenant?: string | null }[];
         };
@@ -441,14 +465,6 @@ try {
         // The two checks above are negative: they passed for months while the
         // panel served a third party's pool that matched neither id. Assert
         // the positive — every private row belongs to the member reading it.
-        const ownsEveryPrivateRow = (
-          tenants: Set<string>,
-          engramUserId: string,
-        ) =>
-          [...tenants].every(
-            (tenant) =>
-              personaEngineUserId(tenant) === personaEngineUserId(engramUserId),
-          );
         check(
           "memory_panel_owner_private_rows_are_the_owners",
           ownsEveryPrivateRow(ownerPrivateTenants, owner.engram_user_id),
@@ -459,6 +475,74 @@ try {
           ownsEveryPrivateRow(otherPrivateTenants, other.engram_user_id),
           [...otherPrivateTenants].join(",") || "(none)",
         );
+      }
+    }
+
+    if (!publishedId) {
+      console.log("turn_grounding_probe=SKIP (no published persona)");
+    } else {
+      const grounded = await sql<
+        { engram_user_id: string; memories_used: unknown }[]
+      >`
+        SELECT u.engram_user_id, m.memories_used
+        FROM turns t
+        INNER JOIN sessions s ON s.id = t.session_id
+        INNER JOIN users u ON u.id = s.user_id
+        LEFT JOIN memory_refs m ON m.turn_id = t.id
+        WHERE s.persona_id = ${publishedId}
+          AND s.user_id IN ${sql([owner.id, other.id])}
+      `;
+      if (grounded.length === 0) {
+        console.log("turn_grounding_probe=SKIP (no turns for these members)");
+      } else {
+        let ownerLeaked = false;
+        let otherLeaked = false;
+        let ownerOwned = true;
+        let otherOwned = true;
+        for (const row of grounded) {
+          const owners = privateOwnersFromMemoriesUsed(row.memories_used);
+          if (
+            personaEngineUserId(row.engram_user_id) ===
+            personaEngineUserId(owner.engram_user_id)
+          ) {
+            if (!ownsEveryPrivateRow(owners, owner.engram_user_id)) {
+              ownerOwned = false;
+            }
+            if (
+              owners.some(
+                (item) =>
+                  personaEngineUserId(item) ===
+                  personaEngineUserId(other.engram_user_id),
+              )
+            ) {
+              ownerLeaked = true;
+            }
+          }
+          if (
+            personaEngineUserId(row.engram_user_id) ===
+            personaEngineUserId(other.engram_user_id)
+          ) {
+            if (!ownsEveryPrivateRow(owners, other.engram_user_id)) {
+              otherOwned = false;
+            }
+            if (
+              owners.some(
+                (item) =>
+                  personaEngineUserId(item) ===
+                  personaEngineUserId(owner.engram_user_id),
+              )
+            ) {
+              otherLeaked = true;
+            }
+          }
+        }
+        check("turn_grounding_owner_private_rows_are_the_owners", ownerOwned);
+        check(
+          "turn_grounding_other_private_rows_are_that_member's",
+          otherOwned,
+        );
+        check("turn_grounding_owner_never_grounded_on_other", !ownerLeaked);
+        check("turn_grounding_other_never_grounded_on_owner", !otherLeaked);
       }
     }
 

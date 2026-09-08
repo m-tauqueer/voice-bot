@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from uuid import UUID
 
-from worker.admin.store import connect, probe_persona
+from worker.admin.store import connect, write_probe_persona
 from worker.config import load_settings
 from worker.persistence.sessions import create_session
 from worker.schema import SESSION_CHANNEL_TEXT
@@ -15,11 +15,18 @@ from worker.turn.service import TurnRunner
 
 def main() -> int:
     settings = load_settings()
+    if not settings.probe_persona_id:
+        print(f"chat=SKIP {settings.probe_write_skip}")
+        print("PROBE_OK")
+        return 0
     conn = connect(settings)
     try:
-        persona = probe_persona(conn, settings)
+        persona = write_probe_persona(conn, settings)
         if persona is None:
-            print("FAIL: no published persona recorded locally", file=sys.stderr)
+            print(
+                "FAIL: PROBE_PERSONA_ID is missing or unpublished locally",
+                file=sys.stderr,
+            )
             return 1
         with conn.cursor() as cur:
             cur.execute(

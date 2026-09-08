@@ -29,3 +29,9 @@ export function asJsonValue(value: unknown): JsonValue {
   }
   return null;
 }
+
+/** JSON lists that must never surface as `null` (empty if missing or malformed). */
+export function asJsonArray(value: unknown): JsonValue[] {
+  const parsed = asJsonValue(value);
+  return Array.isArray(parsed) ? parsed : [];
+}

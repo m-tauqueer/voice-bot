@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,7 +115,9 @@ class WorkerSettings(BaseSettings):
     log_turn_fields: str = Field(
         default=(
             "correlation_id,session_id,turn_ids,action,reasons,"
-            "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded"
+            "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,"
+            "retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,"
+            "member_authenticated,engram_credential"
         ),
         min_length=1,
     )
@@ -127,6 +129,16 @@ class WorkerSettings(BaseSettings):
     log_subscribe_failed: str = Field(default="subscribe_failed", min_length=1)
     log_engram_join_failed: str = Field(default="engram_join_failed", min_length=1)
     log_engram_join_skipped: str = Field(default="engram_join_skipped", min_length=1)
+    log_engram_credential_unavailable: str = Field(
+        default="engram_credential_unavailable",
+        min_length=1,
+    )
+    log_retrieve_grounded_event: str = Field(
+        default="retrieve grounded",
+        min_length=1,
+    )
+    engram_credential_member: str = Field(default="member", min_length=1)
+    engram_credential_org: str = Field(default="org", min_length=1)
     failure_message_engram_join: str = Field(
         default=(
             "Could not join this member to the persona memory workspace. "
@@ -160,6 +172,17 @@ class WorkerSettings(BaseSettings):
     # writing the turn back with converse. "chat" lets Engram compose it, which
     # costs about ten more seconds a turn.
     brain_mode: Literal["chat", "retrieve"] = "retrieve"
+    # When true, member turns authenticate as that member (session token).
+    # Leave false until that credential path exists. False is containment:
+    # converse write-back is off and BRAIN_MODE=chat cannot boot, so we stop
+    # growing the API key owner's private pool. See docs/ENGRAM.md §2.3.
+    engram_member_session_auth: bool = False
+    # 32 random bytes, base64. Encrypts each member's Engram password at rest.
+    # Empty is unset. Required when ENGRAM_MEMBER_SESSION_AUTH is true. Never
+    # used to derive a password — rotating this re-encrypts stored ciphertext.
+    engram_member_secret_key: str | None = None
+    # Refresh a member session token this long before expires_in elapses.
+    engram_member_token_refresh_skew_seconds: int = Field(default=1800, ge=0)
     engram_retrieve_top_k: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
@@ -168,8 +191,22 @@ class WorkerSettings(BaseSettings):
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
-    # Pins which published persona the probes talk to. Unset means the oldest.
+    # Local personas.id of a throwaway persona. Write-capable probes require
+    # this and skip when it is unset, so they never write a member-facing pool.
     probe_persona_id: str | None = None
+    probe_write_skip: str = Field(
+        default=(
+            "PROBE_PERSONA_ID is unset; skipping writes so a member-facing "
+            "persona is not used."
+        ),
+        min_length=1,
+    )
+    probe_chat_mode_skip: str = Field(
+        default=(
+            "BRAIN_MODE=chat refused while ENGRAM_MEMBER_SESSION_AUTH is false."
+        ),
+        min_length=1,
+    )
     persona_error_not_found: str = Field(default="persona not found", min_length=1)
     admin_error_persona_pin_required: str = Field(
         default="persona_id is required when several personas exist",
@@ -271,6 +308,8 @@ class WorkerSettings(BaseSettings):
         "engram_api_key",
         "engram_org_id",
         "engram_persona_id",
+        "engram_member_secret_key",
+        "probe_persona_id",
         "openai_api_key",
         "openai_base_url",
         "openai_api_base_url",
@@ -323,6 +362,38 @@ class WorkerSettings(BaseSettings):
         if not value.startswith("/"):
             raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
+
+    @model_validator(mode="after")
+    def refuse_chat_without_member_session_auth(self) -> WorkerSettings:
+        if self.brain_mode == "chat" and not self.engram_member_session_auth:
+            raise ValueError(
+                "BRAIN_MODE=chat is refused while ENGRAM_MEMBER_SESSION_AUTH is "
+                "false: personas.chat writes the authenticated caller's private "
+                "pool, and without per-member session auth that caller is the "
+                "API key owner (see docs/ENGRAM.md §2.3)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def require_member_secret_key_when_session_auth(self) -> WorkerSettings:
+        from worker.engram.member_secret import (
+            MemberSecretError,
+            decode_member_secret_key,
+        )
+
+        raw = self.engram_member_secret_key
+        if raw is not None:
+            try:
+                decode_member_secret_key(raw)
+            except MemberSecretError as exc:
+                raise ValueError(str(exc)) from exc
+        if self.engram_member_session_auth and raw is None:
+            raise ValueError(
+                "ENGRAM_MEMBER_SESSION_AUTH is true but ENGRAM_MEMBER_SECRET_KEY "
+                "is missing. Set it to 32 random bytes, base64-encoded. "
+                "Empty means unset."
+            )
+        return self
 
 
 def load_settings() -> WorkerSettings:

@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together.
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together.
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>
@@ -66,20 +66,43 @@ Read `tenant` and `text` off **each result row**. The top-level `tenants` list o
 
 Each pool numbers `gid`s from 1001 independently. `404 engine 404: gid 1023` means **wrong pool**, not deleted. `personas.node(pid, gid, scope="shared"|"private")` must name the pool.
 
-### 2.3 “Caller private” means the API key, not the bound user (measured 8 Sep 2026)
+### 2.3 Conversation identity is the credential, not the bound user (measured 8 Sep 2026)
 
-`chat`, `converse`, and `retrieve` send **only** the persona id and the message. There is no `user_id` in the body, the query, or a header. The subject is whoever the API key authenticates as. `EngramClient(org, user_id)` uses `user_id` for the generic `/t/{tenant}` routes and as the default metrics subject — **the persona routes ignore it** (SDK 0.4.0, `resources.py`, section comment “conversation (writes the CALLER's private pool)”).
+`chat`, `converse`, and `retrieve` send **only** the persona id and the message. There is no `user_id` in the body, the query, or a header. The subject is whoever the bearer token authenticates as. `EngramClient(org, user_id)` uses `user_id` for the generic `/t/{tenant}` routes and as the default metrics subject — **the persona routes ignore it** (SDK 0.4.0, `resources.py`, section comment "conversation (writes the CALLER's private pool)").
 
-With one `org_admin` key on the server, that means **every member shares the org admin’s private pool**. Measured against the live alpha:
+That is by design, not a gap. Engram derives the pool from the authenticated principal and never accepts it from the client:
 
-- `retrieve` bound to a user id that does not exist still returned `{org}:{persona}:{org_admin}` rows.
-- `user_memories(pid, member_id)` returned 0 while `user_memories(pid, org_admin_id)` held other members’ turns.
+> "Because the backend derives the tenant strings server-side (never accepting them from the client), the isolation is structural." — [concepts/persona-memory](https://engram-docs-alpha.netlify.app/concepts/persona-memory)
 
-This was invisible for months because our isolation probe asserted only that the returned private tenant was **not** user B’s id, and the admin’s stored id was a placeholder that matched nobody. Assert the positive: the private tenant a member reads must **equal** that member’s Engram `user_id`.
+So a backend serving many end users needs **one credential per end user**. Engram issues them:
 
-Which surfaces do accept a subject (workspace-admin only): `pool(pid, scope, user_id=)`, `private(pid, user_id=)`, `user_memories`, `forget_user_memory`, `node`, `conversations`, `conversation`, `compress`. **There is no semantic retrieve on behalf of a member** — that gap is what blocks per-member private memory.
+> "A caller carries one of two bearer tokens; **both resolve to the same principal**. **Session** — a short-lived token for a signed-in person… **API key** — a long-lived `egm_` credential for a program." — [authentication](https://engram-docs-alpha.netlify.app/authentication)
 
-Neither `tokens.create` (inherits the creator’s identity) nor a member password we discard can act as a member. Status: we have asked Engram for a subject on the conversation endpoints, or an admin endpoint that mints a member-scoped token. Until then the private pool is not per-member, and any private memory written under the shared admin identity is disposable. The memory panel therefore returns **only** rows whose tenant ends in the acting member’s id, which is empty rather than someone else’s history.
+> "A session token works anywhere an API key does." — [quickstart](https://engram-docs-alpha.netlify.app/quickstart)
+
+**Measured 8 Sep 2026** on a throwaway persona and member, both destroyed afterwards:
+
+| Client | Call | Resulting tenant |
+| --- | --- | --- |
+| org key | `chat` / `converse` | `{org}:{persona}:{key owner}` — everyone shares it |
+| `auth.login` session token | `chat` / `converse` | `{org}:{persona}:{that member}` |
+| `auth.login` session token | `retrieve` | shared rows **and** that member's own private rows, each row correctly labelled |
+
+`auth.login(email, password)` returns `{token, token_type: "bearer", expires_in: 43200, user, role, tenant}` — a 12-hour JWT whose `sub` is the member. `EngramClient(org, member_id, api_key=<token>)` is then that member for every persona route.
+
+**Our bug, for months — now fixed.** The worker held one `org_admin` key and talked as the key owner for every member, so every conversation landed in `…:8de1b2b278724e0bba19000086f8bef2`. `ensure_org_member` generated each member's Engram password and then cleared it, destroying the only credential that would have made isolation work. It now keeps that password, encrypted, and mints a session token per member. Shipped and live-verified 8 Sep 2026 — see §11 and [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
+
+It stayed invisible because the isolation probe asserted only that the returned private tenant was **not** user B's id. Assert the positive: the private tenant a member reads must **equal** that member's Engram `user_id`.
+
+**The credential is set once and cannot be reset** (measured). An org admin cannot change a member's password: `platform.set_password` → `403 platform:admin`; `members.add` on an existing email → `409`, password unchanged; `members.remove` + re-add returns the **same** `user_id` with the **old** password and the private pool intact. Our key holds `billing:read, members:manage, members:read, memory:read, memory:write, metrics:read, org:manage, tokens:read` — no `platform:admin`, and no `tokens:manage` (so `tokens.create` is 403 as well, and org tokens carry no subject anyway).
+
+A member token is correctly confined: permissions are `memory:read, memory:write`, and it gets `403 cannot access another user's private memory` for another member's pool and `403` on a three-segment generic tenant.
+
+Which surfaces accept a subject with the **org key** (workspace-admin only): `pool(pid, scope, user_id=)`, `private(pid, user_id=)`, `user_memories`, `forget_user_memory`, `node`, `conversations`, `conversation`, `compress`, `subscribe`, `unsubscribe`. Use these for administration and for delete-my-data — **not** as a recall path.
+
+**The credential is per member and lives in our database.** First talk creates the Engram account with a password we generate and keep (AES-GCM at rest); `auth.login` mints a 12h JWT, cached in memory, refreshed before expiry, never logged or persisted. Conversation routes use that token; every admin surface stays on the org key. A member we cannot credential degrades to shared-only — never member-private under the key owner.
+
+Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Rollout: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). The earlier "admin subject-ingest workaround" is **withdrawn** — it traded semantic private retrieve, compression, and threads for a limitation that does not exist.
 
 ### 2.4 What we never ingest where
 
@@ -129,7 +152,7 @@ These are different.
 
 Subscribe / unsubscribe / subscribers are **workspace-admin** on the docs. The live API names `org:manage` for subscribe and `members:manage` for `members.add` / `members.update`. Independently, `chat` / `retrieve` / `converse` have worked without a subscription on this alpha; we no longer rely on that.
 
-**First talk (and admin Subscribe tester)** joins Engram People if needed (`members.add` by Google email), persists Engram’s `user_id`, binds `EngramClient` as that id, then `personas.subscribe` for **that** persona. New People rows get a random password that is never stored, logged, or emailed. Existing Engram emails are added with no password. Fail the turn if add or subscribe fails (except subscribe already-granted). Waitlist accounts are never added to People. Isolation probe `probe-*@example.test` addresses must not call `members.add`. Do not treat our `subscriptions` table as isolation.
+**First talk (and admin Subscribe tester)** joins Engram People if needed (`members.add` by Google email), persists Engram’s `user_id`, binds `EngramClient` as that id, then `personas.subscribe` for **that** persona. New member rows get a random password today that is **discarded** — the change that makes isolation work is keeping it, encrypted (§2.3, and the rollout plan). It must never be logged or emailed. Existing Engram emails are added with no password. Fail the turn if add or subscribe fails (except subscribe already-granted). Waitlist accounts are never added to People. Isolation probe `probe-*@example.test` addresses must not call `members.add`. Do not treat our `subscriptions` table as isolation.
 
 So:
 
@@ -170,6 +193,8 @@ Admin-only (member naming anyone else → `ForbiddenError: cannot access another
 
 Roles: `member` | `org_admin` | `superadmin`. Permission shape is `resource:action`. Named scopes in the docs: `memory:read`, `memory:write`, `metrics:read`, `audit:read`. Empty scopes or `"*"` = full role of the creator. Scopes cannot exceed the creator.
 
+Two bearer credentials, and they are interchangeable on the wire — the SDK sends `Authorization: Bearer <api_key>` and nothing else (`engram_sdk/_common.py:85`). An `egm_` API key is a program's identity; `auth.login(email, password)` mints a 12-hour session token that **is** that member. `tokens.create(name, scopes=[...])` narrows permissions only; it carries no subject and cannot represent another user. Measured permissions: our org key has `org:manage`, `members:manage`, `members:read`, `memory:*`, `metrics:read`, `billing:read`, `tokens:read`; a member has `memory:read`, `memory:write`.
+
 `org:manage` is **not** in the public docs; it is what the live API returned on subscribe. `members:manage` is what the live API returned on `members.add`/`update`. Check `account.me().permissions`. See §4.
 
 Our product org is one Engram org. Each approved Google member maps to one Engram `user_id`. The **persona** is not a second Engram user.
@@ -186,9 +211,11 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 
 | Call | When | Writes | Reads |
 | --- | --- | --- | --- |
-| `retrieve(pid, query, top_k)` | default brain | — | shared + caller private |
-| `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private | — |
-| `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private | shared + caller private |
+| `retrieve(pid, query, top_k)` | default brain | — | shared + caller private — runs on the **member's** JWT |
+| `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private — **member JWT** | — |
+| `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private — **member JWT** | shared + caller private |
+| `auth.login(email, password)` | mint a member session on a cold cache (once per 12h) | — | bearer token for that member |
+| `members.add(email, password=)` | first talk | People row **and the only credential we will ever have** | — |
 | `teach` / `answer` / `questions` | owner admin | shared | — |
 | `pool(pid, "shared").document/text` | owner ingest | shared | — |
 | `members.add` then `subscribe` / `unsubscribe` | first talk / account delete | People + grant | — |
@@ -212,7 +239,10 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | 403 `org:manage` on subscribe / list subscribers | key cannot grant Engram audience | fail the turn; fix the key |
 | 403 `members:manage` on `members.add` | key cannot join People | fail the turn; fix the key |
 | 422 `user is not a member of this org` | subscribe id is not on People | join People, persist Engram id, subscribe again once |
-| retrieve returns a private tenant that is **not** the acting member | conversation endpoints resolved the subject from the API key | §2.3; do not show it to the member |
+| retrieve returns a private tenant that is **not** the acting member | we called as the key owner, not as the member | §2.3; never ground a reply on it and never show it |
+| 401 `invalid email or password` on `auth.login` | we do not hold that member's credential; it cannot be reset | fail the turn closed; re-provision the member. Never fall back to the org key |
+| 403 `platform:admin` on `set_password` | an org admin cannot reset a member password | §2.3; the password from `members.add` is the only one we get |
+| 403 `tokens:manage` on `tokens.create` | our key cannot mint org tokens — and they carry no subject anyway | use `auth.login` per member |
 | 403 persona-private on `/t/` | someone built a three-segment tenant | use persona endpoints |
 | 404 `engine 404: gid N` | wrong pool | pass `scope=` |
 | 404 unknown `session_id` on `conversation()` | bad thread id | do not treat as empty chat |
@@ -245,7 +275,8 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 5. Two `session_id`s: `sessions.open` vs persona conversation.
 6. `org:manage` and `members:manage` live vs undocumented in public docs. The role name `org_admin` is not enough — check `account.me().permissions`.
 7. Subscribe required for chat (docs) vs alpha serving chat without subscribe (measured). Product policy: first talk joins People then subscribes; fail closed if that fails. App published list is the member-facing gate. Chat also *appeared* to work unsubscribed because the caller was always the subscribed admin — see §2.3.
-8. Docs describe `{org}:{persona}:{user}` as per-member, and the admin surfaces honour a `user_id`, but the conversation endpoints have no subject at all. Both cannot be true for a server holding one key. §2.3.
+8. [examples/support-copilot](https://engram-docs-alpha.netlify.app/examples/support-copilot) promises "per-member isolation, so one customer's conversation is invisible to another" while its sample program binds a single `ENGRAM_USER_ID`. Both are true only when each customer is a distinct authenticated member. Nothing on the site shows a server obtaining many member credentials — that omission is what cost us the leak. §2.3.
+9. [sdk/overview](https://engram-docs-alpha.netlify.app/sdk/overview) shows `EngramClient(org_id, f"{persona_id}:{user_id}")` for persona-private addressing; [sdk/tenants](https://engram-docs-alpha.netlify.app/sdk/tenants) and `llms.txt` both say that is a guaranteed 403. Do not build on the overview snippet.
 
 ---
 
@@ -257,4 +288,6 @@ The owner catalog on `/admin/persona` can create or link more than one persona, 
 
 Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
-App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. Engram-side per-member private memory does **not** hold yet, for the reason in §2.3. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.
+App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel.
+
+Two layers, and the lower one is deliberately independent of the upper: `may_ground` (`worker/src/worker/engram/tenant.py`) refuses any private row that is not the acting member's *and* refuses every private row when we did not authenticate as that member. It is unconditional, so a regression in the credential path degrades to shared-only instead of leaking. Three accounts are permanently degraded — `getcognora@`, `tauqueer655@`, and the API key owner — because an org admin cannot reset an Engram password. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TypeVar
 from uuid import UUID, uuid4
 
 import structlog
@@ -26,14 +26,22 @@ from worker.engram.errors import (
     UnauthorizedError,
     ValidationError,
 )
-from worker.engram.interface import ChatOutcome
+from worker.engram.interface import ChatOutcome, PersonaBrain, RetrieveOutcome
+from worker.engram.member_secret import (
+    MemberSecretError,
+    ciphertext_for_password,
+    decode_member_secret_key,
+    decrypt_member_secret,
+)
 from worker.engram.org_member import (
+    OrgMember,
     ensure_org_member,
     open_org_roster,
     skip_org_join,
 )
 from worker.engram.registry import BrainRegistry
-from worker.engram.tenant import is_own_private_pool
+from worker.engram.session import MemberSessionCache, call_as_member, member_brain
+from worker.engram.tenant import is_own_private_pool, may_ground
 from worker.engram.user_id import persona_engine_user_id
 from worker.notices import publish_notice, publish_trace
 from worker.observe.fields import turn_log_fields
@@ -51,6 +59,7 @@ from worker.persistence.sessions import (
     set_user_engram_id,
     user_email,
     user_engram_id,
+    user_engram_member_secret,
 )
 from worker.persistence.subscriptions import (
     has_active_subscription,
@@ -84,6 +93,8 @@ from worker.turn.identity import (
 )
 
 log = structlog.get_logger(__name__)
+
+TOp = TypeVar("TOp")
 
 _BRAIN_HTTP: list[tuple[type[BrainError], int]] = [
     (NotSubscribedError, 403),
@@ -149,6 +160,12 @@ class TurnPlan:
     reframe_ms: int | None = None
     reframe_first_token_ms: int | None = None
     spoken: str | None = None
+    retrieve_hits: int | None = None
+    retrieve_hits_grounded: int | None = None
+    retrieve_hits_dropped: int | None = None
+    member_authenticated: bool = False
+    engram_credential: str | None = None
+    app_user_id: UUID | None = None
     speaks: bool = field(init=False)
 
     def __post_init__(self) -> None:
@@ -173,6 +190,8 @@ class TurnRunner:
         self._settings = settings
         self._controller = Controller()
         self._brains = BrainRegistry(settings)
+        self._member_brains = BrainRegistry(settings)
+        self._sessions = MemberSessionCache(settings)
         # The write-back must not hold the reply's connection open, so it runs
         # on its own small pool once the words are already out.
         self._writers = ThreadPoolExecutor(
@@ -401,34 +420,79 @@ class TurnRunner:
             engram_user_id = engine_user_id
             brain = self._brains.get(engram_user_id)
 
-        mode = self._settings.brain_mode
+        brain, member_authenticated, credential = self._resolve_member_client(
+            app_user_id=app_user_id,
+            engram_user_id=engram_user_id,
+            email=email or "",
+        )
+        mode = self._conversation_mode(member_authenticated)
         memories: list[str] = []
+        hit_counts: tuple[int, int, int] | None = None
         outcome: ChatOutcome | BrainError
         try:
             if mode == "retrieve":
                 # Read memory and compose here. The controller still gates on
                 # whether anything grounded came back.
                 started_read = time.perf_counter()
-                found = brain.retrieve(
-                    engram_persona_id,
-                    text,
-                    top_k=self._settings.engram_retrieve_top_k,
+                found = self._run_member_op(
+                    brain,
+                    member_authenticated=member_authenticated,
+                    app_user_id=app_user_id,
+                    engram_user_id=engram_user_id,
+                    email=email or "",
+                    op=lambda active: active.retrieve(
+                        engram_persona_id,
+                        text,
+                        top_k=self._settings.engram_retrieve_top_k,
+                    ),
                 )
-                memories = [
-                    hit.text.strip()
-                    for hit in found.results
-                    if isinstance(hit.text, str) and hit.text.strip()
-                ]
-                outcome = ChatOutcome(
-                    messages=memories,
-                    text=self._settings.engram_message_join.join(memories),
-                    memories_used=[hit.raw for hit in found.results],
-                    session_id=prior_sid,
-                    raw=found.raw,
+                if found is None:
+                    member_authenticated = False
+                    credential = self._settings.engram_credential_org
+                    brain = self._brains.get(engram_user_id)
+                    found = brain.retrieve(
+                        engram_persona_id,
+                        text,
+                        top_k=self._settings.engram_retrieve_top_k,
+                    )
+                memories, outcome, hit_counts = self._ground_retrieve(
+                    found,
+                    engram_user_id=engram_user_id,
+                    prior_sid=prior_sid,
                     brain_ms=int((time.perf_counter() - started_read) * 1000),
+                    member_authenticated=member_authenticated,
                 )
             else:
-                outcome = brain.chat(engram_persona_id, text, session_id=prior_sid)
+                outcome = self._run_member_op(
+                    brain,
+                    member_authenticated=member_authenticated,
+                    app_user_id=app_user_id,
+                    engram_user_id=engram_user_id,
+                    email=email or "",
+                    op=lambda active: active.chat(
+                        engram_persona_id,
+                        text,
+                        session_id=prior_sid,
+                    ),
+                )
+                if outcome is None:
+                    member_authenticated = False
+                    credential = self._settings.engram_credential_org
+                    mode = self._conversation_mode(False)
+                    brain = self._brains.get(engram_user_id)
+                    started_read = time.perf_counter()
+                    found = brain.retrieve(
+                        engram_persona_id,
+                        text,
+                        top_k=self._settings.engram_retrieve_top_k,
+                    )
+                    memories, outcome, hit_counts = self._ground_retrieve(
+                        found,
+                        engram_user_id=engram_user_id,
+                        prior_sid=prior_sid,
+                        brain_ms=int((time.perf_counter() - started_read) * 1000),
+                        member_authenticated=False,
+                    )
         except BrainError as exc:
             outcome = exc
 
@@ -444,6 +508,9 @@ class TurnRunner:
                 history=history,
                 correlation_id=correlation_id,
                 mode=mode,
+                member_authenticated=member_authenticated,
+                engram_credential=credential,
+                app_user_id=app_user_id,
             )
             log.error(
                 "engram failed",
@@ -486,6 +553,12 @@ class TurnRunner:
             outcome=outcome,
             engram_user_id=engram_user_id,
             engram_persona_id=engram_persona_id,
+            retrieve_hits=None if hit_counts is None else hit_counts[0],
+            retrieve_hits_grounded=None if hit_counts is None else hit_counts[1],
+            retrieve_hits_dropped=None if hit_counts is None else hit_counts[2],
+            member_authenticated=member_authenticated,
+            engram_credential=credential,
+            app_user_id=app_user_id,
         )
 
     def speak(self, plan: TurnPlan) -> str:
@@ -652,6 +725,11 @@ class TurnRunner:
                     "reframe_first_token_ms": plan.reframe_first_token_ms,
                     "brain_mode": plan.mode,
                     "recorded": result.recorded,
+                    "retrieve_hits": plan.retrieve_hits,
+                    "retrieve_hits_grounded": plan.retrieve_hits_grounded,
+                    "retrieve_hits_dropped": plan.retrieve_hits_dropped,
+                    "member_authenticated": plan.member_authenticated,
+                    "engram_credential": plan.engram_credential,
                 },
             ),
         )
@@ -674,11 +752,11 @@ class TurnRunner:
                 reason="engram_join_skipped",
                 code=self._settings.failure_code_engram_join,
             )
-        engine_id = self._ensure_member_id(email)
-        engine_id = self._persist_engram_user_id(
+        engine_member = self._ensure_org_member(email)
+        engine_id = self._persist_engram_member(
             app_user_id,
             stored_engram_user_id,
-            engine_id,
+            engine_member,
         )
         granted = grant_persona_access(
             self._brains.get(engine_id),
@@ -687,11 +765,11 @@ class TurnRunner:
             engram_user_id=engine_id,
         )
         if granted.reason == "validation":
-            engine_id = self._ensure_member_id(email)
-            engine_id = self._persist_engram_user_id(
+            engine_member = self._ensure_org_member(email)
+            engine_id = self._persist_engram_member(
                 app_user_id,
                 stored_engram_user_id,
-                engine_id,
+                engine_member,
             )
             granted = grant_persona_access(
                 self._brains.get(engine_id),
@@ -719,7 +797,7 @@ class TurnRunner:
                 log.warning(self._settings.log_subscribe_failed)
         return engine_id
 
-    def _ensure_member_id(self, email: str) -> str:
+    def _ensure_org_member(self, email: str) -> OrgMember:
         try:
             with open_org_roster(self._settings) as roster:
                 return ensure_org_member(roster, self._settings, email=email)
@@ -732,18 +810,130 @@ class TurnRunner:
                 code=self._settings.failure_code_engram_join,
             ) from exc
 
-    def _persist_engram_user_id(
+    def _member_secret_key(self) -> bytes | None:
+        raw = self._settings.engram_member_secret_key
+        if raw is None:
+            return None
+        try:
+            return decode_member_secret_key(raw)
+        except MemberSecretError:
+            return None
+
+    def _load_member_password(self, app_user_id: UUID) -> str | None:
+        try:
+            with borrow(self._settings) as conn:
+                blob = user_engram_member_secret(conn, app_user_id)
+        except Exception:
+            return None
+        if blob is None:
+            return None
+        key = self._member_secret_key()
+        if key is None:
+            return None
+        try:
+            return decrypt_member_secret(blob, key=key)
+        except MemberSecretError:
+            log.warning(
+                self._settings.log_engram_credential_unavailable,
+                reason="decrypt_failed",
+            )
+            return None
+
+    def _resolve_member_client(
+        self,
+        *,
+        app_user_id: UUID,
+        engram_user_id: str,
+        email: str,
+    ) -> tuple[PersonaBrain, bool, str]:
+        org = self._brains.get(engram_user_id)
+        org_label = self._settings.engram_credential_org
+        if not self._settings.engram_member_session_auth:
+            return org, False, org_label
+        if not email.strip():
+            try:
+                with borrow(self._settings) as conn:
+                    loaded = user_email(conn, app_user_id)
+            except Exception:
+                loaded = None
+            email = loaded or ""
+        brain = member_brain(
+            self._sessions,
+            self._member_brains,
+            engram_user_id=engram_user_id,
+            email=email,
+            password_provider=lambda: self._load_member_password(app_user_id),
+        )
+        if brain is None:
+            return org, False, org_label
+        return brain, True, self._settings.engram_credential_member
+
+    def _conversation_mode(self, member_authenticated: bool) -> str:
+        if member_authenticated:
+            return self._settings.brain_mode
+        return "retrieve"
+
+    def _run_member_op(
+        self,
+        brain: PersonaBrain | None,
+        *,
+        member_authenticated: bool,
+        app_user_id: UUID,
+        engram_user_id: str,
+        email: str,
+        op: Callable[[PersonaBrain], TOp],
+    ) -> TOp | None:
+        if not member_authenticated:
+            if brain is None:
+                return None
+            return op(brain)
+        return call_as_member(
+            self._sessions,
+            self._member_brains,
+            engram_user_id=engram_user_id,
+            email=email,
+            password_provider=lambda: self._load_member_password(app_user_id),
+            op=op,
+        )
+
+    def _persist_engram_member(
         self,
         app_user_id: UUID,
         stored_engram_user_id: str,
-        engine_id: str,
+        member: OrgMember,
     ) -> str:
-        engine_id = persona_engine_user_id(engine_id)
-        if engine_id == persona_engine_user_id(stored_engram_user_id):
+        engine_id = persona_engine_user_id(member.user_id)
+        key = self._member_secret_key()
+        if member.password is not None and key is None:
+            log.warning(
+                self._settings.log_engram_credential_unavailable,
+                reason="secret_key_missing",
+                engram_user_id=engine_id,
+            )
+        ciphertext = ciphertext_for_password(member.password, key=key)
+        if (
+            member.password is not None
+            and key is not None
+            and ciphertext is None
+        ):
+            log.warning(
+                self._settings.log_engram_credential_unavailable,
+                reason="encrypt_failed",
+                engram_user_id=engine_id,
+            )
+        if (
+            engine_id == persona_engine_user_id(stored_engram_user_id)
+            and ciphertext is None
+        ):
             return engine_id
         try:
             with borrow(self._settings) as conn:
-                set_user_engram_id(conn, app_user_id, engine_id)
+                set_user_engram_id(
+                    conn,
+                    app_user_id,
+                    engine_id,
+                    member_secret=ciphertext,
+                )
                 conn.commit()
         except Exception as exc:
             log.warning(self._settings.log_engram_join_failed)
@@ -756,6 +946,11 @@ class TurnRunner:
         return engine_id
 
     def _should_write_back(self, plan: TurnPlan) -> bool:
+        # converse writes the authenticated caller's private pool. A degraded
+        # or flag-off turn is still the org key, so write-back stays off
+        # (docs/ENGRAM.md §2.3). Gated on this plan, not the global setting.
+        if not plan.member_authenticated:
+            return False
         # chat writes the caller's private pool itself; only retrieve owes one.
         if plan.mode != "retrieve":
             return False
@@ -795,17 +990,43 @@ class TurnRunner:
             entries.append(
                 (plan.spoken, self._settings.engram_converse_persona_speaker),
             )
-        brain = self._brains.get(plan.engram_user_id)
+        if not plan.member_authenticated or plan.app_user_id is None:
+            return
+        email = None
+        try:
+            with borrow(self._settings) as conn:
+                email = user_email(conn, plan.app_user_id)
+        except Exception:
+            log.warning(
+                "engram write-back skipped",
+                session_id=str(plan.session_id),
+                reason="unauthenticated",
+            )
+            return
         for body, speaker in entries:
             if not body.strip():
                 continue
             try:
-                brain.converse(
-                    plan.engram_persona_id,
-                    body,
-                    session_id=sid,
-                    speaker=speaker,
+                written = self._run_member_op(
+                    None,
+                    member_authenticated=True,
+                    app_user_id=plan.app_user_id,
+                    engram_user_id=plan.engram_user_id,
+                    email=email or "",
+                    op=lambda active, text=body, who=speaker: active.converse(
+                        plan.engram_persona_id,
+                        text,
+                        session_id=sid,
+                        speaker=who,
+                    ),
                 )
+                if written is None:
+                    log.warning(
+                        "engram write-back skipped",
+                        session_id=str(plan.session_id),
+                        reason="unauthenticated",
+                    )
+                    return
             except BrainError as exc:
                 log.warning(
                     "engram write-back failed",
@@ -822,6 +1043,53 @@ class TurnRunner:
                 )
                 return
 
+    def _ground_retrieve(
+        self,
+        found: RetrieveOutcome,
+        *,
+        engram_user_id: str,
+        prior_sid: str | None,
+        brain_ms: int,
+        member_authenticated: bool,
+    ) -> tuple[list[str], ChatOutcome, tuple[int, int, int]]:
+        """Keep only retrieve rows this member is allowed to hear.
+
+        `memories` and `memories_used` are built from the same filtered list so
+        a dropped row cannot still be persisted and re-served.
+        """
+        grounded = [
+            hit
+            for hit in found.results
+            if may_ground(
+                hit.tenant,
+                engram_user_id=engram_user_id,
+                member_authenticated=member_authenticated,
+            )
+        ]
+        hits = len(found.results)
+        kept = len(grounded)
+        dropped = hits - kept
+        log.info(
+            self._settings.log_retrieve_grounded_event,
+            retrieve_hits=hits,
+            retrieve_hits_grounded=kept,
+            retrieve_hits_dropped=dropped,
+        )
+        memories = [
+            hit.text.strip()
+            for hit in grounded
+            if isinstance(hit.text, str) and hit.text.strip()
+        ]
+        outcome = ChatOutcome(
+            messages=memories,
+            text=self._settings.engram_message_join.join(memories),
+            memories_used=[hit.raw for hit in grounded],
+            session_id=prior_sid,
+            raw=found.raw,
+            brain_ms=brain_ms,
+        )
+        return memories, outcome, (hits, kept, dropped)
+
     def retrieve_memories(
         self,
         *,
@@ -830,18 +1098,46 @@ class TurnRunner:
         engram_persona_id: str,
     ) -> list[dict[str, str | None]]:
         bound = self._bound_engram_user_id(app_user_id, engram_user_id)
-        brain = self._brains.get(bound)
-        outcome = brain.retrieve(
-            engram_persona_id,
-            self._settings.memory_panel_query,
-            top_k=self._settings.memory_panel_top_k,
+        email = ""
+        try:
+            with borrow(self._settings) as conn:
+                loaded = user_email(conn, app_user_id)
+            email = loaded or ""
+        except Exception:
+            email = ""
+        brain, authenticated, _credential = self._resolve_member_client(
+            app_user_id=app_user_id,
+            engram_user_id=bound,
+            email=email,
         )
-        # retrieve answers from the shared pool as well. This panel says what
-        # the persona remembers about *this* member, so only their own private
-        # pool belongs here — and nobody else's ever can.
+        outcome = self._run_member_op(
+            brain,
+            member_authenticated=authenticated,
+            app_user_id=app_user_id,
+            engram_user_id=bound,
+            email=email,
+            op=lambda active: active.retrieve(
+                engram_persona_id,
+                self._settings.memory_panel_query,
+                top_k=self._settings.memory_panel_top_k,
+            ),
+        )
+        if outcome is None:
+            return []
+        # retrieve answers from the shared pool as well. This panel is what
+        # the persona remembers about *this* member, so shared teach stays off
+        # it. Ownership uses `may_ground` — the same helper as the answer path,
+        # so a private row is trusted only when we reached Engram as that
+        # member — then `is_own_private_pool` keeps the panel to their rows.
         memories: list[dict[str, str | None]] = []
         for hit in outcome.results:
             if not hit.text:
+                continue
+            if not may_ground(
+                hit.tenant,
+                engram_user_id=bound,
+                member_authenticated=authenticated,
+            ):
                 continue
             if not is_own_private_pool(hit.tenant, engram_user_id=bound):
                 continue
@@ -879,9 +1175,37 @@ class TurnRunner:
             reason="identity_mismatch",
         )
 
+    def forget_member_session(self, engram_user_id: str) -> None:
+        """Drop a cached session JWT so delete-my-data cannot keep talking as them."""
+        self._sessions.drop(engram_user_id)
+        self._member_brains.forget(engram_user_id)
+
+    def forget_grant_attempts(
+        self,
+        *,
+        app_user_id: UUID,
+        persona_id: UUID | None = None,
+    ) -> None:
+        """Drop cached subscribe attempts after delete-my-data.
+
+        Called even when Engram forget/unsubscribe is partial, so a member who
+        talks again is not stuck on a stale (user, persona) pair until restart.
+        """
+        user_key = str(app_user_id)
+        if persona_id is None:
+            self._grant_tried = {
+                pair for pair in self._grant_tried if pair[0] != user_key
+            }
+            return
+        self._grant_tried.discard((user_key, str(persona_id)))
+
+    def forget_grant_attempts_all(self) -> None:
+        self._grant_tried.clear()
+
     def close(self) -> None:
         self._writers.shutdown(wait=True)
         self._brains.close()
+        self._member_brains.close()
 
     def _persist(
         self,

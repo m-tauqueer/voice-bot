@@ -60,7 +60,7 @@ class GroundedBrain:
         return RetrieveOutcome(
             results=[
                 RetrieveHit(
-                    tenant="shared",
+                    tenant="probe-org:probe-persona",
                     text="A remembered fact.",
                     raw={"text": "A remembered fact."},
                 )
