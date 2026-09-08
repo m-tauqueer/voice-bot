@@ -1,3 +1,6 @@
+import json
+
+import httpx
 import pytest
 from engram_sdk.errors import ForbiddenError as SdkForbiddenError
 from engram_sdk.errors import ServerError as SdkServerError
@@ -183,3 +186,217 @@ def test_map_sdk_error_statuses() -> None:
     assert isinstance(retryable, app.RetryableReadError)
     server = _map_sdk_error(SdkServerError(500, "down"))
     assert isinstance(server, app.ServerError)
+
+
+def _scoped_settings(settings: WorkerSettings) -> WorkerSettings:
+    return settings.model_copy(
+        update={
+            "engram_api_key": "egm_org_key",
+            "engram_org_id": "org1",
+            "engram_base_url": "https://engram.test",
+            "engram_api_version_path": "/v1",
+        },
+    )
+
+
+def _capture_http(handler: object) -> httpx.Client:
+    return httpx.Client(
+        base_url="https://engram.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_retrieve_scoped_posts_query_top_k_scope_and_never_user_id(
+    settings: WorkerSettings,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        seen["authorization"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "scope": "private",
+                "tenants": ["org1:persona:user-1"],
+                "results": [
+                    {
+                        "tenant": "org1:persona:user-1",
+                        "text": "I kept a diary",
+                    }
+                ],
+            },
+        )
+
+    loaded = _scoped_settings(settings)
+    client = FakeClient()
+    brain = EngramBrain(
+        loaded,
+        "user-1",
+        client=client,
+        api_key="jwt-member",
+    )
+    brain._owned_http = _capture_http(handler)
+    brain._owns_http = True
+    try:
+        outcome = brain.retrieve_scoped(
+            "p1",
+            "what do you remember",
+            scope=loaded.engram_retrieve_scope_private,
+            top_k=loaded.engram_retrieve_top_k_private,
+        )
+        assert seen["method"] == "POST"
+        assert seen["url"] == "https://engram.test/v1/orgs/org1/personas/p1/retrieve"
+        assert seen["authorization"] == "Bearer jwt-member"
+        assert seen["body"] == {
+            "query": "what do you remember",
+            "top_k": 25,
+            "scope": loaded.engram_retrieve_scope_private,
+        }
+        assert "user_id" not in seen["body"]
+        assert "egm_org_key" not in json.dumps(seen)
+        assert private_pool_owner(outcome.results[0].tenant) == "user-1"
+        assert outcome.results[0].text == "I kept a diary"
+        assert client.personas.retrieves == []
+    finally:
+        brain.close()
+
+
+def test_retrieve_scoped_org_brain_uses_org_key_not_member_token(
+    settings: WorkerSettings,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["authorization"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"scope": "shared", "tenants": [], "results": []},
+        )
+
+    loaded = _scoped_settings(settings)
+    brain = EngramBrain(loaded, "user-1", client=FakeClient())
+    brain._owned_http = _capture_http(handler)
+    brain._owns_http = True
+    try:
+        brain.retrieve_scoped(
+            "p1",
+            "q",
+            scope=loaded.engram_retrieve_scope_shared,
+            top_k=7,
+        )
+        assert seen["authorization"] == "Bearer egm_org_key"
+        assert seen["body"] == {
+            "query": "q",
+            "top_k": 7,
+            "scope": loaded.engram_retrieve_scope_shared,
+        }
+        assert "user_id" not in seen["body"]
+    finally:
+        brain.close()
+
+
+def test_retrieve_scoped_sends_typo_scope_and_maps_422(
+    settings: WorkerSettings,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            422,
+            json={
+                "detail": [
+                    {
+                        "type": "enum",
+                        "loc": ["body", "scope"],
+                        "msg": "extra_forbidden",
+                    }
+                ]
+            },
+        )
+
+    loaded = _scoped_settings(settings)
+    brain = EngramBrain(loaded, "user-1", client=FakeClient())
+    brain._owned_http = _capture_http(handler)
+    brain._owns_http = True
+    try:
+        with pytest.raises(app.ValidationError) as caught:
+            brain.retrieve_scoped(
+                "p1",
+                "q",
+                scope="not-a-scope",
+                top_k=5,
+            )
+        assert seen["body"] == {
+            "query": "q",
+            "top_k": 5,
+            "scope": "not-a-scope",
+        }
+        assert caught.value.status == 422
+    finally:
+        brain.close()
+
+
+def test_post_persona_retrieve_refuses_user_id(settings: WorkerSettings) -> None:
+    loaded = _scoped_settings(settings)
+    brain = EngramBrain(loaded, "user-1", client=FakeClient())
+    try:
+        with pytest.raises(app.BrainError, match="user_id"):
+            brain._post_persona_retrieve(
+                "persona-1",
+                {
+                    "query": "q",
+                    "top_k": 5,
+                    "scope": loaded.engram_retrieve_scope_private,
+                    "user_id": "user-1",
+                },
+            )
+    finally:
+        brain.close()
+
+
+def test_retrieve_scoped_retries_then_maps_error(
+    settings: WorkerSettings,
+    monkeypatch,
+) -> None:
+    settings.engram_read_max_retries = 1
+    monkeypatch.setattr("worker.engram.engram_brain.time.sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(503, json={"detail": "busy"})
+        return httpx.Response(401, json={"detail": "no key"})
+
+    loaded = _scoped_settings(settings)
+    loaded.engram_read_max_retries = 1
+    brain = EngramBrain(loaded, "user-1", client=FakeClient())
+    brain._owned_http = _capture_http(handler)
+    brain._owns_http = True
+    try:
+        with pytest.raises(app.UnauthorizedError):
+            brain.retrieve_scoped(
+                "p1",
+                "q",
+                scope=loaded.engram_retrieve_scope_shared,
+                top_k=5,
+            )
+        assert calls["n"] == 2
+    finally:
+        brain.close()
+
+
+def test_retrieve_still_uses_sdk_path(settings: WorkerSettings) -> None:
+    client = FakeClient()
+    brain = EngramBrain(settings, "user-1", client=client)
+    try:
+        brain.retrieve("persona-1", "q", top_k=3)
+        assert client.personas.retrieves == [("persona-1", "q", 3)]
+    finally:
+        brain.close()
+

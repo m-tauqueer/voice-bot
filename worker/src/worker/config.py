@@ -117,6 +117,9 @@ class WorkerSettings(BaseSettings):
             "correlation_id,session_id,turn_ids,action,reasons,"
             "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,"
             "retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,"
+            "retrieve_hits_shared,retrieve_hits_shared_grounded,"
+            "retrieve_hits_shared_dropped,retrieve_hits_private,"
+            "retrieve_hits_private_grounded,retrieve_hits_private_dropped,"
             "member_authenticated,engram_credential"
         ),
         min_length=1,
@@ -184,6 +187,14 @@ class WorkerSettings(BaseSettings):
     # Refresh a member session token this long before expires_in elapses.
     engram_member_token_refresh_skew_seconds: int = Field(default=1800, ge=0)
     engram_retrieve_top_k: int = Field(default=25, gt=0)
+    # Prefix the SDK discovers from /config. Our own scoped retrieve posts
+    # need it explicitly. Unknown scope values must reach Engram (422).
+    engram_api_version_path: str = Field(default="/v1", min_length=1)
+    engram_retrieve_scope_shared: str = Field(default="shared", min_length=1)
+    engram_retrieve_scope_private: str = Field(default="private", min_length=1)
+    engram_retrieve_scope_both: str = Field(default="both", min_length=1)
+    engram_retrieve_top_k_shared: int = Field(default=25, gt=0)
+    engram_retrieve_top_k_private: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
     engram_converse_writeback: bool = Field(default=True)
@@ -303,6 +314,23 @@ class WorkerSettings(BaseSettings):
     reframe_system_prompt: str | None = None
     answer_system_prompt: str | None = None
     answer_max_tokens: int = Field(default=320, gt=0)
+    answer_payload_persona_memories_key: str = Field(
+        default="persona_memories",
+        min_length=1,
+    )
+    answer_payload_caller_memories_key: str = Field(
+        default="caller_memories",
+        min_length=1,
+    )
+    answer_payload_history_key: str = Field(default="history", min_length=1)
+    answer_payload_question_key: str = Field(default="question", min_length=1)
+    answer_payload_voice_config_key: str = Field(
+        default="voice_config",
+        min_length=1,
+    )
+    memory_ref_pool_key: str = Field(default="pool", min_length=1)
+    memory_ref_pool_persona: str = Field(default="persona", min_length=1)
+    memory_ref_pool_caller: str = Field(default="caller", min_length=1)
     byo_llm_chat_completions_path: str = Field(
         default="/v1/chat/completions",
         min_length=1,
@@ -426,6 +454,35 @@ class WorkerSettings(BaseSettings):
         if not value.startswith("/"):
             raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
+
+    @field_validator("engram_api_version_path")
+    @classmethod
+    def engram_version_path_absolute(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("ENGRAM_API_VERSION_PATH must start with /")
+        return value
+
+    @model_validator(mode="after")
+    def distinct_answer_and_memory_ref_keys(self) -> WorkerSettings:
+        payload = {
+            self.answer_payload_persona_memories_key,
+            self.answer_payload_caller_memories_key,
+            self.answer_payload_history_key,
+            self.answer_payload_question_key,
+            self.answer_payload_voice_config_key,
+        }
+        if len(payload) != 5:
+            raise ValueError(
+                "ANSWER_PAYLOAD_PERSONA_MEMORIES_KEY, "
+                "ANSWER_PAYLOAD_CALLER_MEMORIES_KEY, "
+                "ANSWER_PAYLOAD_HISTORY_KEY, ANSWER_PAYLOAD_QUESTION_KEY, and "
+                "ANSWER_PAYLOAD_VOICE_CONFIG_KEY must be distinct"
+            )
+        if self.memory_ref_pool_persona == self.memory_ref_pool_caller:
+            raise ValueError(
+                "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER"
+            )
+        return self
 
     @model_validator(mode="after")
     def distinct_persona_voice_keys(self) -> WorkerSettings:

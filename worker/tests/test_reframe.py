@@ -63,32 +63,89 @@ def test_reframe_rejects_empty_messages(settings: WorkerSettings) -> None:
         reframer._request(["", "  "], [], {})
 
 
-def test_answer_request_uses_memories_as_only_facts(
+def test_answer_request_uses_labelled_lists_as_only_facts(
     settings: WorkerSettings,
 ) -> None:
     answerer = Answerer(settings, DummyClient())
     _, messages = answerer._request(
-        ["I taught in Oxford."],
-        [HistoryTurn(speaker="user", text="Where did you teach?")],
-        "Where did you teach?",
-        {},
+        persona_memories=["I taught in Oxford."],
+        caller_memories=["They sail."],
+        history=[HistoryTurn(speaker="user", text="Where did you teach?")],
+        question="Where did you teach?",
+        voice_config={},
     )
     assert messages[0]["content"] == DEFAULT_ANSWER_SYSTEM_PROMPT
     payload = json.loads(messages[1]["content"])
     assert set(payload.keys()) == {
-        "memories",
-        "history",
-        "question",
-        "voice_config",
+        settings.answer_payload_persona_memories_key,
+        settings.answer_payload_caller_memories_key,
+        settings.answer_payload_history_key,
+        settings.answer_payload_question_key,
+        settings.answer_payload_voice_config_key,
     }
-    assert payload["memories"] == ["I taught in Oxford."]
-    assert payload["question"] == "Where did you teach?"
+    assert payload[settings.answer_payload_persona_memories_key] == [
+        "I taught in Oxford.",
+    ]
+    assert payload[settings.answer_payload_caller_memories_key] == ["They sail."]
+    assert payload[settings.answer_payload_question_key] == "Where did you teach?"
 
 
-def test_answer_rejects_empty_memories(settings: WorkerSettings) -> None:
+def test_answer_rejects_both_lists_empty(settings: WorkerSettings) -> None:
     answerer = Answerer(settings, DummyClient())
     with pytest.raises(ReframeEmptyInputError):
-        answerer._request([], [], "hello", {})
+        answerer._request(
+            persona_memories=[],
+            caller_memories=["", "  "],
+            history=[],
+            question="hello",
+            voice_config={},
+        )
+
+
+def test_answer_keeps_empty_caller_list_when_persona_has_facts(
+    settings: WorkerSettings,
+) -> None:
+    answerer = Answerer(settings, DummyClient())
+    _, messages = answerer._request(
+        persona_memories=["I taught in Oxford."],
+        caller_memories=[],
+        history=[],
+        question="hello",
+        voice_config={},
+    )
+    payload = json.loads(messages[1]["content"])
+    assert payload[settings.answer_payload_persona_memories_key] == [
+        "I taught in Oxford.",
+    ]
+    assert payload[settings.answer_payload_caller_memories_key] == []
+
+
+def test_answer_payload_keys_come_from_config(settings: WorkerSettings) -> None:
+    loaded = settings.model_copy(
+        update={
+            "answer_payload_persona_memories_key": "p_facts",
+            "answer_payload_caller_memories_key": "c_facts",
+            "answer_payload_history_key": "turns",
+            "answer_payload_question_key": "ask",
+            "answer_payload_voice_config_key": "voice",
+        },
+    )
+    answerer = Answerer(loaded, DummyClient())
+    _, messages = answerer._request(
+        persona_memories=["persona"],
+        caller_memories=["caller"],
+        history=[],
+        question="q",
+        voice_config={"pace": "calm"},
+    )
+    payload = json.loads(messages[1]["content"])
+    assert set(payload.keys()) == {
+        "p_facts",
+        "c_facts",
+        "turns",
+        "ask",
+        "voice",
+    }
 
 
 def test_translate_openai_errors() -> None:
@@ -163,10 +220,11 @@ def test_answer_returns_spoken_text(settings: WorkerSettings) -> None:
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     spoken = Answerer(settings, client).answer(
-        ["I taught in Oxford."],
-        [],
-        "Where?",
-        {},
+        persona_memories=["I taught in Oxford."],
+        caller_memories=[],
+        history=[],
+        question="Where?",
+        voice_config={},
     )
     assert spoken == "Oxford"
 

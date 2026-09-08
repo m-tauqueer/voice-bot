@@ -57,6 +57,7 @@ addopts = [
     "--cov=worker.engram.session",
     "--cov=worker.engram.registry",
     "--cov=worker.engram.engram_brain",
+    "--cov=worker.engram.scope_contract",
     "--cov=worker.admin.service",
     "--cov=worker.admin.confirm",
     "--cov=worker.admin.store",

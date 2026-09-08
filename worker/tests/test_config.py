@@ -30,6 +30,37 @@ def test_boot_accepts_retrieve_while_member_session_auth_is_false(
     assert loaded.engram_member_secret_key is None
 
 
+def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
+    settings: WorkerSettings,
+) -> None:
+    loaded = WorkerSettings(_env_file=None, **settings.model_dump())
+    assert loaded.engram_api_version_path == "/v1"
+    assert loaded.engram_retrieve_scope_shared == "shared"
+    assert loaded.engram_retrieve_scope_private == "private"
+    assert loaded.engram_retrieve_scope_both == "both"
+    assert loaded.engram_retrieve_top_k_shared == 25
+    assert loaded.engram_retrieve_top_k_private == 25
+    assert loaded.answer_payload_persona_memories_key == "persona_memories"
+    assert loaded.answer_payload_caller_memories_key == "caller_memories"
+    assert loaded.memory_ref_pool_key == "pool"
+    assert loaded.memory_ref_pool_persona == "persona"
+    assert loaded.memory_ref_pool_caller == "caller"
+    kwargs = settings.model_dump()
+    kwargs["engram_api_version_path"] = "v1"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "ENGRAM_API_VERSION_PATH" in str(caught.value)
+
+
+def test_answer_payload_keys_must_be_distinct(settings: WorkerSettings) -> None:
+    kwargs = settings.model_dump()
+    kwargs["answer_payload_persona_memories_key"] = "memories"
+    kwargs["answer_payload_caller_memories_key"] = "memories"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "ANSWER_PAYLOAD" in str(caught.value)
+
+
 def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(
     settings: WorkerSettings,
 ) -> None:

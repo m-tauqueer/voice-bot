@@ -14,6 +14,7 @@ from worker.engram.engram_brain import EngramBrain
 from worker.engram.errors import BrainError, ForbiddenError
 from worker.engram.factory import create_org_engram
 from worker.engram.org_member import SdkOrgRoster
+from worker.engram.scope_contract import run_scope_contract
 from worker.engram.session import MemberSessionCache
 from worker.engram.tenant import is_own_private_pool, private_pool_owner
 from worker.engram.user_id import persona_engine_user_id
@@ -98,7 +99,7 @@ def _probe_member_session(settings: WorkerSettings, write_id: str) -> int:
         token = cache.token(
             engram_user_id=member_id,
             email=email,
-            password=password,
+            password_provider=lambda: password,
         )
         if token is None:
             print("FAIL: auth.login did not mint a token", file=sys.stderr)
@@ -143,10 +144,11 @@ def _probe_member_session(settings: WorkerSettings, write_id: str) -> int:
             session_id=spoken.session_id,
             speaker=settings.engram_converse_user_speaker,
         )
-        found = member_brain.retrieve(
+        found = member_brain.retrieve_scoped(
             write_id,
             marker,
-            top_k=settings.engram_retrieve_top_k,
+            scope=settings.engram_retrieve_scope_private,
+            top_k=settings.engram_retrieve_top_k_private,
         )
         own_hits = [
             hit
@@ -222,6 +224,10 @@ def main() -> int:
             "retrieve",
             lambda: brain.retrieve(persona.id, "who are you"),
         )
+        code, message = run_scope_contract(settings)
+        print(message)
+        if code != 0:
+            return code
         if not settings.probe_persona_id:
             print(f"chat=SKIP {settings.probe_write_skip}")
             print("member_session=SKIP PROBE_PERSONA_ID is unset")

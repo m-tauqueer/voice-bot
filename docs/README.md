@@ -34,6 +34,7 @@ Roles follow [Diátaxis](https://diataxis.fr): tutorials teach, how-to guides ge
 | [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) | Explanation: leak research | That incident’s facts change |
 | [ENGRAM_MEMBER_AUTH_REPORT.md](ENGRAM_MEMBER_AUTH_REPORT.md) | Explanation: auth measurements | Re-measured |
 | [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) | How-to: named plan | Tauqueer names a part from that file |
+| [ENGRAM_SCOPE_ISOLATION.md](ENGRAM_SCOPE_ISOLATION.md) | How-to: named plan | Tauqueer names a part from that file |
 | [PHASE_PLAN.md](PHASE_PLAN.md) | Reference: current vs shipped vs later | The current-work file changes |
 | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | How-to: **current named parts** | A part is added, split, or locked |
 | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) | How-to leftover: persona sittings in §4 | A leftover sitting passes or is dropped |

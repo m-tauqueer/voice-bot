@@ -128,8 +128,13 @@ def main() -> int:
                 failed += 1
                 continue
             timings[mode].append(first_ms)
-            grounding = len(plan.memories) if mode == "retrieve" else len(
-                plan.outcome.messages if plan.outcome else []
+            grounding = (
+                f"{len(plan.persona_memories)} persona / "
+                f"{len(plan.caller_memories)} caller"
+                if mode == "retrieve"
+                else str(
+                    len(plan.outcome.messages if plan.outcome else []),
+                )
             )
             engram_s = (plan.brain_ms or 0) / 1000
             print(

@@ -87,6 +87,20 @@ def test_null_secret_never_logs_in(settings: WorkerSettings) -> None:
     assert login.calls == []
 
 
+def test_token_requires_password_provider_not_password(
+    settings: WorkerSettings,
+) -> None:
+    login = _Login()
+    cache = _cache(settings, login)
+    with pytest.raises(TypeError):
+        cache.token(  # type: ignore[call-arg]
+            engram_user_id="member-1",
+            email="a@example.com",
+            password="secret",
+        )
+    assert login.calls == []
+
+
 def test_mints_once_and_reuses_within_lifetime(settings: WorkerSettings) -> None:
     login = _Login(tokens=[("tok-1", 43200)])
     cache = _cache(settings, login)

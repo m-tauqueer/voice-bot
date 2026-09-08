@@ -44,6 +44,9 @@ class DeadBrain:
     def retrieve(self, *_args: object, **_kwargs: object) -> RetrieveOutcome:
         raise ServerError("connection refused", status=503)
 
+    def retrieve_scoped(self, *_args: object, **_kwargs: object) -> RetrieveOutcome:
+        raise ServerError("connection refused", status=503)
+
     def chat(self, *_args: object, **_kwargs: object) -> object:
         raise ServerError("connection refused", status=503)
 
@@ -67,6 +70,9 @@ class GroundedBrain:
             ],
             raw={},
         )
+
+    def retrieve_scoped(self, *_args: object, **_kwargs: object) -> RetrieveOutcome:
+        return self.retrieve()
 
     def chat(self, *_args: object, **_kwargs: object) -> ChatOutcome:
         return ChatOutcome(

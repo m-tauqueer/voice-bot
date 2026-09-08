@@ -70,6 +70,14 @@ function privateOwnersFromMemoriesUsed(memoriesUsed: unknown): string[] {
   return owners;
 }
 
+function memoryRefPool(row: unknown, key: string): string | null {
+  if (!row || typeof row !== "object") {
+    return null;
+  }
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 function ownsEveryPrivateRow(tenants: Iterable<string>, engramUserId: string) {
   return [...tenants].every(
     (tenant) =>
@@ -499,8 +507,15 @@ try {
         let otherLeaked = false;
         let ownerOwned = true;
         let otherOwned = true;
+        let labelled = 0;
+        let privateMislabelled = false;
+        let sharedMislabelled = false;
+        const poolKey = config.MEMORY_REF_POOL_KEY;
+        const callerPool = config.MEMORY_REF_POOL_CALLER;
+        const personaPool = config.MEMORY_REF_POOL_PERSONA;
         for (const row of grounded) {
-          const owners = privateOwnersFromMemoriesUsed(row.memories_used);
+          const memoriesUsed = row.memories_used;
+          const owners = privateOwnersFromMemoriesUsed(memoriesUsed);
           if (
             personaEngineUserId(row.engram_user_id) ===
             personaEngineUserId(owner.engram_user_id)
@@ -535,6 +550,28 @@ try {
               otherLeaked = true;
             }
           }
+          if (!Array.isArray(memoriesUsed)) {
+            continue;
+          }
+          for (const memory of memoriesUsed) {
+            const pool = memoryRefPool(memory, poolKey);
+            if (pool === null) {
+              continue;
+            }
+            labelled += 1;
+            const tenant = (memory as { tenant?: unknown }).tenant;
+            const privateOwner = privateEngramUserId(tenant);
+            if (privateOwner !== null && pool !== callerPool) {
+              privateMislabelled = true;
+            }
+            if (
+              typeof tenant === "string" &&
+              tenant.split(":").length === 2 &&
+              pool !== personaPool
+            ) {
+              sharedMislabelled = true;
+            }
+          }
         }
         check("turn_grounding_owner_private_rows_are_the_owners", ownerOwned);
         check(
@@ -543,6 +580,20 @@ try {
         );
         check("turn_grounding_owner_never_grounded_on_other", !ownerLeaked);
         check("turn_grounding_other_never_grounded_on_owner", !otherLeaked);
+        if (labelled === 0) {
+          console.log(
+            "turn_grounding_pool_labels=SKIP (no pool field on memory_refs yet)",
+          );
+        } else {
+          check(
+            "turn_grounding_private_rows_are_caller_memories",
+            !privateMislabelled,
+          );
+          check(
+            "turn_grounding_shared_rows_are_persona_memories",
+            !sharedMislabelled,
+          );
+        }
       }
     }
 

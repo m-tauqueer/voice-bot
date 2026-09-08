@@ -600,7 +600,7 @@ const envFileSchema = z.object({
       .string()
       .min(1)
       .default(
-        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,member_authenticated,engram_credential",
+        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,retrieve_hits_shared,retrieve_hits_shared_grounded,retrieve_hits_shared_dropped,retrieve_hits_private,retrieve_hits_private_grounded,retrieve_hits_private_dropped,member_authenticated,engram_credential",
       ),
   ),
   LOG_TURN_EVENT: z.preprocess(
@@ -796,6 +796,18 @@ const envFileSchema = z.object({
   MEMORY_PANEL_NO_PERSONA: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("session not found"),
+  ),
+  MEMORY_REF_POOL_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("pool"),
+  ),
+  MEMORY_REF_POOL_PERSONA: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("persona"),
+  ),
+  MEMORY_REF_POOL_CALLER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("caller"),
   ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
@@ -1352,6 +1364,13 @@ export function loadGatewayConfig(
     validateStatusCopy(parsed.data);
     validateStatusApiPath(parsed.data);
     validatePersonaVoiceKeys(parsed.data);
+    if (
+      parsed.data.MEMORY_REF_POOL_PERSONA === parsed.data.MEMORY_REF_POOL_CALLER
+    ) {
+      throw new Error(
+        "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER",
+      );
+    }
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",

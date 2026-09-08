@@ -16,7 +16,7 @@ Speech today: Deepgram Voice Agent (Nova-3 STT + Aura-2 TTS + barge-in) with our
 
 ## What already works
 
-Typed chat, spoken Aura calls, personal `/dashboard`, owner `/admin` (create/link, teach, ingest, publish, destroy), waitlist, quotas, consent/export/delete, `/status`, isolation probes. Personas are built end to end. Engram-side per-member private memory works (8 Sep 2026): each member authenticates with their own session token; a member we cannot credential degrades to shared-only, never the key owner’s private pool.
+Typed chat, spoken Aura calls, personal `/dashboard`, owner `/admin` (create/link, teach, ingest, publish, destroy), waitlist, quotas, consent/export/delete, `/status`, isolation probes. Personas are built end to end. Engram-side per-member private memory works (8 Sep 2026): each member authenticates with their own session token; a member we cannot credential degrades to shared-only, never the key owner’s private pool. **Private recall on the default brain was restored 9 Sep 2026** after Engram 0.5.0 made unscoped retrieve shared-only: two parallel scoped reads, labelled `persona_memories` / `caller_memories` for the answerer, private-only memory panel. Live `/chat` and `/voice` sittings for that read path are still outstanding.
 
 History and measured latency: [SHIPPED.md](SHIPPED.md). Leftover live sittings from personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
 
