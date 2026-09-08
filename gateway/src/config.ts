@@ -600,7 +600,7 @@ const envFileSchema = z.object({
       .string()
       .min(1)
       .default(
-        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,retrieve_hits_shared,retrieve_hits_shared_grounded,retrieve_hits_shared_dropped,retrieve_hits_private,retrieve_hits_private_grounded,retrieve_hits_private_dropped,member_authenticated,engram_credential",
+        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,retrieve_hits_shared,retrieve_hits_shared_grounded,retrieve_hits_shared_dropped,retrieve_hits_private,retrieve_hits_private_grounded,retrieve_hits_private_dropped,member_authenticated,engram_credential,retrieve_scope,retrieve_scope_reason",
       ),
   ),
   LOG_TURN_EVENT: z.preprocess(

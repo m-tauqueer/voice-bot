@@ -1,11 +1,13 @@
-from threading import Barrier
+from threading import Barrier, Event
+from time import perf_counter
 from uuid import uuid4
 
 from worker.config import WorkerSettings
 from worker.controller.decision import Action, Decision, ReasonCode
 from worker.engram.interface import RetrieveHit, RetrieveOutcome
+from worker.engram.scope_router import ScopeDecision
 from worker.observe.fields import turn_log_fields
-from worker.turn.service import TurnPlan, TurnRunner
+from worker.turn.service import TurnPlan, TurnRunner, _persona_identity
 
 ORG = "100912164da2419885314c9fdb5358b7"
 PERSONA = "3a07018eb5c2483ab80f07e90488b5f4"
@@ -182,6 +184,8 @@ def test_retrieve_counts_are_allowlisted_and_text_is_not(
             "retrieve_hits_private_dropped": 15,
             "member_authenticated": False,
             "engram_credential": "org",
+            "retrieve_scope": "both",
+            "retrieve_scope_reason": "disabled",
             "text": "should never be logged",
         },
     )
@@ -192,6 +196,8 @@ def test_retrieve_counts_are_allowlisted_and_text_is_not(
     assert fields["retrieve_hits_private"] == 15
     assert fields["member_authenticated"] is False
     assert fields["engram_credential"] == "org"
+    assert fields["retrieve_scope"] == "both"
+    assert fields["retrieve_scope_reason"] == "disabled"
     assert "text" not in fields
 
 
@@ -276,6 +282,7 @@ def _retrieve_plan() -> TurnPlan:
             hints={},
         ),
         prior_sid="sess-1",
+        persona_identity={},
         voice_config={},
         history=[],
         correlation_id=uuid4(),
@@ -685,6 +692,94 @@ def test_authenticated_retrieves_run_shared_and_private_together(
         runner.close()
 
 
+def test_persona_identity_comes_from_the_catalog_row(
+    settings: WorkerSettings,
+) -> None:
+    """Engram grounds `chat` on name/description; retrieve must match it."""
+    identity = _persona_identity(
+        {
+            "display_name": "Caleb Friesen ",
+            "description": " A Canadian tech journalist and filmmaker",
+        },
+        settings,
+    )
+    assert identity == {
+        settings.persona_identity_name_key: "Caleb Friesen",
+        settings.persona_identity_description_key: (
+            "A Canadian tech journalist and filmmaker"
+        ),
+    }
+
+
+def test_persona_identity_omits_blank_and_missing_fields(
+    settings: WorkerSettings,
+) -> None:
+    blank = {"display_name": "  ", "description": None}
+    assert _persona_identity(blank, settings) == {}
+    assert _persona_identity({}, settings) == {}
+    assert _persona_identity({"display_name": "Ada"}, settings) == {
+        settings.persona_identity_name_key: "Ada",
+    }
+
+
+def test_retrieves_stay_parallel_while_a_write_back_is_in_flight(
+    settings: WorkerSettings,
+) -> None:
+    """Reads must not queue behind `converse` on the path to first word."""
+    loaded = settings.model_copy(update={"engram_member_session_auth": True})
+    runner = TurnRunner(loaded)
+    release = Event()
+    occupied = Event()
+
+    def _busy() -> None:
+        occupied.set()
+        release.wait(timeout=5)
+
+    # Saturate the write-back pool, exactly as it is right after a reply.
+    for _ in range(loaded.engram_writeback_workers):
+        runner._writers.submit(_busy)
+    assert occupied.wait(timeout=2)
+
+    barrier = Barrier(2, timeout=2)
+    brain = _ScopeBrain()
+
+    def retrieve_scoped(
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        brain.scopes.append(scope)
+        barrier.wait()
+        return RetrieveOutcome(results=[], raw={"scope": scope})
+
+    brain.retrieve_scoped = retrieve_scoped  # type: ignore[method-assign]
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda brain, op, **kwargs: op(brain)
+    )
+    try:
+        shared, private, authenticated = runner._fetch_scoped_retrieves(
+            brain,
+            member_authenticated=True,
+            app_user_id=uuid4(),
+            engram_user_id=MEMBER,
+            email="a@example.com",
+            engram_persona_id=PERSONA,
+            query="hello",
+        )
+        assert authenticated is True
+        assert set(brain.scopes) == {
+            loaded.engram_retrieve_scope_shared,
+            loaded.engram_retrieve_scope_private,
+        }
+        assert shared.raw["scope"] == loaded.engram_retrieve_scope_shared
+        assert private.raw["scope"] == loaded.engram_retrieve_scope_private
+    finally:
+        release.set()
+        runner.close()
+
+
 def test_degraded_member_issues_shared_retrieve_only(
     settings: WorkerSettings,
 ) -> None:
@@ -746,6 +841,332 @@ def test_org_key_fallback_never_issues_a_private_read(
         assert loaded.engram_retrieve_scope_private not in org.scopes
         assert private.results == []
         assert shared.raw["scope"] == loaded.engram_retrieve_scope_shared
+    finally:
+        runner.close()
+
+
+def _router_settings(settings: WorkerSettings) -> WorkerSettings:
+    return settings.model_copy(
+        update={
+            "engram_member_session_auth": True,
+            "engram_scope_router_enabled": True,
+        },
+    )
+
+
+def test_scope_router_runs_beside_both_retrieves(
+    settings: WorkerSettings,
+) -> None:
+    loaded = _router_settings(settings)
+    runner = TurnRunner(loaded)
+    barrier = Barrier(3, timeout=2)
+    brain = _ScopeBrain()
+
+    class _BesideRouter:
+        def __init__(self) -> None:
+            self.questions: list[str] = []
+
+        def decide(self, question: str) -> ScopeDecision:
+            self.questions.append(question)
+            barrier.wait()
+            return ScopeDecision(
+                loaded.engram_retrieve_scope_both,
+                loaded.engram_scope_router_reason_both,
+            )
+
+    router = _BesideRouter()
+
+    def retrieve_scoped(
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        brain.scopes.append(scope)
+        barrier.wait()
+        return RetrieveOutcome(results=[], raw={"scope": scope})
+
+    brain.retrieve_scoped = retrieve_scoped  # type: ignore[method-assign]
+    runner._scope_router = router  # type: ignore[assignment]
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda brain, op, **kwargs: op(brain)
+    )
+    try:
+        grounded, decision, authenticated = runner._retrieve_grounded(
+            brain,
+            member_authenticated=True,
+            app_user_id=uuid4(),
+            engram_user_id=MEMBER,
+            email="a@example.com",
+            engram_persona_id=PERSONA,
+            query="hello",
+            prior_sid="sess-1",
+        )
+        assert authenticated is True
+        assert set(brain.scopes) == {
+            loaded.engram_retrieve_scope_shared,
+            loaded.engram_retrieve_scope_private,
+        }
+        assert decision.scope == loaded.engram_retrieve_scope_both
+        assert grounded.persona_memories == []
+        assert grounded.caller_memories == []
+        assert router.questions == ["hello"]
+    finally:
+        runner.close()
+
+
+def test_scope_router_timeout_error_and_unrecognised_fall_open_to_both(
+    settings: WorkerSettings,
+) -> None:
+    loaded = _router_settings(settings)
+    runner = TurnRunner(loaded)
+    try:
+        timed = runner._await_scope_decision(
+            runner._routers.submit(lambda: (_ for _ in ()).throw(TimeoutError())),
+            started=perf_counter(),
+            member_authenticated=True,
+        )
+        failed = runner._await_scope_decision(
+            runner._routers.submit(lambda: (_ for _ in ()).throw(RuntimeError("x"))),
+            started=perf_counter(),
+            member_authenticated=True,
+        )
+        unknown = runner._canonical_scope_decision(
+            ScopeDecision("nope", "x"),
+        )
+        disabled = runner._await_scope_decision(
+            None,
+            started=0.0,
+            member_authenticated=True,
+        )
+        unauth = runner._await_scope_decision(
+            None,
+            started=0.0,
+            member_authenticated=False,
+        )
+        assert timed.scope == loaded.engram_retrieve_scope_both
+        assert timed.reason == loaded.engram_scope_router_reason_timeout
+        assert failed.scope == loaded.engram_retrieve_scope_both
+        assert failed.reason == loaded.engram_scope_router_reason_error
+        assert unknown.scope == loaded.engram_retrieve_scope_both
+        assert unknown.reason == loaded.engram_scope_router_reason_unrecognised
+        assert disabled.reason == loaded.engram_scope_router_reason_disabled
+        assert unauth.reason == loaded.engram_scope_router_reason_unauthenticated
+        assert unauth.scope == loaded.engram_retrieve_scope_both
+    finally:
+        runner.close()
+
+
+def test_scope_router_wait_timeout_falls_open_without_keyword_rules(
+    settings: WorkerSettings,
+) -> None:
+    loaded = _router_settings(settings).model_copy(
+        update={"engram_scope_router_timeout_seconds": 0.05},
+    )
+    runner = TurnRunner(loaded)
+    release = Event()
+
+    def hang() -> ScopeDecision:
+        release.wait(timeout=5)
+        return ScopeDecision(
+            loaded.engram_retrieve_scope_private,
+            loaded.engram_scope_router_reason_private,
+        )
+
+    try:
+        decision = runner._await_scope_decision(
+            runner._routers.submit(hang),
+            started=0.0,
+            member_authenticated=True,
+        )
+        assert decision.scope == loaded.engram_retrieve_scope_both
+        assert decision.reason == loaded.engram_scope_router_reason_timeout
+    finally:
+        release.set()
+        runner.close()
+
+
+def test_apply_scope_only_drops_a_list_and_never_the_other_pool(
+    settings: WorkerSettings,
+) -> None:
+    shared, own, other = _mixed_hits()
+    runner = TurnRunner(_router_settings(settings))
+    try:
+        grounded = runner._ground_retrieve(
+            RetrieveOutcome(results=[shared], raw={}),
+            RetrieveOutcome(results=[own, other], raw={}),
+            engram_user_id=MEMBER,
+            prior_sid="sess-1",
+            brain_ms=1,
+            member_authenticated=True,
+        )
+        private = runner._apply_scope_decision(
+            grounded,
+            ScopeDecision(
+                settings.engram_retrieve_scope_private,
+                settings.engram_scope_router_reason_private,
+            ),
+        )
+        assert private.persona_memories == []
+        assert private.caller_memories == [own.text]
+        assert other.text not in private.caller_memories
+        assert private.outcome.messages == [own.text]
+        assert all(
+            row.get(settings.memory_ref_pool_key) == settings.memory_ref_pool_caller
+            for row in private.outcome.memories_used
+        )
+        persona = runner._apply_scope_decision(
+            grounded,
+            ScopeDecision(
+                settings.engram_retrieve_scope_shared,
+                settings.engram_scope_router_reason_shared,
+            ),
+        )
+        assert persona.persona_memories == [shared.text]
+        assert persona.caller_memories == []
+        assert persona.outcome.messages == [shared.text]
+        both = runner._apply_scope_decision(
+            grounded,
+            ScopeDecision(
+                settings.engram_retrieve_scope_both,
+                settings.engram_scope_router_reason_both,
+            ),
+        )
+        assert both.persona_memories == [shared.text]
+        assert both.caller_memories == [own.text]
+        empty_private = runner._apply_scope_decision(
+            runner._ground_retrieve(
+                RetrieveOutcome(results=[shared], raw={}),
+                RetrieveOutcome(results=[], raw={}),
+                engram_user_id=MEMBER,
+                prior_sid="sess-1",
+                brain_ms=1,
+                member_authenticated=True,
+            ),
+            ScopeDecision(
+                settings.engram_retrieve_scope_private,
+                settings.engram_scope_router_reason_private,
+            ),
+        )
+        assert empty_private.persona_memories == []
+        assert empty_private.caller_memories == []
+        spoken = runner._decision_after_scope(
+            Decision(Action.SILENCE, (ReasonCode.EMPTY_REPLY,), {}),
+            settings.engram_retrieve_scope_private,
+        )
+        assert spoken.action is Action.SPEAK
+        assert ReasonCode.EMPTY_CHOSEN_POOL in spoken.reasons
+        still_silent = runner._decision_after_scope(
+            Decision(Action.SILENCE, (ReasonCode.EMPTY_REPLY,), {}),
+            settings.engram_retrieve_scope_both,
+        )
+        assert still_silent.action is Action.SILENCE
+    finally:
+        runner.close()
+
+
+def test_disabled_router_does_not_start_and_keeps_both_lists(
+    settings: WorkerSettings,
+) -> None:
+    loaded = settings.model_copy(update={"engram_member_session_auth": True})
+    runner = TurnRunner(loaded)
+    called: list[str] = []
+
+    class _Router:
+        def decide(self, question: str) -> ScopeDecision:
+            called.append(question)
+            return ScopeDecision(
+                loaded.engram_retrieve_scope_private,
+                loaded.engram_scope_router_reason_private,
+            )
+
+    runner._scope_router = _Router()  # type: ignore[assignment]
+    brain = _ScopeBrain()
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda brain, op, **kwargs: op(brain)
+    )
+    shared, own, _other = _mixed_hits()
+
+    def retrieve_scoped(
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        if scope == loaded.engram_retrieve_scope_shared:
+            return RetrieveOutcome(results=[shared], raw={"scope": scope})
+        return RetrieveOutcome(results=[own], raw={"scope": scope})
+
+    brain.retrieve_scoped = retrieve_scoped  # type: ignore[method-assign]
+    try:
+        assert runner._start_scope_router("q", member_authenticated=True) is None
+        grounded, decision, _auth = runner._retrieve_grounded(
+            brain,
+            member_authenticated=True,
+            app_user_id=uuid4(),
+            engram_user_id=MEMBER,
+            email="a@example.com",
+            engram_persona_id=PERSONA,
+            query="q",
+            prior_sid="sess-1",
+        )
+        assert called == []
+        assert decision.reason == loaded.engram_scope_router_reason_disabled
+        assert grounded.persona_memories == [shared.text]
+        assert grounded.caller_memories == [own.text]
+    finally:
+        runner.close()
+
+
+def test_retrieve_grounded_applies_private_and_does_not_fill_from_shared(
+    settings: WorkerSettings,
+) -> None:
+    loaded = _router_settings(settings)
+    runner = TurnRunner(loaded)
+    shared, own, other = _mixed_hits()
+
+    class _PrivateRouter:
+        def decide(self, question: str) -> ScopeDecision:
+            return ScopeDecision(
+                loaded.engram_retrieve_scope_private,
+                loaded.engram_scope_router_reason_private,
+            )
+
+    brain = _ScopeBrain()
+
+    def retrieve_scoped(
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        if scope == loaded.engram_retrieve_scope_shared:
+            return RetrieveOutcome(results=[shared], raw={"scope": scope})
+        return RetrieveOutcome(results=[own, other], raw={"scope": scope})
+
+    brain.retrieve_scoped = retrieve_scoped  # type: ignore[method-assign]
+    runner._scope_router = _PrivateRouter()  # type: ignore[assignment]
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda brain, op, **kwargs: op(brain)
+    )
+    try:
+        grounded, decision, _auth = runner._retrieve_grounded(
+            brain,
+            member_authenticated=True,
+            app_user_id=uuid4(),
+            engram_user_id=MEMBER,
+            email="a@example.com",
+            engram_persona_id=PERSONA,
+            query="what do I do?",
+            prior_sid="sess-1",
+        )
+        assert decision.scope == loaded.engram_retrieve_scope_private
+        assert grounded.persona_memories == []
+        assert grounded.caller_memories == [own.text]
+        assert shared.text not in grounded.outcome.messages
     finally:
         runner.close()
 

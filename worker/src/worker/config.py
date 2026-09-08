@@ -120,7 +120,8 @@ class WorkerSettings(BaseSettings):
             "retrieve_hits_shared,retrieve_hits_shared_grounded,"
             "retrieve_hits_shared_dropped,retrieve_hits_private,"
             "retrieve_hits_private_grounded,retrieve_hits_private_dropped,"
-            "member_authenticated,engram_credential"
+            "member_authenticated,engram_credential,"
+            "retrieve_scope,retrieve_scope_reason"
         ),
         min_length=1,
     )
@@ -199,6 +200,60 @@ class WorkerSettings(BaseSettings):
     memory_panel_top_k: int = Field(default=25, gt=0)
     engram_converse_writeback: bool = Field(default=True)
     engram_writeback_workers: int = Field(default=2, gt=0)
+    # Reads sit on the path to first word, so they get a pool of their own
+    # rather than sharing the write-back one. Each turn submits a single
+    # private read; the shared read runs on the calling thread.
+    engram_retrieve_workers: int = Field(default=4, gt=0)
+    # Scope classifier. Runs beside the two retrieves, never in front of
+    # them. Timeout, error, or an unrecognised value falls open to both
+    # pools. Off until the owner turns it on — fail-open is the default
+    # path either way.
+    engram_scope_router_enabled: bool = Field(default=False)
+    engram_scope_router_model: str | None = None
+    engram_scope_router_timeout_seconds: float = Field(default=1.0, gt=0)
+    engram_scope_router_system_prompt: str | None = None
+    engram_scope_router_workers: int = Field(default=4, gt=0)
+    engram_scope_router_temperature: float = Field(default=0.0, ge=0, le=2)
+    engram_scope_router_max_tokens: int = Field(default=64, gt=0)
+    engram_scope_router_scope_key: str = Field(default="scope", min_length=1)
+    engram_scope_router_reason_key: str = Field(default="reason", min_length=1)
+    engram_scope_router_question_key: str = Field(default="question", min_length=1)
+    engram_scope_router_response_format_type: str = Field(
+        default="json_object",
+        min_length=1,
+    )
+    engram_scope_router_reason_shared: str = Field(
+        default="persona_directed",
+        min_length=1,
+    )
+    engram_scope_router_reason_private: str = Field(
+        default="self_directed",
+        min_length=1,
+    )
+    engram_scope_router_reason_both: str = Field(
+        default="ambiguous",
+        min_length=1,
+    )
+    engram_scope_router_reason_timeout: str = Field(
+        default="timeout",
+        min_length=1,
+    )
+    engram_scope_router_reason_error: str = Field(
+        default="error",
+        min_length=1,
+    )
+    engram_scope_router_reason_unrecognised: str = Field(
+        default="unrecognised",
+        min_length=1,
+    )
+    engram_scope_router_reason_disabled: str = Field(
+        default="disabled",
+        min_length=1,
+    )
+    engram_scope_router_reason_unauthenticated: str = Field(
+        default="unauthenticated",
+        min_length=1,
+    )
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
@@ -322,6 +377,19 @@ class WorkerSettings(BaseSettings):
         default="caller_memories",
         min_length=1,
     )
+    # The persona's own name and description. Under BRAIN_MODE=chat Engram
+    # composes the reply and already grounds on these; on the retrieve path we
+    # compose, so without them the persona cannot answer "what is your name?"
+    # from anything but a memory that happens to state it in the first person.
+    answer_payload_persona_identity_key: str = Field(
+        default="persona_identity",
+        min_length=1,
+    )
+    persona_identity_name_key: str = Field(default="name", min_length=1)
+    persona_identity_description_key: str = Field(
+        default="description",
+        min_length=1,
+    )
     answer_payload_history_key: str = Field(default="history", min_length=1)
     answer_payload_question_key: str = Field(default="question", min_length=1)
     answer_payload_voice_config_key: str = Field(
@@ -407,6 +475,8 @@ class WorkerSettings(BaseSettings):
         "openai_api_base_url",
         "reframe_system_prompt",
         "answer_system_prompt",
+        "engram_scope_router_model",
+        "engram_scope_router_system_prompt",
         "redis_url",
         mode="before",
     )
@@ -467,20 +537,66 @@ class WorkerSettings(BaseSettings):
         payload = {
             self.answer_payload_persona_memories_key,
             self.answer_payload_caller_memories_key,
+            self.answer_payload_persona_identity_key,
             self.answer_payload_history_key,
             self.answer_payload_question_key,
             self.answer_payload_voice_config_key,
         }
-        if len(payload) != 5:
+        if len(payload) != 6:
             raise ValueError(
                 "ANSWER_PAYLOAD_PERSONA_MEMORIES_KEY, "
                 "ANSWER_PAYLOAD_CALLER_MEMORIES_KEY, "
+                "ANSWER_PAYLOAD_PERSONA_IDENTITY_KEY, "
                 "ANSWER_PAYLOAD_HISTORY_KEY, ANSWER_PAYLOAD_QUESTION_KEY, and "
                 "ANSWER_PAYLOAD_VOICE_CONFIG_KEY must be distinct"
+            )
+        if self.persona_identity_name_key == self.persona_identity_description_key:
+            raise ValueError(
+                "PERSONA_IDENTITY_NAME_KEY must differ from "
+                "PERSONA_IDENTITY_DESCRIPTION_KEY"
             )
         if self.memory_ref_pool_persona == self.memory_ref_pool_caller:
             raise ValueError(
                 "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def distinct_scope_router_keys(self) -> WorkerSettings:
+        payload = {
+            self.engram_scope_router_scope_key,
+            self.engram_scope_router_reason_key,
+            self.engram_scope_router_question_key,
+        }
+        if len(payload) != 3:
+            raise ValueError(
+                "ENGRAM_SCOPE_ROUTER_SCOPE_KEY, "
+                "ENGRAM_SCOPE_ROUTER_REASON_KEY, and "
+                "ENGRAM_SCOPE_ROUTER_QUESTION_KEY must be distinct"
+            )
+        reasons = {
+            self.engram_scope_router_reason_shared,
+            self.engram_scope_router_reason_private,
+            self.engram_scope_router_reason_both,
+            self.engram_scope_router_reason_timeout,
+            self.engram_scope_router_reason_error,
+            self.engram_scope_router_reason_unrecognised,
+            self.engram_scope_router_reason_disabled,
+            self.engram_scope_router_reason_unauthenticated,
+        }
+        if len(reasons) != 8:
+            raise ValueError(
+                "ENGRAM_SCOPE_ROUTER reason codes must be distinct"
+            )
+        scopes = {
+            self.engram_retrieve_scope_shared,
+            self.engram_retrieve_scope_private,
+            self.engram_retrieve_scope_both,
+        }
+        if len(scopes) != 3:
+            raise ValueError(
+                "ENGRAM_RETRIEVE_SCOPE_SHARED, ENGRAM_RETRIEVE_SCOPE_PRIVATE, "
+                "and ENGRAM_RETRIEVE_SCOPE_BOTH must be distinct"
             )
         return self
 

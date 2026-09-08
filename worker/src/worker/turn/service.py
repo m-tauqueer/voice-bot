@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, NoReturn, TypeVar
 from uuid import UUID, uuid4
@@ -13,7 +13,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 from worker.clients import create_openai
 from worker.config import WorkerSettings
 from worker.controller.controller import Controller
-from worker.controller.decision import Action, Decision, TurnSignals
+from worker.controller.decision import Action, Decision, ReasonCode, TurnSignals
 from worker.engram.errors import (
     BrainError,
     ConflictError,
@@ -45,6 +45,7 @@ from worker.engram.org_member import (
     skip_org_join,
 )
 from worker.engram.registry import BrainRegistry
+from worker.engram.scope_router import ScopeDecision, ScopeRouter
 from worker.engram.session import MemberSessionCache, call_as_member, member_brain
 from worker.engram.tenant import is_own_private_pool, is_shared_pool, may_ground
 from worker.engram.user_id import persona_engine_user_id
@@ -106,6 +107,14 @@ def _empty_retrieve() -> RetrieveOutcome:
     return RetrieveOutcome(results=[], raw={})
 
 
+def _drain(fut: Future[Any]) -> None:
+    """Wait out a leg whose result we are about to discard."""
+    try:
+        fut.result()
+    except BaseException:  # noqa: BLE001 - the caller's error is the real one
+        pass
+
+
 @dataclass(frozen=True)
 class GroundedPools:
     persona_memories: list[str]
@@ -160,6 +169,27 @@ def _voice_config(raw: object) -> dict[str, Any]:
     return {}
 
 
+def _persona_identity(
+    persona: dict[str, Any],
+    settings: WorkerSettings,
+) -> dict[str, Any]:
+    """Who the persona is, from the local catalog row.
+
+    Engram grounds a `chat` reply on the persona's own name and description.
+    The retrieve path composes the reply here, so it has to be told the same
+    thing or the persona cannot answer about itself from anything but a
+    memory that happens to state it in the first person.
+    """
+    identity: dict[str, Any] = {}
+    name = persona.get("display_name")
+    if isinstance(name, str) and name.strip():
+        identity[settings.persona_identity_name_key] = name.strip()
+    description = persona.get("description")
+    if isinstance(description, str) and description.strip():
+        identity[settings.persona_identity_description_key] = description.strip()
+    return identity
+
+
 @dataclass(frozen=True)
 class TurnResult:
     action: str
@@ -188,6 +218,7 @@ class TurnPlan:
     decision: Decision
     prior_sid: str | None
     voice_config: dict[str, Any]
+    persona_identity: dict[str, Any]
     history: list[HistoryTurn]
     correlation_id: UUID
     mode: str = "chat"
@@ -212,6 +243,8 @@ class TurnPlan:
     member_authenticated: bool = False
     engram_credential: str | None = None
     app_user_id: UUID | None = None
+    retrieve_scope: str | None = None
+    retrieve_scope_reason: str | None = None
     speaks: bool = field(init=False)
 
     def __post_init__(self) -> None:
@@ -244,9 +277,23 @@ class TurnRunner:
             max_workers=settings.engram_writeback_workers,
             thread_name_prefix="engram-writeback",
         )
+        # Reads are on the path to first word and must never queue behind a
+        # write-back, so they get their own pool. Sharing one would put a
+        # `converse` round trip in front of the next turn's retrieve.
+        self._readers = ThreadPoolExecutor(
+            max_workers=settings.engram_retrieve_workers,
+            thread_name_prefix="engram-retrieve",
+        )
+        # The classifier sits on the path to first word with the retrieves,
+        # so it must not share the write-back pool or the retrieve pool.
+        self._routers = ThreadPoolExecutor(
+            max_workers=settings.engram_scope_router_workers,
+            thread_name_prefix="engram-scope",
+        )
         self._openai: Any | None = None
         self._reframer: Reframer | None = None
         self._answerer: Answerer | None = None
+        self._scope_router: ScopeRouter | None = None
         self._grant_tried: set[tuple[str, str]] = set()
 
     def _llm(self) -> Any:
@@ -266,6 +313,16 @@ class TurnRunner:
         if self._answerer is None:
             self._answerer = Answerer(self._settings, self._llm())
         return self._answerer
+
+    def _scope_client(self) -> ScopeRouter:
+        if self._scope_router is None:
+            client: Any | None
+            try:
+                client = self._llm()
+            except ReframeUnavailableError:
+                client = None
+            self._scope_router = ScopeRouter(self._settings, client)
+        return self._scope_router
 
     def run(
         self,
@@ -413,6 +470,7 @@ class TurnRunner:
                     set_engram_session_id(conn, session_id, prior_sid)
                     conn.commit()
                 voice_config = _voice_config(persona["voice_config"])
+                identity = _persona_identity(persona, self._settings)
                 history = recent_history(
                     conn,
                     session_id,
@@ -444,6 +502,7 @@ class TurnRunner:
                 decision=halted,
                 prior_sid=prior_sid,
                 voice_config=voice_config,
+                persona_identity=identity,
                 history=history,
                 correlation_id=correlation_id,
                 mode=self._settings.brain_mode,
@@ -474,15 +533,16 @@ class TurnRunner:
         mode = self._conversation_mode(member_authenticated)
         memories: list[str] = []
         hit_counts: GroundedPools | None = None
+        retrieve_scope: str | None = None
+        retrieve_scope_reason: str | None = None
         outcome: ChatOutcome | BrainError
         try:
             if mode == "retrieve":
                 # Read each pool separately so the answerer can tell them
-                # apart. The controller still gates on whether anything
-                # grounded came back.
-                started_read = time.perf_counter()
-                shared, private, member_authenticated = (
-                    self._fetch_scoped_retrieves(
+                # apart. The classifier runs beside those reads and may
+                # only drop a list afterwards.
+                grounded, scope_decision, member_authenticated = (
+                    self._retrieve_grounded(
                         brain,
                         member_authenticated=member_authenticated,
                         app_user_id=app_user_id,
@@ -490,22 +550,17 @@ class TurnRunner:
                         email=email or "",
                         engram_persona_id=engram_persona_id,
                         query=text,
+                        prior_sid=prior_sid,
                     )
                 )
                 if not member_authenticated:
                     credential = self._settings.engram_credential_org
                     brain = self._brains.get(engram_user_id)
-                grounded = self._ground_retrieve(
-                    shared,
-                    private,
-                    engram_user_id=engram_user_id,
-                    prior_sid=prior_sid,
-                    brain_ms=int((time.perf_counter() - started_read) * 1000),
-                    member_authenticated=member_authenticated,
-                )
                 memories = grounded.memories
                 outcome = grounded.outcome
                 hit_counts = grounded
+                retrieve_scope = scope_decision.scope
+                retrieve_scope_reason = scope_decision.reason
             else:
                 outcome = self._run_member_op(
                     brain,
@@ -524,9 +579,8 @@ class TurnRunner:
                     credential = self._settings.engram_credential_org
                     mode = self._conversation_mode(False)
                     brain = self._brains.get(engram_user_id)
-                    started_read = time.perf_counter()
-                    shared, private, member_authenticated = (
-                        self._fetch_scoped_retrieves(
+                    grounded, scope_decision, member_authenticated = (
+                        self._retrieve_grounded(
                             brain,
                             member_authenticated=False,
                             app_user_id=app_user_id,
@@ -534,23 +588,20 @@ class TurnRunner:
                             email=email or "",
                             engram_persona_id=engram_persona_id,
                             query=text,
+                            prior_sid=prior_sid,
                         )
-                    )
-                    grounded = self._ground_retrieve(
-                        shared,
-                        private,
-                        engram_user_id=engram_user_id,
-                        prior_sid=prior_sid,
-                        brain_ms=int((time.perf_counter() - started_read) * 1000),
-                        member_authenticated=False,
                     )
                     memories = grounded.memories
                     outcome = grounded.outcome
                     hit_counts = grounded
+                    retrieve_scope = scope_decision.scope
+                    retrieve_scope_reason = scope_decision.reason
         except BrainError as exc:
             outcome = exc
 
         decision = self._controller.decide(outcome, signals)
+        if retrieve_scope is not None and not isinstance(outcome, BrainError):
+            decision = self._decision_after_scope(decision, retrieve_scope)
         if isinstance(outcome, BrainError):
             plan = TurnPlan(
                 session_id=session_id,
@@ -559,6 +610,7 @@ class TurnRunner:
                 decision=decision,
                 prior_sid=prior_sid,
                 voice_config=voice_config,
+                persona_identity=identity,
                 history=history,
                 correlation_id=correlation_id,
                 mode=mode,
@@ -600,6 +652,7 @@ class TurnRunner:
             decision=decision,
             prior_sid=prior_sid,
             voice_config=voice_config,
+            persona_identity=identity,
             history=history,
             correlation_id=correlation_id,
             mode=mode,
@@ -635,6 +688,8 @@ class TurnRunner:
             member_authenticated=member_authenticated,
             engram_credential=credential,
             app_user_id=app_user_id,
+            retrieve_scope=retrieve_scope,
+            retrieve_scope_reason=retrieve_scope_reason,
         )
 
     def speak(self, plan: TurnPlan) -> str:
@@ -647,6 +702,7 @@ class TurnRunner:
                 spoken = self._answer_client().answer(
                     persona_memories=plan.persona_memories,
                     caller_memories=plan.caller_memories,
+                    persona_identity=plan.persona_identity,
                     history=plan.history,
                     question=plan.text,
                     voice_config=plan.voice_config,
@@ -677,6 +733,7 @@ class TurnRunner:
             self._answer_client().stream(
                 persona_memories=plan.persona_memories,
                 caller_memories=plan.caller_memories,
+                persona_identity=plan.persona_identity,
                 history=plan.history,
                 question=plan.text,
                 voice_config=plan.voice_config,
@@ -757,6 +814,8 @@ class TurnRunner:
                     total_ms=total_ms,
                     mode=plan.mode,
                     correlation_id=plan.correlation_id,
+                    retrieve_scope=plan.retrieve_scope,
+                    retrieve_scope_reason=plan.retrieve_scope_reason,
                 )
                 conn.commit()
         except Exception:
@@ -822,6 +881,8 @@ class TurnRunner:
                     ),
                     "member_authenticated": plan.member_authenticated,
                     "engram_credential": plan.engram_credential,
+                    "retrieve_scope": plan.retrieve_scope,
+                    "retrieve_scope_reason": plan.retrieve_scope_reason,
                 },
             ),
         )
@@ -1135,6 +1196,196 @@ class TurnRunner:
                 )
                 return
 
+    def _start_scope_router(
+        self,
+        question: str,
+        *,
+        member_authenticated: bool,
+    ) -> Future[ScopeDecision] | None:
+        """Submit the classifier without waiting. None means it did not run."""
+        if not self._settings.engram_scope_router_enabled:
+            return None
+        if not member_authenticated:
+            return None
+        return self._routers.submit(self._scope_client().decide, question)
+
+    def _await_scope_decision(
+        self,
+        fut: Future[ScopeDecision] | None,
+        *,
+        started: float,
+        member_authenticated: bool,
+    ) -> ScopeDecision:
+        settings = self._settings
+        both = settings.engram_retrieve_scope_both
+        if not member_authenticated:
+            if fut is not None:
+                _drain(fut)
+            return ScopeDecision(
+                both,
+                settings.engram_scope_router_reason_unauthenticated,
+            )
+        if fut is None:
+            return ScopeDecision(
+                both,
+                settings.engram_scope_router_reason_disabled,
+            )
+        elapsed = time.perf_counter() - started
+        remaining = settings.engram_scope_router_timeout_seconds - elapsed
+        try:
+            if fut.done():
+                return self._canonical_scope_decision(fut.result())
+            if remaining <= 0:
+                return ScopeDecision(
+                    both,
+                    settings.engram_scope_router_reason_timeout,
+                )
+            return self._canonical_scope_decision(fut.result(timeout=remaining))
+        except TimeoutError:
+            return ScopeDecision(
+                both,
+                settings.engram_scope_router_reason_timeout,
+            )
+        except Exception:  # noqa: BLE001 - fail open; never starve a turn
+            return ScopeDecision(
+                both,
+                settings.engram_scope_router_reason_error,
+            )
+
+    def _canonical_scope_decision(self, decision: ScopeDecision) -> ScopeDecision:
+        settings = self._settings
+        allowed = {
+            settings.engram_retrieve_scope_shared,
+            settings.engram_retrieve_scope_private,
+            settings.engram_retrieve_scope_both,
+        }
+        if decision.scope in allowed:
+            return decision
+        return ScopeDecision(
+            settings.engram_retrieve_scope_both,
+            settings.engram_scope_router_reason_unrecognised,
+        )
+
+    def _apply_scope_decision(
+        self,
+        grounded: GroundedPools,
+        decision: ScopeDecision,
+    ) -> GroundedPools:
+        """Drop at most one labelled list. Never add, never skip may_ground."""
+        settings = self._settings
+        persona = grounded.persona_memories
+        caller = grounded.caller_memories
+        used = [
+            dict(row) if isinstance(row, dict) else row
+            for row in grounded.outcome.memories_used
+        ]
+        pool_key = settings.memory_ref_pool_key
+        if decision.scope == settings.engram_retrieve_scope_shared:
+            caller = []
+            used = [
+                row
+                for row in used
+                if isinstance(row, dict)
+                and row.get(pool_key) == settings.memory_ref_pool_persona
+            ]
+        elif decision.scope == settings.engram_retrieve_scope_private:
+            persona = []
+            used = [
+                row
+                for row in used
+                if isinstance(row, dict)
+                and row.get(pool_key) == settings.memory_ref_pool_caller
+            ]
+        memories = [*persona, *caller]
+        outcome = ChatOutcome(
+            messages=memories,
+            text=settings.engram_message_join.join(memories),
+            memories_used=used,
+            session_id=grounded.outcome.session_id,
+            raw=grounded.outcome.raw,
+            brain_ms=grounded.outcome.brain_ms,
+        )
+        return GroundedPools(
+            persona_memories=persona,
+            caller_memories=caller,
+            outcome=outcome,
+            shared_hits=grounded.shared_hits,
+            shared_grounded=grounded.shared_grounded,
+            shared_dropped=grounded.shared_dropped,
+            private_hits=grounded.private_hits,
+            private_grounded=grounded.private_grounded,
+            private_dropped=grounded.private_dropped,
+        )
+
+    def _decision_after_scope(
+        self,
+        decision: Decision,
+        scope: str,
+    ) -> Decision:
+        """A narrowed-to-empty list still speaks; it never borrows the other pool."""
+        if decision.action is Action.SPEAK:
+            return decision
+        if ReasonCode.EMPTY_REPLY not in decision.reasons:
+            return decision
+        if scope == self._settings.engram_retrieve_scope_both:
+            return decision
+        return Decision(
+            Action.SPEAK,
+            (ReasonCode.EMPTY_CHOSEN_POOL,),
+            decision.hints,
+        )
+
+    def _retrieve_grounded(
+        self,
+        brain: PersonaBrain,
+        *,
+        member_authenticated: bool,
+        app_user_id: UUID,
+        engram_user_id: str,
+        email: str,
+        engram_persona_id: str,
+        query: str,
+        prior_sid: str | None,
+    ) -> tuple[GroundedPools, ScopeDecision, bool]:
+        started_router = time.perf_counter()
+        scope_fut = self._start_scope_router(
+            query,
+            member_authenticated=member_authenticated,
+        )
+        started_read = time.perf_counter()
+        try:
+            shared, private, member_authenticated = self._fetch_scoped_retrieves(
+                brain,
+                member_authenticated=member_authenticated,
+                app_user_id=app_user_id,
+                engram_user_id=engram_user_id,
+                email=email,
+                engram_persona_id=engram_persona_id,
+                query=query,
+            )
+        except BaseException:
+            if scope_fut is not None:
+                _drain(scope_fut)
+            raise
+        grounded = self._ground_retrieve(
+            shared,
+            private,
+            engram_user_id=engram_user_id,
+            prior_sid=prior_sid,
+            brain_ms=int((time.perf_counter() - started_read) * 1000),
+            member_authenticated=member_authenticated,
+        )
+        scope_decision = self._await_scope_decision(
+            scope_fut,
+            started=started_router,
+            member_authenticated=member_authenticated,
+        )
+        return (
+            self._apply_scope_decision(grounded, scope_decision),
+            scope_decision,
+            member_authenticated,
+        )
+
     def _fetch_scoped_retrieves(
         self,
         brain: PersonaBrain,
@@ -1171,17 +1422,10 @@ class TurnRunner:
         if not member_authenticated:
             return shared_on(brain), _empty_retrieve(), False
 
-        shared_fut = self._writers.submit(
-            lambda: self._run_member_op(
-                brain,
-                member_authenticated=True,
-                app_user_id=app_user_id,
-                engram_user_id=engram_user_id,
-                email=email,
-                op=shared_on,
-            ),
-        )
-        private_fut = self._writers.submit(
+        # Only the private leg is submitted; the shared leg runs on the
+        # calling thread. One pool slot per turn, and the shared read can
+        # never queue behind anything.
+        private_fut = self._readers.submit(
             lambda: self._run_member_op(
                 brain,
                 member_authenticated=True,
@@ -1191,8 +1435,19 @@ class TurnRunner:
                 op=private_on,
             ),
         )
-        wait((shared_fut, private_fut))
-        shared = shared_fut.result()
+        try:
+            shared = self._run_member_op(
+                brain,
+                member_authenticated=True,
+                app_user_id=app_user_id,
+                engram_user_id=engram_user_id,
+                email=email,
+                op=shared_on,
+            )
+        except BaseException:
+            # Consume the private leg so its failure cannot mask this one.
+            _drain(private_fut)
+            raise
         private = private_fut.result()
         if shared is None:
             org = self._brains.get(engram_user_id)
@@ -1432,6 +1687,8 @@ class TurnRunner:
 
     def close(self) -> None:
         self._writers.shutdown(wait=True)
+        self._readers.shutdown(wait=True)
+        self._routers.shutdown(wait=True)
         self._brains.close()
         self._member_brains.close()
 
@@ -1451,10 +1708,16 @@ class TurnRunner:
         total_ms: int,
         mode: str,
         correlation_id: UUID,
+        retrieve_scope: str | None = None,
+        retrieve_scope_reason: str | None = None,
     ) -> list[UUID]:
         if not claim_write_receipt(conn, session_id, correlation_id):
             return load_receipt_turn_ids(conn, session_id, correlation_id)
         reasons = [reason.value for reason in decision.reasons]
+        if retrieve_scope:
+            reasons.append(retrieve_scope)
+        if retrieve_scope_reason:
+            reasons.append(retrieve_scope_reason)
         user_ordinal = next_ordinal(conn, session_id)
         user_turn_id = insert_turn(
             conn,

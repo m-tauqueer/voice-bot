@@ -13,6 +13,7 @@ class Action(StrEnum):
 class ReasonCode(StrEnum):
     HAS_GROUNDED_REPLY = "has_grounded_reply"
     EMPTY_REPLY = "empty_reply"
+    EMPTY_CHOSEN_POOL = "empty_chosen_pool"
     EMPTY_INPUT = "empty_input"
     NOT_SUBSCRIBED = "not_subscribed"
     UNAUTHORIZED = "unauthorized"

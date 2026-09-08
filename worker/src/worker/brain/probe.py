@@ -79,7 +79,10 @@ def main() -> int:
             return 1
 
         print(f"default_brain_mode={base.brain_mode}")
-        print(f"retrieve_top_k={base.engram_retrieve_top_k}")
+        print(
+            f"retrieve_top_k=shared {base.engram_retrieve_top_k_shared}"
+            f" / private {base.engram_retrieve_top_k_private}",
+        )
         print(f"model={base.openai_model}\n")
 
         timings: dict[str, list[float]] = {}

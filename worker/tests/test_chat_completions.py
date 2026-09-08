@@ -65,6 +65,7 @@ class _SilenceRunner:
                 hints={},
             ),
             prior_sid=None,
+            persona_identity={},
             voice_config={},
             history=[],
             correlation_id=uuid4(),

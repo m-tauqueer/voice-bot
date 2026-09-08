@@ -27,6 +27,7 @@ def _payload(
     settings: WorkerSettings,
     persona_memories: list[str],
     caller_memories: list[str],
+    persona_identity: dict[str, Any],
     history: list[HistoryTurn],
     question: str,
     voice_config: dict[str, Any],
@@ -35,6 +36,7 @@ def _payload(
         {
             settings.answer_payload_persona_memories_key: persona_memories,
             settings.answer_payload_caller_memories_key: caller_memories,
+            settings.answer_payload_persona_identity_key: persona_identity,
             settings.answer_payload_history_key: [
                 {"speaker": turn.speaker, "text": turn.text} for turn in history
             ],
@@ -72,18 +74,19 @@ class Answerer:
         *,
         persona_memories: list[str],
         caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
     ) -> tuple[str, list[dict[str, str]]]:
         persona = _kept(persona_memories)
         caller = _kept(caller_memories)
-        if not persona and not caller:
-            raise ReframeEmptyInputError(
-                "answering requires at least one memory",
-            )
+        if not isinstance(question, str) or not question.strip():
+            raise ReframeEmptyInputError("answering requires a question")
         if not isinstance(voice_config, dict):
             raise ReframeError("voice_config must be an object")
+        if not isinstance(persona_identity, dict):
+            raise ReframeError("persona_identity must be an object")
 
         limit = self._settings.reframe_history_turns
         recent = history[-limit:] if limit > 0 else []
@@ -99,6 +102,7 @@ class Answerer:
                     self._settings,
                     persona,
                     caller,
+                    persona_identity,
                     recent,
                     question,
                     voice_config,
@@ -111,6 +115,7 @@ class Answerer:
         *,
         persona_memories: list[str],
         caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
@@ -118,6 +123,7 @@ class Answerer:
         model, request = self._request(
             persona_memories=persona_memories,
             caller_memories=caller_memories,
+            persona_identity=persona_identity,
             history=history,
             question=question,
             voice_config=voice_config,
@@ -147,6 +153,7 @@ class Answerer:
         *,
         persona_memories: list[str],
         caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
@@ -154,6 +161,7 @@ class Answerer:
         model, request = self._request(
             persona_memories=persona_memories,
             caller_memories=caller_memories,
+            persona_identity=persona_identity,
             history=history,
             question=question,
             voice_config=voice_config,

@@ -128,11 +128,11 @@ Goal: a member's own history reaches the brain again, and the answer model can t
 
 ### Part: Two parallel retrieves on the turn path
 
-- **3.a** Replace the single retrieve at `turn/service.py:437` with a shared read and a private read issued **concurrently**, each with its own `top_k`. Reuse the existing write-back executor pattern rather than adding a second pool.
+- **3.a** Replace the single retrieve at `turn/service.py:437` with a shared read and a private read issued **concurrently**, each with its own `top_k`. Reads get **their own pool** — they must never share the write-back executor, because a queued `converse` would then sit in front of the next turn's retrieve, on the path to first word. One private read is submitted per turn; the shared read runs on the calling thread, so a turn needs a single pool slot and the shared leg can never queue.
 - **3.b** The private read runs only when `member_authenticated` is true. Degraded members issue the shared read alone — same fail-closed rule as today, one fewer call rather than a fallback.
 - **3.c** Keep the org-key retry fallback at `:449` for the shared read only. It must never be used for a private read: an org-key private read returns the **key owner's** pool, which is the original leak. `may_ground` would drop those rows anyway; this makes it structural, not incidental.
 - **3.d** `_ground_retrieve` gains a per-pool shape and returns two lists. It keeps calling `may_ground` on every row of both — that gate stays the last word.
-- Tests: both reads fire concurrently; a degraded member issues shared only; an org-key private read is impossible by construction; grounded/dropped counts stay per-pool and stay log-allowlisted.
+- Tests: both reads fire concurrently **even while the write-back pool is saturated**; a degraded member issues shared only; an org-key private read is impossible by construction; grounded/dropped counts stay per-pool and stay log-allowlisted.
 - Logic: isolation, fail-closed, no `user_id` on member turns.
 - Manual: with two members, ask each a self-directed question and confirm each sees only their own rows.
 
@@ -233,17 +233,36 @@ The scope decision is a model output, runs concurrently, fails open, only narrow
 # ENGRAM_RETRIEVE_SCOPE_BOTH=both
 
 # Per-pool retrieval budgets. Two scoped calls replace one merged call, so
-# these are set independently rather than splitting one top_k. ENGRAM_RETRIEVE_TOP_K
-# (25) stays for the merged/fallback path.
+# these are set independently rather than splitting one top_k. The turn path
+# reads only these two; ENGRAM_RETRIEVE_TOP_K is left for the contract probe.
 # ENGRAM_RETRIEVE_TOP_K_SHARED=25
 # ENGRAM_RETRIEVE_TOP_K_PRIVATE=25
+
+# Retrieval pool, separate from ENGRAM_WRITEBACK_WORKERS. Reads are on the
+# path to first word and must never queue behind a write-back.
+# ENGRAM_RETRIEVE_WORKERS=4
 
 # Phase 2 only. Scope classifier; runs concurrently with retrieval and falls
 # open to both pools on timeout, error, or an unrecognised value.
 # ENGRAM_SCOPE_ROUTER_ENABLED=false
 # ENGRAM_SCOPE_ROUTER_MODEL=
-# ENGRAM_SCOPE_ROUTER_TIMEOUT_SECONDS=
+# ENGRAM_SCOPE_ROUTER_TIMEOUT_SECONDS=1
 # ENGRAM_SCOPE_ROUTER_SYSTEM_PROMPT=
+# ENGRAM_SCOPE_ROUTER_WORKERS=4
+# ENGRAM_SCOPE_ROUTER_TEMPERATURE=0
+# ENGRAM_SCOPE_ROUTER_MAX_TOKENS=64
+# ENGRAM_SCOPE_ROUTER_SCOPE_KEY=scope
+# ENGRAM_SCOPE_ROUTER_REASON_KEY=reason
+# ENGRAM_SCOPE_ROUTER_QUESTION_KEY=question
+# ENGRAM_SCOPE_ROUTER_RESPONSE_FORMAT_TYPE=json_object
+# ENGRAM_SCOPE_ROUTER_REASON_SHARED=persona_directed
+# ENGRAM_SCOPE_ROUTER_REASON_PRIVATE=self_directed
+# ENGRAM_SCOPE_ROUTER_REASON_BOTH=ambiguous
+# ENGRAM_SCOPE_ROUTER_REASON_TIMEOUT=timeout
+# ENGRAM_SCOPE_ROUTER_REASON_ERROR=error
+# ENGRAM_SCOPE_ROUTER_REASON_UNRECOGNISED=unrecognised
+# ENGRAM_SCOPE_ROUTER_REASON_DISABLED=disabled
+# ENGRAM_SCOPE_ROUTER_REASON_UNAUTHENTICATED=unauthenticated
 ```
 
 ---

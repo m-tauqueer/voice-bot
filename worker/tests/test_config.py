@@ -45,6 +45,16 @@ def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
     assert loaded.memory_ref_pool_key == "pool"
     assert loaded.memory_ref_pool_persona == "persona"
     assert loaded.memory_ref_pool_caller == "caller"
+    assert loaded.engram_scope_router_enabled is False
+    assert loaded.engram_scope_router_timeout_seconds == 1.0
+    assert loaded.engram_scope_router_workers == 4
+    assert loaded.engram_scope_router_scope_key == "scope"
+    assert loaded.engram_scope_router_reason_key == "reason"
+    assert loaded.engram_scope_router_reason_shared == "persona_directed"
+    assert loaded.engram_scope_router_reason_private == "self_directed"
+    assert loaded.engram_scope_router_reason_both == "ambiguous"
+    assert "retrieve_scope" in loaded.log_turn_fields
+    assert "retrieve_scope_reason" in loaded.log_turn_fields
     kwargs = settings.model_dump()
     kwargs["engram_api_version_path"] = "v1"
     with pytest.raises(ValidationError) as caught:
@@ -59,6 +69,29 @@ def test_answer_payload_keys_must_be_distinct(settings: WorkerSettings) -> None:
     with pytest.raises(ValidationError) as caught:
         WorkerSettings(_env_file=None, **kwargs)
     assert "ANSWER_PAYLOAD" in str(caught.value)
+
+
+def test_scope_router_keys_and_reason_codes_must_be_distinct(
+    settings: WorkerSettings,
+) -> None:
+    kwargs = settings.model_dump()
+    kwargs["engram_scope_router_scope_key"] = "scope"
+    kwargs["engram_scope_router_reason_key"] = "scope"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "ENGRAM_SCOPE_ROUTER_SCOPE_KEY" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["engram_scope_router_reason_timeout"] = "error"
+    kwargs["engram_scope_router_reason_error"] = "error"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "reason codes" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["engram_retrieve_scope_shared"] = "both"
+    kwargs["engram_retrieve_scope_both"] = "both"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "ENGRAM_RETRIEVE_SCOPE" in str(caught.value)
 
 
 def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(
