@@ -1,3 +1,4 @@
+import { requiredViteGain } from "./env";
 import { gatewayOrigin } from "./gateway";
 
 function requiredString(name: string, value: string | undefined): string {
@@ -54,6 +55,8 @@ export type VoiceClientConfig = {
   thinkingCueIntervalMs: number;
   thinkingCueMaxMs: number;
   thinkingCueLabel: string;
+  playbackSpeakGain: number;
+  playbackDuckGain: number;
   reconnectingCode: string;
   reconnectedCode: string;
   connectionDropped: string;
@@ -177,6 +180,8 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
       "VITE_VOICE_THINKING_CUE_LABEL",
       import.meta.env.VITE_VOICE_THINKING_CUE_LABEL,
     ),
+    playbackSpeakGain: requiredViteGain("VITE_VOICE_PLAYBACK_SPEAK_GAIN"),
+    playbackDuckGain: requiredViteGain("VITE_VOICE_PLAYBACK_DUCK_GAIN"),
     reconnectingCode: requiredString(
       "VITE_FAILURE_CODE_RECONNECTING",
       import.meta.env.VITE_FAILURE_CODE_RECONNECTING,

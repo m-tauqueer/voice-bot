@@ -30,6 +30,8 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_THINKING_CUE_INTERVAL_MS: string;
   readonly VITE_VOICE_THINKING_CUE_MAX_MS: string;
   readonly VITE_VOICE_THINKING_CUE_LABEL: string;
+  readonly VITE_VOICE_PLAYBACK_SPEAK_GAIN: string;
+  readonly VITE_VOICE_PLAYBACK_DUCK_GAIN: string;
   readonly VITE_FAILURE_CODE_RECONNECTING: string;
   readonly VITE_FAILURE_CODE_RECONNECTED: string;
   readonly VITE_VOICE_CONNECTION_DROPPED: string;

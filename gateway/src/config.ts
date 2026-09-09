@@ -753,9 +753,22 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(1),
   ),
+  // Silence Listen VAD needs before speech_final. UtteranceEnd below is the
+  // fallback that carries an echoey room, so this can stay short.
   DEEPGRAM_LISTEN_ENDPOINTING_MS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.coerce.number().int().positive().default(300),
+    z.coerce.number().int().positive().default(600),
+  ),
+  // How long the user must keep producing words, while the persona is still
+  // speaking, before the persona stops. Not a VAD click and not the first
+  // word: sustained speech. Thinking still waits for the utterance to end.
+  VOICE_BARGE_IN_HOLD_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(500),
+  ),
+  DEEPGRAM_LISTEN_UTTERANCE_END_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(1000),
   ),
   DEEPGRAM_LISTEN_INTERIM_RESULTS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -1666,6 +1679,10 @@ export function deepgramListenUrl(config: GatewayConfig): string {
   url.searchParams.set(
     "endpointing",
     String(config.DEEPGRAM_LISTEN_ENDPOINTING_MS),
+  );
+  url.searchParams.set(
+    "utterance_end_ms",
+    String(config.DEEPGRAM_LISTEN_UTTERANCE_END_MS),
   );
   url.searchParams.set("vad_events", config.DEEPGRAM_LISTEN_VAD_EVENTS);
   url.searchParams.set("punctuate", config.DEEPGRAM_LISTEN_PUNCTUATE);

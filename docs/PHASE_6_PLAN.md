@@ -55,7 +55,7 @@ member picks a published persona
   → provider equals the configured Fish value (and a Fish id is present)?
        no  → Deepgram Voice Agent (Nova-3 + Aura-2 + barge-in) as today
        yes → Deepgram listen WSS → worker think (streamed) → Fish TTS WS → browser PCM
-             barge-in: flush playback, abort Fish socket
+             barge-in: duck on interim words; stop Fish once speech is sustained; think on commit
 ```
 
 ---

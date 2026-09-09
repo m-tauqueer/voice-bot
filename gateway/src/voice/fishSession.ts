@@ -10,13 +10,22 @@ import {
   voiceAudioReady,
 } from "../config.js";
 import { socketDataToBuffer } from "../deepgram/agent.js";
-import { DeepgramListen, applyListenCue, emptyListenTurn, readListenMessage } from "../deepgram/listen.js";
+import {
+  DeepgramListen,
+  applyListenCue,
+  emptyListenTurn,
+  readListenMessage,
+} from "../deepgram/listen.js";
 import { FishLiveError, FishLiveTts, fishAudioBytes } from "../fish/live.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
 import type { CatalogPersona } from "../personas.js";
 import { type Utterance, VoiceAudioCapture, VoiceAudioStore } from "./audio.js";
-import { createVoiceBargeIn } from "./bargeIn.js";
+import {
+  applySpeechHold,
+  createVoiceBargeIn,
+  emptySpeechHold,
+} from "./bargeIn.js";
 import {
   type PendingLatency,
   clearVoiceCallState,
@@ -201,6 +210,9 @@ export async function runFishVoiceCall(args: {
   let turnGen = 0;
   let listenReady = true;
   let listenTurn = emptyListenTurn();
+  // Sustained speech stops the audio; the reply still waits for the utterance
+  // to finish, so the floor is never taken mid-sentence.
+  let speechHold = emptySpeechHold();
 
   const sendAgent = (event: Record<string, unknown>) => {
     sendJson(socket, {
@@ -308,6 +320,18 @@ export async function runFishVoiceCall(args: {
     thinkAbort = null;
     fish?.abort();
     fish = null;
+  };
+
+  const stopSpeaking = () => {
+    abortReply();
+    if (bargeIn.onUserStarted()) {
+      interrupted = true;
+      rememberBargeIn(true);
+      log.info({ sessionId: session.id }, "voice barge-in");
+      flushAgent();
+    }
+    agentSpeaking = false;
+    sendAgent({ type: config.DEEPGRAM_MSG_USER_STARTED });
   };
 
   const closeLatencyTurn = () => {
@@ -456,6 +480,7 @@ export async function runFishVoiceCall(args: {
         }
         if (!agentSpeaking) {
           agentSpeaking = true;
+          speechHold = emptySpeechHold();
         }
         capture.pushAgent(chunk);
         if (socket.readyState === WebSocket.OPEN) {
@@ -549,14 +574,27 @@ export async function runFishVoiceCall(args: {
     listenTurn = applied.turn;
     if (cue.kind === "speech_started") {
       // VAD also fires on Fish playback leaking into the mic. Aborting
-      // here cuts the sentence after the first words. Barge-in waits
-      // for a committed user utterance below.
+      // or ducking here is a bare click. The browser ducks on interim
+      // words; cut and think wait for speech_final or UtteranceEnd.
       if (!agentSpeaking) {
         sendAgent({ type: config.DEEPGRAM_MSG_USER_STARTED });
       }
       return;
     }
     if (applied.preview) {
+      if (agentSpeaking) {
+        const held = applySpeechHold(
+          speechHold,
+          Date.now(),
+          config.VOICE_BARGE_IN_HOLD_MS,
+        );
+        speechHold = held.hold;
+        if (held.stop) {
+          // Sustained speech: give the floor back. Thinking still waits for
+          // speech_final or UtteranceEnd, so the reply is not rushed.
+          stopSpeaking();
+        }
+      }
       sendAgent({
         type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
         role: config.VOICE_TRANSCRIPT_USER_ROLE,
@@ -568,16 +606,9 @@ export async function runFishVoiceCall(args: {
     if (!applied.transcript) {
       return;
     }
+    speechHold = emptySpeechHold();
     if (agentSpeaking) {
-      abortReply();
-      if (bargeIn.onUserStarted()) {
-        interrupted = true;
-        rememberBargeIn(true);
-        log.info({ sessionId: session.id }, "voice barge-in");
-        flushAgent();
-      }
-      agentSpeaking = false;
-      sendAgent({ type: config.DEEPGRAM_MSG_USER_STARTED });
+      stopSpeaking();
     }
     sendAgent({
       type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,

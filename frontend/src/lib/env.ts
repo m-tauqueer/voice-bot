@@ -24,3 +24,11 @@ export function requiredViteBool(name: keyof ImportMetaEnv): boolean {
   }
   throw new Error(`${name} must be true or false`);
 }
+
+export function requiredViteGain(name: keyof ImportMetaEnv): number {
+  const parsed = Number(requiredVite(name));
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    throw new Error(`${name} must be greater than 0 and at most 1`);
+  }
+  return parsed;
+}

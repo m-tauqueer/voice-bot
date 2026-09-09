@@ -15,11 +15,12 @@ export type ListenCue =
 
 export type ListenTurn = {
   parts: string[];
+  draft: string;
   committed: boolean;
 };
 
 export function emptyListenTurn(): ListenTurn {
-  return { parts: [], committed: false };
+  return { parts: [], draft: "", committed: false };
 }
 
 function joinedParts(parts: string[], extra?: string): string {
@@ -27,11 +28,47 @@ function joinedParts(parts: string[], extra?: string): string {
   return items.join(" ").trim();
 }
 
-/** Assemble one user utterance. speech_final and utterance_end both fire; only the first commit counts. */
+function commitTurn(
+  turn: ListenTurn,
+  transcript: string,
+): {
+  turn: ListenTurn;
+  started: boolean;
+  preview: string | null;
+  transcript: string | null;
+} {
+  const text = transcript.trim();
+  if (!text) {
+    return { turn, started: false, preview: null, transcript: null };
+  }
+  return {
+    turn: { parts: [], draft: "", committed: true },
+    started: false,
+    preview: null,
+    transcript: text,
+  };
+}
+
+/**
+ * Assemble one user utterance. Commit on speech_final, or on UtteranceEnd
+ * using the last draft if speech_final never arrives (Listen VAD misses
+ * silence when the persona is still audible). First commit wins.
+ *
+ * `committed` is what makes "first commit wins" work, and it is cleared by
+ * the arrival of new words - not by SpeechStarted. On a Fish sitting the mic
+ * is never quiet (the persona leaks into it), so VAD may never report a fresh
+ * silence-to-speech edge, and a reset that waited for one would strand the
+ * session in Listening for the rest of the call.
+ */
 export function applyListenCue(
   turn: ListenTurn,
   cue: ListenCue,
-): { turn: ListenTurn; started: boolean; preview: string | null; transcript: string | null } {
+): {
+  turn: ListenTurn;
+  started: boolean;
+  preview: string | null;
+  transcript: string | null;
+} {
   if (cue.kind === "speech_started") {
     if (turn.committed) {
       return {
@@ -44,38 +81,36 @@ export function applyListenCue(
     return { turn, started: true, preview: null, transcript: null };
   }
   if (cue.kind === "interim") {
+    // Words only reach here with text, so this is a real new utterance.
+    const base = turn.committed ? emptyListenTurn() : turn;
+    const draft = joinedParts(base.parts, cue.text);
     return {
-      turn,
+      turn: { ...base, draft },
       started: false,
-      preview: joinedParts(turn.parts, cue.text),
+      preview: draft,
       transcript: null,
     };
   }
   if (cue.kind === "final_part") {
-    const next = { ...turn, parts: [...turn.parts, cue.text] };
+    const base = turn.committed ? emptyListenTurn() : turn;
+    const parts = [...base.parts, cue.text];
+    const draft = joinedParts(parts);
     return {
-      turn: next,
+      turn: { ...base, parts, draft },
       started: false,
-      preview: joinedParts(next.parts),
+      preview: draft,
       transcript: null,
     };
   }
   if (turn.committed) {
     return { turn, started: false, preview: null, transcript: null };
   }
-  const transcript =
-    cue.kind === "speech_final" && cue.text
-      ? cue.text.trim()
-      : joinedParts(turn.parts);
-  if (!transcript) {
-    return { turn, started: false, preview: null, transcript: null };
+  if (cue.kind === "utterance_end") {
+    return commitTurn(turn, turn.draft || joinedParts(turn.parts));
   }
-  return {
-    turn: { parts: [], committed: true },
-    started: false,
-    preview: null,
-    transcript,
-  };
+  // speech_final carries only the segment that closed the utterance. Anything
+  // finalised earlier in the same utterance is in `parts` and must come with it.
+  return commitTurn(turn, joinedParts(turn.parts, cue.text) || turn.draft);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

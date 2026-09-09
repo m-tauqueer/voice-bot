@@ -268,6 +268,7 @@ export function VoicePage() {
     }
     if (type === config.audioDoneType) {
       session.current.thinkingCue?.stop();
+      session.current.playback?.restore();
       session.current.bargeIn?.onAgentAudioDone();
       setPhase("listening");
       return;
@@ -290,6 +291,15 @@ export function VoicePage() {
       }
       return [...current, { role, content }];
     });
+    if (
+      interim &&
+      role === config.transcriptUserRole &&
+      content.trim().length > 0
+    ) {
+      session.current.bargeIn?.onUserInterim(() => {
+        session.current.playback?.duck();
+      });
+    }
     if (!interim && role === config.transcriptUserRole) {
       // The caller's turn has been transcribed, so the brain is now working.
       // This is the signal the transport actually sends; it does not announce
