@@ -13,6 +13,71 @@ export type ListenCue =
   | { kind: "speech_final"; text: string }
   | { kind: "utterance_end" };
 
+export type ListenTurn = {
+  parts: string[];
+  committed: boolean;
+};
+
+export function emptyListenTurn(): ListenTurn {
+  return { parts: [], committed: false };
+}
+
+function joinedParts(parts: string[], extra?: string): string {
+  const items = extra ? [...parts, extra] : parts;
+  return items.join(" ").trim();
+}
+
+/** Assemble one user utterance. speech_final and utterance_end both fire; only the first commit counts. */
+export function applyListenCue(
+  turn: ListenTurn,
+  cue: ListenCue,
+): { turn: ListenTurn; started: boolean; preview: string | null; transcript: string | null } {
+  if (cue.kind === "speech_started") {
+    if (turn.committed) {
+      return {
+        turn: emptyListenTurn(),
+        started: true,
+        preview: null,
+        transcript: null,
+      };
+    }
+    return { turn, started: true, preview: null, transcript: null };
+  }
+  if (cue.kind === "interim") {
+    return {
+      turn,
+      started: false,
+      preview: joinedParts(turn.parts, cue.text),
+      transcript: null,
+    };
+  }
+  if (cue.kind === "final_part") {
+    const next = { ...turn, parts: [...turn.parts, cue.text] };
+    return {
+      turn: next,
+      started: false,
+      preview: joinedParts(next.parts),
+      transcript: null,
+    };
+  }
+  if (turn.committed) {
+    return { turn, started: false, preview: null, transcript: null };
+  }
+  const transcript =
+    cue.kind === "speech_final" && cue.text
+      ? cue.text.trim()
+      : joinedParts(turn.parts);
+  if (!transcript) {
+    return { turn, started: false, preview: null, transcript: null };
+  }
+  return {
+    turn: { parts: [], committed: true },
+    started: false,
+    preview: null,
+    transcript,
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;

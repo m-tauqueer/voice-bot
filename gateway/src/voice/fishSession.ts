@@ -10,7 +10,7 @@ import {
   voiceAudioReady,
 } from "../config.js";
 import { socketDataToBuffer } from "../deepgram/agent.js";
-import { DeepgramListen, readListenMessage } from "../deepgram/listen.js";
+import { DeepgramListen, applyListenCue, emptyListenTurn, readListenMessage } from "../deepgram/listen.js";
 import { FishLiveError, FishLiveTts, fishAudioBytes } from "../fish/live.js";
 import { turnLogFields } from "../observe/fields.js";
 import { noteOpsFailure } from "../ops/record.js";
@@ -195,12 +195,12 @@ export async function runFishVoiceCall(args: {
   const capture = new VoiceAudioCapture(config);
   capture.openUser();
   let pending: PendingLatency[] = [];
-  let userParts: string[] = [];
   let interrupted = false;
   let agentSpeaking = false;
   let turnLatency: PendingLatency | null = null;
   let turnGen = 0;
   let listenReady = true;
+  let listenTurn = emptyListenTurn();
 
   const sendAgent = (event: Record<string, unknown>) => {
     sendJson(socket, {
@@ -469,6 +469,10 @@ export async function runFishVoiceCall(args: {
           endCall(config.FAILURE_CODE_FISH);
           return;
         }
+        // Flush can complete a chunk; the session is only done after stop.
+        if (!live.hasStopped()) {
+          return;
+        }
         bargeIn.onAgentAudioDone();
         rememberBargeIn(false);
         flushAgent();
@@ -541,53 +545,47 @@ export async function runFishVoiceCall(args: {
     if (!cue) {
       return;
     }
+    const applied = applyListenCue(listenTurn, cue);
+    listenTurn = applied.turn;
     if (cue.kind === "speech_started") {
+      // VAD also fires on Fish playback leaking into the mic. Aborting
+      // here cuts the sentence after the first words. Barge-in waits
+      // for a committed user utterance below.
+      if (!agentSpeaking) {
+        sendAgent({ type: config.DEEPGRAM_MSG_USER_STARTED });
+      }
+      return;
+    }
+    if (applied.preview) {
+      sendAgent({
+        type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
+        role: config.VOICE_TRANSCRIPT_USER_ROLE,
+        content: applied.preview,
+        final: false,
+      });
+      return;
+    }
+    if (!applied.transcript) {
+      return;
+    }
+    if (agentSpeaking) {
       abortReply();
       if (bargeIn.onUserStarted()) {
         interrupted = true;
         rememberBargeIn(true);
         log.info({ sessionId: session.id }, "voice barge-in");
         flushAgent();
-        agentSpeaking = false;
       }
+      agentSpeaking = false;
       sendAgent({ type: config.DEEPGRAM_MSG_USER_STARTED });
-      return;
     }
-    if (cue.kind === "interim") {
-      sendAgent({
-        type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
-        role: config.VOICE_TRANSCRIPT_USER_ROLE,
-        content: [...userParts, cue.text].join(" ").trim(),
-        final: false,
-      });
-      return;
-    }
-    if (cue.kind === "final_part") {
-      userParts.push(cue.text);
-      sendAgent({
-        type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
-        role: config.VOICE_TRANSCRIPT_USER_ROLE,
-        content: userParts.join(" ").trim(),
-        final: false,
-      });
-      return;
-    }
-    if (cue.kind === "speech_final" || cue.kind === "utterance_end") {
-      if (cue.kind === "speech_final" && cue.text) {
-        userParts.push(cue.text);
-      }
-      const transcript = userParts.join(" ").trim();
-      userParts = [];
-      if (!transcript) {
-        return;
-      }
-      sendAgent({
-        type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
-        role: config.VOICE_TRANSCRIPT_USER_ROLE,
-        content: transcript,
-      });
-      void speakUtterance(transcript);
-    }
+    sendAgent({
+      type: config.DEEPGRAM_MSG_CONVERSATION_TEXT,
+      role: config.VOICE_TRANSCRIPT_USER_ROLE,
+      content: applied.transcript,
+      final: false,
+    });
+    void speakUtterance(applied.transcript);
   });
 
   listen.onClose(() => {

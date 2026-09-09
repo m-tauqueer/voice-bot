@@ -160,6 +160,10 @@ export class FishLiveTts {
     }
   }
 
+  hasStopped(): boolean {
+    return this.sentStop;
+  }
+
   onMessage(handler: (message: Record<string, unknown>) => void): () => void {
     const listener = (data: WebSocket.RawData) => {
       const decoded = decodeFishEvent(socketDataToBuffer(data));

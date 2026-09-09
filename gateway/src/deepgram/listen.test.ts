@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { testConfig } from "../test/config.js";
-import { readListenMessage } from "./listen.js";
+import { applyListenCue, emptyListenTurn, readListenMessage } from "./listen.js";
 
 describe("readListenMessage", () => {
   const config = testConfig();
@@ -55,3 +55,28 @@ describe("readListenMessage", () => {
     ).toEqual({ kind: "speech_final", text: "done" });
   });
 });
+
+describe("applyListenCue", () => {
+  it("commits once when speech_final and utterance_end both fire", () => {
+    let turn = emptyListenTurn();
+    turn = applyListenCue(turn, { kind: "speech_started" }).turn;
+    turn = applyListenCue(turn, { kind: "final_part", text: "Hello?" }).turn;
+    const first = applyListenCue(turn, { kind: "speech_final", text: "Hello?" });
+    expect(first.transcript).toBe("Hello?");
+    const second = applyListenCue(first.turn, { kind: "utterance_end" });
+    expect(second.transcript).toBeNull();
+  });
+
+  it("does not duplicate a speech_final after utterance_end already committed", () => {
+    let turn = emptyListenTurn();
+    turn = applyListenCue(turn, { kind: "final_part", text: "Hey." }).turn;
+    const first = applyListenCue(turn, { kind: "utterance_end" });
+    expect(first.transcript).toBe("Hey.");
+    const second = applyListenCue(first.turn, {
+      kind: "speech_final",
+      text: "Hey.",
+    });
+    expect(second.transcript).toBeNull();
+  });
+});
+
