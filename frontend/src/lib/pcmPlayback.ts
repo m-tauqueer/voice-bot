@@ -1,4 +1,4 @@
-import { int16LeToFloat } from "./pcm";
+import { int16LeToFloat, rmsLevel } from "./pcm";
 import type { VoiceClientConfig } from "./voiceConfig";
 
 export type PcmPlayback = {
@@ -7,7 +7,15 @@ export type PcmPlayback = {
   restore: () => void;
   flush: () => boolean;
   stop: () => Promise<void>;
+  level: () => number;
 };
+
+export function playbackFrameLevel(samples: Float32Array, gain: number): number {
+  if (gain <= 0 || samples.length === 0) {
+    return 0;
+  }
+  return Math.min(1, rmsLevel(samples) * gain);
+}
 
 type ScheduledSource = {
   source: AudioBufferSourceNode;
@@ -57,6 +65,7 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
   const sources = new Set<ScheduledSource>();
   let nextTime = 0;
   let stopped = false;
+  let outputLevel = 0;
 
   function setOutputGain(value: number) {
     const now = context.currentTime;
@@ -67,6 +76,7 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
   function silenceAndDrop(): boolean {
     const now = context.currentTime;
     const hadAudio = sources.size > 0 || nextTime > now;
+    outputLevel = 0;
     setOutputGain(level.afterFlush());
     for (const item of sources) {
       try {
@@ -90,6 +100,7 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
       if (samples.length === 0) {
         return;
       }
+      outputLevel = playbackFrameLevel(samples, level.target());
       if (context.state === "suspended") {
         void context.resume();
       }
@@ -112,6 +123,9 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
       sources.add(item);
       source.onended = () => {
         sources.delete(item);
+        if (sources.size === 0) {
+          outputLevel = 0;
+        }
       };
       nextTime = startAt + buffer.duration;
     },
@@ -132,6 +146,9 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
         return false;
       }
       return silenceAndDrop();
+    },
+    level() {
+      return outputLevel;
     },
     async stop() {
       stopped = true;

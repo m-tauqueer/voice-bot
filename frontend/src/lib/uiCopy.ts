@@ -164,6 +164,7 @@ export type UiCopy = {
   callStartLabel: string;
   callStartingLabel: string;
   callEndLabel: string;
+  callBackLabel: string;
   callMicLabel: string;
   callSessionSavedBadge: string;
   callTranscriptListening: string;
@@ -425,6 +426,7 @@ export function loadUiCopy(): UiCopy {
     callStartLabel: requiredVite("VITE_CALL_START_LABEL"),
     callStartingLabel: requiredVite("VITE_CALL_STARTING_LABEL"),
     callEndLabel: requiredVite("VITE_CALL_END_LABEL"),
+    callBackLabel: requiredVite("VITE_CALL_BACK_LABEL"),
     callMicLabel: requiredVite("VITE_CALL_MIC_LABEL"),
     callSessionSavedBadge: requiredVite("VITE_CALL_SESSION_SAVED_BADGE"),
     callTranscriptListening: requiredVite("VITE_CALL_TRANSCRIPT_LISTENING"),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPlaybackLevel } from "./pcmPlayback";
+import { createPlaybackLevel, playbackFrameLevel } from "./pcmPlayback";
 
 describe("createPlaybackLevel", () => {
   it("keeps speak gain across the next enqueue after duck is not called", () => {
@@ -14,6 +14,13 @@ describe("createPlaybackLevel", () => {
     expect(level.target()).toBe(0.25);
     expect(level.restore()).toBe(1);
     expect(level.target()).toBe(1);
+  });
+
+  it("scales frame energy by the current playback gain", () => {
+    const loud = new Float32Array([1, -1, 1, -1]);
+    expect(playbackFrameLevel(loud, 1)).toBe(1);
+    expect(playbackFrameLevel(loud, 0.25)).toBe(0.25);
+    expect(playbackFrameLevel(new Float32Array(), 1)).toBe(0);
   });
 
   it("returns silence on flush and speaks at full gain after", () => {

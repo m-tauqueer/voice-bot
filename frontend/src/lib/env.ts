@@ -32,3 +32,26 @@ export function requiredViteGain(name: keyof ImportMetaEnv): number {
   }
   return parsed;
 }
+
+export function requiredViteFloat(
+  name: keyof ImportMetaEnv,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(requiredVite(name));
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+export function requiredViteOneOf<T extends string>(
+  name: keyof ImportMetaEnv,
+  allowed: readonly T[],
+): T {
+  const value = requiredVite(name);
+  if ((allowed as readonly string[]).includes(value)) {
+    return value as T;
+  }
+  throw new Error(`${name} must be one of: ${allowed.join(", ")}`);
+}

@@ -25,6 +25,20 @@ vi.mock("../../lib/gateway", async () => {
   };
 });
 
+vi.mock("thinking-orbs", () => ({
+  ThinkingOrb: ({
+    state,
+    "aria-label": label,
+  }: {
+    state: string;
+    "aria-label"?: string;
+  }) => (
+    <span data-testid="thinking-orb" data-state={state}>
+      {label}
+    </span>
+  ),
+}));
+
 const ada = {
   id: "11111111-1111-1111-1111-111111111111",
   handle: "ada",
@@ -42,27 +56,32 @@ const nova = {
 describe("VoicePage picker", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
     apiMock.mockReset();
     apiMock.mockResolvedValue({ personas: [ada, nova] });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   });
 
-  it("lists published personas and keeps start disabled until one is picked", async () => {
+  it("lists published personas and enters a sitting when one is picked", async () => {
     render(<VoicePage />);
     expect(await screen.findByRole("button", { name: /@ada/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /@nova/i })).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Start call" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /@ada/i }));
-    expect(screen.getByRole("heading", { name: "Ada" })).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Start call" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
+    expect(screen.getByRole("region", { name: "Ada" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start call" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /@nova/i })).toBeNull();
+  });
+
+  it("returns to the selector from an idle sitting", async () => {
+    render(<VoicePage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("button", { name: /@nova/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
   });
 
   it("shows empty copy when nothing is published", async () => {
@@ -71,9 +90,6 @@ describe("VoicePage picker", () => {
     expect(
       await screen.findByText("No published personas yet."),
     ).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Start call" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
   });
 });

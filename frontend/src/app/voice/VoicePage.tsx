@@ -1,59 +1,30 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Badge, type BadgeTone } from "../../components/ui/Badge";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
-import { BarMeter } from "../../components/ui/Meter";
+import { CallPhaseBadge } from "../../components/voice/CallPhaseBadge";
+import { VoiceRing } from "../../components/voice/VoiceRing";
 import { ApiError, api } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
+import { callIsLive, type CallPhase } from "../../lib/callPhase";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
+import { ringAmplitude, ringSourceForPhase } from "../../lib/ringAmplitude";
 import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
-import { loadUiCopy, type UiCopy } from "../../lib/uiCopy";
+import { loadUiCopy } from "../../lib/uiCopy";
 import {
   parsePublishedDirectory,
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
-import { PersonaPicker } from "../PersonaPicker";
 import { useSession } from "../session";
-
-type CallPhase =
-  | "idle"
-  | "starting"
-  | "listening"
-  | "thinking"
-  | "speaking"
-  | "reconnecting"
-  | "error";
+import { AgentSelector } from "./AgentSelector";
 
 type Banner = {
   tone: "error" | "warning";
   text: string;
 };
-
-type TranscriptLine = {
-  role: string;
-  content: string;
-};
-
-const wrapStyle: CSSProperties = {
-  maxWidth: 840,
-  margin: "0 auto",
-  display: "grid",
-  gap: 18,
-};
-
-const bubbleStyle = (fromUser: boolean): CSSProperties => ({
-  justifySelf: fromUser ? "end" : "start",
-  maxWidth: "85%",
-  padding: "12px 14px",
-  borderRadius: 14,
-  background: fromUser ? "var(--surface-2)" : "var(--surface-1)",
-  color: "var(--text-hi)",
-  whiteSpace: "pre-wrap",
-});
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
@@ -63,41 +34,6 @@ function errorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
-}
-
-function phaseLabel(phase: CallPhase, copy: UiCopy): string {
-  if (phase === "starting") {
-    return copy.callPhaseConnecting;
-  }
-  if (phase === "listening") {
-    return copy.callPhaseListening;
-  }
-  if (phase === "thinking") {
-    return copy.callPhaseThinking;
-  }
-  if (phase === "speaking") {
-    return copy.callPhaseSpeaking;
-  }
-  if (phase === "reconnecting") {
-    return copy.callPhaseReconnecting;
-  }
-  if (phase === "error") {
-    return copy.callPhaseError;
-  }
-  return copy.callPhaseIdle;
-}
-
-function phaseTone(phase: CallPhase): BadgeTone {
-  if (phase === "listening") {
-    return "positive";
-  }
-  if (phase === "thinking" || phase === "speaking" || phase === "reconnecting") {
-    return "accent";
-  }
-  if (phase === "error") {
-    return "negative";
-  }
-  return "neutral";
 }
 
 function eventRole(event: Record<string, unknown>): string | null {
@@ -123,20 +59,15 @@ function eventContent(event: Record<string, unknown>): string | null {
 export function VoicePage() {
   const identity = useSession();
   const copy = loadUiCopy();
+  const voiceUi = loadVoiceClientConfig();
   const { loadingLabel } = loadNavConfig();
   const me = identity.status === "ready" ? identity.me : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [banner, setBanner] = useState<Banner | null>(null);
   const [phase, setPhase] = useState<CallPhase>("idle");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [turns, setTurns] = useState<TranscriptLine[]>([]);
   const [directory, setDirectory] = useState<PublishedPersona[]>([]);
   const [pickedId, setPickedId] = useState<string | null>(null);
-  const [vu, setVu] = useState(0);
-  const [levels, setLevels] = useState<number[]>([]);
-  const [clientConfig, setClientConfig] = useState<VoiceClientConfig | null>(
-    null,
-  );
+  const [signalLevel, setSignalLevel] = useState(0);
   const session = useRef<{
     socket: VoiceSocket | null;
     mic: MicCapture | null;
@@ -156,8 +87,9 @@ export function VoicePage() {
     levelRaf: null,
     pendingLevel: 0,
   });
+  const phaseRef = useRef<CallPhase>(phase);
+  phaseRef.current = phase;
   const picked = directory.find((row) => row.id === pickedId) ?? null;
-  const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!me) {
@@ -193,10 +125,6 @@ export function VoicePage() {
     };
   }, []);
 
-  useEffect(() => {
-    bottom.current?.scrollIntoView?.({ block: "end" });
-  }, [turns, phase]);
-
   function publishLevel(level: number) {
     session.current.pendingLevel = level;
     if (session.current.levelRaf !== null) {
@@ -204,15 +132,15 @@ export function VoicePage() {
     }
     session.current.levelRaf = window.requestAnimationFrame(() => {
       session.current.levelRaf = null;
-      const next = session.current.pendingLevel;
-      setVu(Math.round(next * 100));
-      setLevels((current) => {
-        if (current.length === 0) {
-          return current;
-        }
-        return [...current.slice(1), next];
-      });
+      setSignalLevel(session.current.pendingLevel);
     });
+  }
+
+  function publishMicLevel(level: number) {
+    if (ringSourceForPhase(phaseRef.current) !== "mic") {
+      return;
+    }
+    publishLevel(level);
   }
 
   async function endCall() {
@@ -236,10 +164,7 @@ export function VoicePage() {
     current.socket?.close();
     await current.mic?.stop();
     await current.playback?.stop();
-    setVu(0);
-    setLevels([]);
-    setTurns([]);
-    setSessionId(null);
+    setSignalLevel(0);
     setPhase("idle");
   }
 
@@ -260,9 +185,9 @@ export function VoicePage() {
       return;
     }
     if (type === config.thinkingType) {
-      // A new agent turn: any drop left over from an interruption is cleared.
       session.current.bargeIn?.onAgentThinking();
       session.current.thinkingCue?.start();
+      setSignalLevel(0);
       setPhase("thinking");
       return;
     }
@@ -270,6 +195,7 @@ export function VoicePage() {
       session.current.thinkingCue?.stop();
       session.current.playback?.restore();
       session.current.bargeIn?.onAgentAudioDone();
+      setSignalLevel(0);
       setPhase("listening");
       return;
     }
@@ -282,15 +208,6 @@ export function VoicePage() {
       return;
     }
     const interim = event.final === false;
-    setTurns((current) => {
-      if (interim && current.length > 0) {
-        const last = current[current.length - 1];
-        if (last && last.role === role) {
-          return [...current.slice(0, -1), { role, content }];
-        }
-      }
-      return [...current, { role, content }];
-    });
     if (
       interim &&
       role === config.transcriptUserRole &&
@@ -301,11 +218,9 @@ export function VoicePage() {
       });
     }
     if (!interim && role === config.transcriptUserRole) {
-      // The caller's turn has been transcribed, so the brain is now working.
-      // This is the signal the transport actually sends; it does not announce
-      // thinking separately.
       session.current.bargeIn?.onAgentThinking();
       session.current.thinkingCue?.start();
+      setSignalLevel(0);
       setPhase("thinking");
     }
   }
@@ -316,12 +231,8 @@ export function VoicePage() {
     }
     setPhase("starting");
     setBanner(null);
-    setSessionId(null);
-    setTurns([]);
     try {
       const config = loadVoiceClientConfig();
-      setClientConfig(config);
-      setLevels(Array.from({ length: config.vuBarCount }, () => 0));
       session.current.closedByUs = false;
       const playback = createPcmPlayback(config);
       session.current.playback = playback;
@@ -336,15 +247,14 @@ export function VoicePage() {
             session.current.socket?.sendBinary(frame);
           }
         },
-        onLevel: publishLevel,
+        onLevel: publishMicLevel,
       });
       session.current.mic = mic;
       const socket = openVoiceSocket(
         { ...config, wsUrl: voiceSocketUrl(config, picked.id) },
         {
-        onReady: (ready) => {
+        onReady: () => {
           live.current = true;
-          setSessionId(ready.sessionId);
           setPhase("listening");
         },
         onBinary: (bytes) => {
@@ -354,6 +264,7 @@ export function VoicePage() {
           thinkingCue.stop();
           setPhase("speaking");
           playback.enqueue(bytes);
+          publishLevel(playback.level());
         },
         onAgentEvent: (event) => {
           applyAgentEvent(config, event);
@@ -389,34 +300,104 @@ export function VoicePage() {
     }
   }
 
+  function leaveSitting() {
+    if (callIsLive(phase) || phase === "starting") {
+      return;
+    }
+    setPickedId(null);
+    setBanner(null);
+    setPhase("idle");
+  }
+
+  function toggleCall() {
+    if (callIsLive(phase)) {
+      void endCall();
+      return;
+    }
+    void startCall();
+  }
+
   if (!me || boot === "loading") {
     return (
-      <div style={wrapStyle}>
+      <div className="voice-pick">
         <p>{loadingLabel}</p>
       </div>
     );
   }
 
-  const inCall =
-    phase === "listening" ||
-    phase === "thinking" ||
-    phase === "speaking" ||
-    phase === "reconnecting";
+  const inCall = callIsLive(phase);
   const starting = phase === "starting";
-  const pickingLocked = inCall || starting;
+  const amplitude = ringAmplitude({
+    source: ringSourceForPhase(phase),
+    level: signalLevel,
+    idle: voiceUi.ringIdleAmplitude,
+    activeMin: voiceUi.ringActiveMin,
+    activeMax: voiceUi.ringActiveMax,
+  });
+
+  if (!picked) {
+    return (
+      <div className="voice-pick">
+        <div className="voice-pick__stack">
+          {banner && (
+            <Card>
+              <p
+                className="ui-field__error"
+                style={
+                  banner.tone === "warning"
+                    ? { color: "var(--text-mid)" }
+                    : undefined
+                }
+              >
+                {banner.text}
+              </p>
+            </Card>
+          )}
+          <AgentSelector
+            directory={directory}
+            title={copy.personaPickerTitle}
+            empty={copy.personaPickerEmpty}
+            help={copy.personaPickerHelp}
+            config={voiceUi}
+            onPick={setPickedId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const callLabel = inCall
+    ? copy.callEndLabel
+    : starting
+      ? copy.callStartingLabel
+      : copy.callStartLabel;
 
   return (
-    <div style={wrapStyle}>
-        <div>
-          <h1 className="mc-pagehead__title">
-            {picked?.display_name ?? copy.personaPickerTitle}
-          </h1>
-          <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-            {picked?.handle ? `@${picked.handle}` : copy.personaPickerHelp}
-          </p>
+    <div
+      className="voice-sit"
+      role="region"
+      aria-label={picked.display_name}
+      style={{
+        ["--voice-amp" as string]: String(amplitude),
+        ["--voice-btn-size" as string]: `${voiceUi.ringButtonPx}px`,
+        ["--voice-btn-scale" as string]: String(voiceUi.ringButtonScale),
+      }}
+    >
+      <VoiceRing
+        amplitude={amplitude}
+        smoothing={voiceUi.ringSmoothing}
+        className="voice-sit__canvas"
+      />
+      {!inCall && !starting && (
+        <div className="voice-sit__back">
+          <Button type="button" variant="ghost" onClick={leaveSitting}>
+            {copy.callBackLabel}
+          </Button>
         </div>
-
-        {banner && (
+      )}
+      <CallPhaseBadge phase={phase} copy={copy} config={voiceUi} />
+      {banner && (
+        <div className="voice-sit__banner">
           <Card>
             <p
               className="ui-field__error"
@@ -429,101 +410,15 @@ export function VoicePage() {
               {banner.text}
             </p>
           </Card>
-        )}
-
-        <PersonaPicker
-          directory={directory}
-          pickedId={pickedId}
-          locked={pickingLocked}
-          title={copy.personaPickerTitle}
-          empty={copy.personaPickerEmpty}
-          help={copy.personaPickerHelp}
-          onPick={setPickedId}
-        />
-
-        <Card>
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              {inCall ? (
-                <Button type="button" variant="danger" onClick={() => void endCall()}>
-                  {copy.callEndLabel}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="solid"
-                  disabled={starting || !picked}
-                  onClick={() => void startCall()}
-                >
-                  {starting ? copy.callStartingLabel : copy.callStartLabel}
-                </Button>
-              )}
-              <Badge tone={phaseTone(phase)}>{phaseLabel(phase, copy)}</Badge>
-              {sessionId && <Badge>{copy.callSessionSavedBadge}</Badge>}
-            </div>
-            {(inCall || starting) && (
-              <>
-                <BarMeter
-                  value={vu}
-                  label={copy.callMicLabel}
-                  accent={phase === "listening"}
-                />
-                {levels.length > 0 && (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-end",
-                      gap: 3,
-                      height: 48,
-                    }}
-                  >
-                    {levels.map((level, index) => (
-                      <span
-                        key={index}
-                        style={{
-                          flex: 1,
-                          height: `${Math.max(8, Math.round(level * 100))}%`,
-                          background: "var(--text-hi)",
-                          opacity: 0.28 + level * 0.72,
-                          borderRadius: 2,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <div style={{ display: "grid", gap: 10, minHeight: 280 }}>
-            {turns.length === 0 && (
-              <p style={{ color: "var(--text-mid)" }}>
-                {inCall
-                  ? copy.callTranscriptListening
-                  : copy.callTranscriptIdle}
-              </p>
-            )}
-            {turns.map((turn, index) => (
-              <div
-                key={`${turn.role}-${index}`}
-                style={bubbleStyle(
-                  turn.role === (clientConfig?.transcriptUserRole ?? ""),
-                )}
-              >
-                {turn.content}
-              </div>
-            ))}
-            {phase === "thinking" && clientConfig && (
-              <p style={{ color: "var(--text-mid)" }}>
-                {clientConfig.thinkingCueLabel}
-              </p>
-            )}
-            <div ref={bottom} />
-          </div>
-        </Card>
+        </div>
+      )}
+      <button
+        type="button"
+        className="voice-sit__mic"
+        disabled={starting}
+        aria-label={callLabel}
+        onClick={toggleCall}
+      />
     </div>
   );
 }
