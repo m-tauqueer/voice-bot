@@ -2,7 +2,7 @@
 
 Owner: Tauqueer. Status: **research redone 8 Sep 2026, fix shipped the same day.** The workaround this file used to recommend was **not needed**. Engram already supports per-member private memory for a backend serving many end users; we were not using the credential model it is built on. Each member now authenticates with their own session token, and per-subscriber isolation plus per-member private writes are live-verified. Rollout and what shipped: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Personas sittings: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
 
-This file is the evidence record. The operator tasks it describes in §10 are still open.
+This file is the evidence record. The operator tasks it describes in §10 are still open. Product map: [README.md](README.md).
 
 ---
 

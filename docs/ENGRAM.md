@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together.
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md).
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>
@@ -60,9 +60,13 @@ Two pools sit under one persona and **never mix**. Nothing from a conversation i
 - **Shared** = who the persona **is**. Owner teach / question bank / shared document ingest. Every subscriber of that persona reads it. Alice’s chat with Ada does not appear here.
 - **Private** = what **this member** and **this persona** have said to each other. Only that member (and a workspace admin) reads it. Kwame talking to Ada cannot see Alice’s Ada chats. Alice talking to Nova cannot see her own Ada chats — different private tenant.
 
-`personas.retrieve(pid, query)` fans out to **both** `{org}:P` and `{org}:P:U`, merges by rerank, dedupes on `gid` and text, **fails closed** if either sub-retrieve fails. That is why retrieve exists instead of `memory.retrieve` on the persona tenant (a single-tenant read would only see one pool).
+`personas.retrieve` is **not** a guaranteed union of the two pools. Backend **0.5.0** (measured 9 Sep 2026) made private memory **opt-in**: shared knowledge is always searched; the caller's private pool is included only when the body names `user_id` or `scope="both"` / `scope="private"`. A body of `{query, top_k}` — which is what SDK **0.4.0** sends — is a **shared-only** read. The two pools are independent ANN indices; under `scope="both"` Engram still reserves roughly half of `top_k` for shared (a membership floor), so a long private history cannot take every slot.
 
-Read `tenant` and `text` off **each result row**. The top-level `tenants` list only names the two pools searched. `zip(results, tenants)` mislabels every hit past the second.
+Alias routes `POST .../retrieve/shared` and `POST .../retrieve/private` return the same `{results, scope, tenants}` shape. Unknown body fields are a **422** (`extra_forbidden`). `user_id` with `scope="shared"` is also a **422**. `scope="private"` with no `user_id` defaults to the authenticated caller — that is the member-JWT path. Naming `user_id` is the workspace-admin surface.
+
+SDK **0.5.0** (the `scope=` kwarg on `personas.retrieve`) was **never published**. PyPI has `0.3.0` and `0.4.0` only. We stay on 0.4.0 and post scoped bodies ourselves; do not wait on `uv sync` to restore private recall.
+
+Read `tenant` and `text` off **each result row**. The top-level `tenants` list only names the pools searched. `zip(results, tenants)` mislabels every hit past the second.
 
 Each pool numbers `gid`s from 1001 independently. `404 engine 404: gid 1023` means **wrong pool**, not deleted. `personas.node(pid, gid, scope="shared"|"private")` must name the pool.
 
@@ -86,7 +90,7 @@ So a backend serving many end users needs **one credential per end user**. Engra
 | --- | --- | --- |
 | org key | `chat` / `converse` | `{org}:{persona}:{key owner}` — everyone shares it |
 | `auth.login` session token | `chat` / `converse` | `{org}:{persona}:{that member}` |
-| `auth.login` session token | `retrieve` | shared rows **and** that member's own private rows, each row correctly labelled |
+| `auth.login` session token | `retrieve` with `{query, top_k}` only (SDK 0.4.0) | **shared only** on backend 0.5.0 (`scope: "shared"`, 2-segment tenants) |
 
 `auth.login(email, password)` returns `{token, token_type: "bearer", expires_in: 43200, user, role, tenant}` — a 12-hour JWT whose `sub` is the member. `EngramClient(org, member_id, api_key=<token>)` is then that member for every persona route.
 
@@ -110,7 +114,7 @@ Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](EN
 | --- | --- | --- |
 | Teach Ada a fact | `personas.teach(ada, text)` or `answer` | shared `{org}:ada` |
 | Teach Ada from a document | `personas.pool(ada, "shared").document(...)` | shared |
-| Member says something / persona replies (`retrieve` brain) | `personas.retrieve` then `personas.converse(..., session_id=, speaker=)` | private `{org}:ada:alice` |
+| Member says something / persona replies (`retrieve` brain) | two scoped `retrieve`s then `personas.converse(..., session_id=, speaker=)` | private `{org}:ada:alice` |
 | Member says something (`chat` brain switch) | `personas.chat(ada, msg, session_id=)` | private (Engram writes both sides) |
 | Extra private media (receipt, note) | `personas.private(ada).text/image/...` | private |
 | Generic `client.ingest.text` while bound as Alice | `{org}:alice` **personal** | **Not used for this product’s conversations** |
@@ -211,7 +215,8 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 
 | Call | When | Writes | Reads |
 | --- | --- | --- | --- |
-| `retrieve(pid, query, top_k)` | default brain | — | shared + caller private — runs on the **member's** JWT |
+| `retrieve(pid, query, top_k)` | SDK 0.4.0 path (probes, leftover callers) | — | **shared only** on backend 0.5.0. Private is opt-in via `scope` / `user_id`. Member turns must not send `user_id`; `scope="private"` defaults to the caller. |
+| `retrieve_scoped(pid, query, scope=, top_k)` | default brain: two parallel reads; memory panel: private only | — | turn path: one **shared** + one **private** on the **member JWT**. Degraded members and org-key fallback: shared only — never a private read. Memory panel: **private** on the member JWT; empty if we cannot credential the member. |
 | `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private — **member JWT** | — |
 | `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private — **member JWT** | shared + caller private |
 | `auth.login(email, password)` | mint a member session on a cold cache (once per 12h) | — | bearer token for that member |
@@ -282,12 +287,12 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 ## 11. Our wrapper today
 
-`worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), converse. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
+`worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), `retrieve_scoped` (httpx body with `scope` from config, never `user_id`), converse. The default turn path issues a shared retrieve and a private retrieve **in parallel** on the member JWT, grounds each list with `may_ground`, and hands the answerer two labelled lists (`persona_memories` / `caller_memories`). A config-pluggable classifier may run **beside** those reads and drop one list; it cannot add a list or skip `may_ground`. Timeout, error, or an unrecognised value keeps both lists. An empty caller list is answered honestly, never substituted from shared. `memory_refs` stores which pool each grounded row came from. The chosen scope and reason code join the per-turn log allowlist; memory text does not. The memory panel (`/internal/memories`) issues a **private** scoped read and still filters with `is_own_private_pool`. A member we cannot credential gets the shared read alone on the turn path and an empty panel. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
 
 The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, publish or unpublish locally, and destroy. Destroy calls `personas.delete` (shared pool plus every member's private pool) after the owner types the handle, then clears the local subscriptions, sittings and persona row. The gateway does not guess one local row.
 
 Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
-App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel.
+App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. **Private recall on the default brain was restored 9 Sep 2026** (backend 0.5.0 made unscoped `retrieve` shared-only): two scoped reads, labelled answer lists, private memory panel. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel, and that private `memory_refs` rows are labelled as the caller's list.
 
 Two layers, and the lower one is deliberately independent of the upper: `may_ground` (`worker/src/worker/engram/tenant.py`) refuses any private row that is not the acting member's *and* refuses every private row when we did not authenticate as that member. It is unconditional, so a regression in the credential path degrades to shared-only instead of leaking. Three accounts are permanently degraded — `getcognora@`, `tauqueer655@`, and the API key owner — because an org admin cannot reset an Engram password. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.

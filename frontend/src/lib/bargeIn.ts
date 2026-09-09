@@ -1,5 +1,6 @@
 export type VoiceBargeIn = {
   acceptBinary: () => boolean;
+  onUserInterim: (duck: () => void) => void;
   onUserStarted: (flush: () => void) => void;
   onAgentThinking: () => void;
   onAgentAudioDone: () => void;
@@ -7,8 +8,9 @@ export type VoiceBargeIn = {
 };
 
 /**
- * Mirrors the gateway: playback is flushed and dropped from the interruption
- * until that utterance ends, and a new agent turn always clears the drop.
+ * Mirrors the gateway: while the agent is speaking, interim user text only
+ * ducks playback. A committed user start flushes and drops the rest of that
+ * utterance. A new agent turn always clears the drop.
  */
 export function createVoiceBargeIn(): VoiceBargeIn {
   let agentAudioOpen = false;
@@ -26,6 +28,12 @@ export function createVoiceBargeIn(): VoiceBargeIn {
       }
       agentAudioOpen = true;
       return true;
+    },
+    onUserInterim(duck) {
+      if (!agentAudioOpen || dropping) {
+        return;
+      }
+      duck();
     },
     onUserStarted(flush) {
       if (!agentAudioOpen || dropping) {

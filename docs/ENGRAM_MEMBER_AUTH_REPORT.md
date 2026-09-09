@@ -1,6 +1,6 @@
 # Cognora Engram member authentication — combined report
 
-Status: **shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes confirmed by hand on two Google accounts. Two hot-path defects found in review after this report was written and fixed before shipping: the member password was re-read from Postgres on every turn despite a 12h token cache (now a lazy provider, so a warm token costs no database read), and the token mint held one global lock across the `auth.login` network call (now per member). See [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) for the current state.
+Status: **shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes confirmed by hand on two Google accounts. Two hot-path defects found in review after this report was written and fixed before shipping: the member password was re-read from Postgres on every turn despite a 12h token cache (now a lazy provider, so a warm token costs no database read), and the token mint held one global lock across the `auth.login` network call (now per member). See [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) for the current state. Product map: [README.md](README.md).
 
 Context7 MCP was not connected. Engram SDK 0.4.0 in the worker venv and the live alpha were the fallback.
 

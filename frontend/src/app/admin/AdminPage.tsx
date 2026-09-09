@@ -7,8 +7,12 @@ import { ApiError, api } from "../../lib/gateway";
 import { loadNavConfig } from "../../lib/nav";
 import {
   adminPersonaQuery,
-  mergeVoiceConfig,
+  mergePersonaVoices,
+  personaFishKey,
   personaPinField,
+  personaProviderAura,
+  personaProviderFish,
+  personaProviderKey,
   personaTtsKey,
   splitVoiceConfig,
 } from "../../lib/personaVoice";
@@ -117,18 +121,34 @@ function emptyForm() {
     displayName: "",
     description: "",
     ttsVoice: "",
+    fishVoice: "",
+    provider: personaProviderAura(),
     voiceConfig: "{}",
   };
 }
 
-function formFromPersona(persona: Persona, ttsKey: string) {
-  const split = splitVoiceConfig(persona.voice_config ?? {}, ttsKey);
+function formFromPersona(
+  persona: Persona,
+  ttsKey: string,
+  fishKey: string,
+  providerKey: string,
+  auraValue: string,
+) {
+  const split = splitVoiceConfig(
+    persona.voice_config ?? {},
+    ttsKey,
+    fishKey,
+    providerKey,
+    auraValue,
+  );
   return {
     engramPersonaId: persona.engram_persona_id,
     handle: persona.handle,
     displayName: persona.display_name,
     description: persona.description ?? "",
     ttsVoice: split.ttsVoice,
+    fishVoice: split.fishVoice,
+    provider: split.provider,
     voiceConfig: JSON.stringify(split.style, null, 2),
   };
 }
@@ -139,6 +159,10 @@ export function AdminPage() {
   const { loadingLabel, notOwnerMessage, signIn } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
   const ttsKey = personaTtsKey();
+  const fishKey = personaFishKey();
+  const providerKey = personaProviderKey();
+  const auraValue = personaProviderAura();
+  const fishValue = personaProviderFish();
   const pinField = personaPinField();
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [status, setStatus] = useState<string | null>(null);
@@ -156,6 +180,7 @@ export function AdminPage() {
   const [answerKey, setAnswerKey] = useState("");
   const [answerText, setAnswerText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [cloneFile, setCloneFile] = useState<File | null>(null);
   const [subscribeUser, setSubscribeUser] = useState("");
   const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
   const [destroyConfirm, setDestroyConfirm] = useState("");
@@ -176,13 +201,13 @@ export function AdminPage() {
       const next = rows.find((row) => row.id === nextId) ?? null;
       setSelectedId(next?.id ?? null);
       if (next) {
-        setForm(formFromPersona(next, ttsKey));
+        setForm(formFromPersona(next, ttsKey, fishKey, providerKey, auraValue));
         setAdding(false);
       }
       setSubscriptions(shown.subscriptions ?? []);
       return next;
     },
-    [ttsKey],
+    [ttsKey, fishKey, providerKey, auraValue],
   );
 
   const loadPersona = useCallback(
@@ -265,8 +290,18 @@ export function AdminPage() {
       handle: form.handle || undefined,
       display_name: form.displayName || undefined,
       description: form.description,
-      voice_config: mergeVoiceConfig(parseStyle(), form.ttsVoice, ttsKey),
+      voice_config: mergePersonaVoices(
+        parseStyle(),
+        form.ttsVoice,
+        ttsKey,
+        form.fishVoice,
+        fishKey,
+        form.provider,
+        providerKey,
+      ),
       tts_voice: form.ttsVoice,
+      fish_voice: form.fishVoice,
+      voice_provider: form.provider,
       ...extra,
     };
   }
@@ -403,7 +438,7 @@ export function AdminPage() {
                     setAdding(false);
                     setStatus(null);
                     setSelectedId(row.id);
-                    setForm(formFromPersona(row, ttsKey));
+                    setForm(formFromPersona(row, ttsKey, fishKey, providerKey, auraValue));
                     void run("select", async () => {
                       await selectExisting(row.id);
                     });
@@ -464,6 +499,40 @@ export function AdminPage() {
                   setForm((current) => ({ ...current, ttsVoice: event.target.value }))
                 }
               />
+              <Input
+                label={copy.personaFishLabel}
+                value={form.fishVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, fishVoice: event.target.value }))
+                }
+              />
+              <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaProviderHelp}</p>
+              <div
+                style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
+                role="group"
+                aria-label={copy.personaProviderLabel}
+              >
+                <Button
+                  type="button"
+                  variant={form.provider === auraValue ? "solid" : "glass"}
+                  aria-pressed={form.provider === auraValue}
+                  onClick={() =>
+                    setForm((current) => ({ ...current, provider: auraValue }))
+                  }
+                >
+                  {copy.personaProviderAuraLabel}
+                </Button>
+                <Button
+                  type="button"
+                  variant={form.provider === fishValue ? "solid" : "glass"}
+                  aria-pressed={form.provider === fishValue}
+                  onClick={() =>
+                    setForm((current) => ({ ...current, provider: fishValue }))
+                  }
+                >
+                  {copy.personaProviderFishLabel}
+                </Button>
+              </div>
               <Button
                 variant="solid"
                 disabled={busy !== null}
@@ -613,6 +682,41 @@ export function AdminPage() {
                 }
               />
               <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaTtsHelp}</p>
+              <Input
+                label={copy.personaFishLabel}
+                value={form.fishVoice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, fishVoice: event.target.value }))
+                }
+              />
+              <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaFishHelp}</p>
+              <p style={{ color: "var(--text-mid)", margin: 0 }}>{copy.personaProviderHelp}</p>
+              <div
+                style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
+                role="group"
+                aria-label={copy.personaProviderLabel}
+              >
+                <Button
+                  type="button"
+                  variant={form.provider === auraValue ? "solid" : "glass"}
+                  aria-pressed={form.provider === auraValue}
+                  onClick={() =>
+                    setForm((current) => ({ ...current, provider: auraValue }))
+                  }
+                >
+                  {copy.personaProviderAuraLabel}
+                </Button>
+                <Button
+                  type="button"
+                  variant={form.provider === fishValue ? "solid" : "glass"}
+                  aria-pressed={form.provider === fishValue}
+                  onClick={() =>
+                    setForm((current) => ({ ...current, provider: fishValue }))
+                  }
+                >
+                  {copy.personaProviderFishLabel}
+                </Button>
+              </div>
               <Textarea
                 label={copy.personaVoiceJsonLabel}
                 rows={6}
@@ -650,6 +754,42 @@ export function AdminPage() {
                     : copy.personaPublishLabel}
                 </Button>
               </div>
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="mc-sec__title" style={{ marginBottom: 8 }}>
+              {copy.personaCloneTitle}
+            </h2>
+            <p style={{ color: "var(--text-mid)", marginTop: 0 }}>
+              {copy.personaCloneHelp}
+            </p>
+            <input
+              type="file"
+              aria-label={copy.personaCloneFileLabel}
+              accept={copy.personaCloneAccept}
+              onChange={(event) => setCloneFile(event.target.files?.[0] ?? null)}
+            />
+            <div style={{ marginTop: 12 }}>
+              <Button
+                disabled={busy !== null || !cloneFile}
+                onClick={() =>
+                  run("clone", async () => {
+                    if (!cloneFile) return;
+                    const body = new FormData();
+                    body.append("file", cloneFile);
+                    await api(
+                      `/api/admin/persona/clone?${adminPersonaQuery(selected.id)}`,
+                      { method: "POST", body },
+                    );
+                    setCloneFile(null);
+                    await loadPersona(selected.id);
+                    setStatus(copy.personaCloned);
+                  })
+                }
+              >
+                {busy === "clone" ? copy.personaCloningLabel : copy.personaCloneButton}
+              </Button>
             </div>
           </Card>
 

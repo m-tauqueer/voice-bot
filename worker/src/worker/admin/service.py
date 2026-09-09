@@ -23,7 +23,7 @@ from worker.admin.store import (
     upsert_persona,
     upsert_subscription,
 )
-from worker.admin.voice import as_voice_config, merge_tts_voice
+from worker.admin.voice import VoiceProviderError, as_voice_config, merge_persona_voices
 from worker.config import WorkerSettings
 from worker.engram.engram_brain import EngramBrain
 from worker.engram.errors import (
@@ -47,6 +47,9 @@ from worker.engram.org_member import (
     skip_org_join,
 )
 from worker.engram.user_id import persona_engine_user_id
+from worker.fish.accept import clip_allowed, parse_allowlist
+from worker.fish.clone import ClonedVoice, FishCloneClient, HttpFishClone
+from worker.fish.errors import FishCloneError
 from worker.schema import SUBSCRIPTION_ACTIVE
 
 
@@ -98,12 +101,14 @@ class PersonaAdmin:
         settings: WorkerSettings,
         brain_factory: Callable[[WorkerSettings, str], PersonaBrain] | None = None,
         roster_factory: Callable[[WorkerSettings], OrgRoster] | None = None,
+        clone_factory: Callable[[WorkerSettings], FishCloneClient] | None = None,
     ) -> None:
         self._settings = settings
         self._brain_factory = brain_factory or (
             lambda loaded, user_id: EngramBrain(loaded, user_id)
         )
         self._roster_factory = roster_factory
+        self._clone_factory = clone_factory or (lambda loaded: HttpFishClone(loaded))
 
     def _brain(self) -> AbstractContextManager[PersonaBrain]:
         @contextmanager
@@ -116,16 +121,34 @@ class PersonaAdmin:
 
         return _open()
 
-    def _with_tts(
+    def _with_voices(
         self,
         voice_config: dict[str, Any] | None,
         tts_voice: str | None,
+        fish_voice: str | None,
+        provider: str | None = None,
     ) -> dict[str, Any]:
-        return merge_tts_voice(
-            as_voice_config(voice_config),
-            tts_voice=tts_voice,
-            key=self._settings.persona_voice_tts_key,
-        )
+        try:
+            return merge_persona_voices(
+                as_voice_config(voice_config),
+                tts_voice=tts_voice,
+                tts_key=self._settings.persona_voice_tts_key,
+                fish_voice=fish_voice,
+                fish_key=self._settings.persona_voice_fish_key,
+                provider=provider,
+                provider_key=self._settings.persona_voice_provider_key,
+                allowed_providers=frozenset(
+                    {
+                        self._settings.persona_voice_provider_aura,
+                        self._settings.persona_voice_provider_fish,
+                    }
+                ),
+            )
+        except VoiceProviderError as exc:
+            raise AdminError(
+                self._settings.admin_error_voice_provider,
+                reason="voice_provider",
+            ) from exc
 
     def _require_active(self, persona_id: str | UUID | None = None) -> dict[str, Any]:
         pin = _pin(persona_id)
@@ -202,6 +225,8 @@ class PersonaAdmin:
         description: str | None,
         voice_config: dict[str, Any],
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
+        voice_provider: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -220,7 +245,9 @@ class PersonaAdmin:
                 handle=resolved_handle,
                 display_name=resolved_name,
                 description=resolved_description,
-                voice_config=self._with_tts(voice_config, tts_voice),
+                voice_config=self._with_voices(
+                    voice_config, tts_voice, fish_voice, voice_provider
+                ),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -232,6 +259,8 @@ class PersonaAdmin:
         description: str,
         voice_config: dict[str, Any],
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
+        voice_provider: str | None = None,
     ) -> dict[str, Any]:
         try:
             with self._brain() as brain:
@@ -251,7 +280,9 @@ class PersonaAdmin:
                 handle=handle,
                 display_name=name,
                 description=description,
-                voice_config=self._with_tts(voice_config, tts_voice),
+                voice_config=self._with_voices(
+                    voice_config, tts_voice, fish_voice, voice_provider
+                ),
             )
         return {"persona": _row(local), "engram": _jsonable(remote)}
 
@@ -264,6 +295,8 @@ class PersonaAdmin:
         description: str | None,
         voice_config: dict[str, Any] | None,
         tts_voice: str | None = None,
+        fish_voice: str | None = None,
+        voice_provider: str | None = None,
     ) -> dict[str, Any]:
         current = self._require_active(persona_id)
         merged_voice = (
@@ -280,9 +313,62 @@ class PersonaAdmin:
                 description=(
                     current["description"] if description is None else description
                 ),
-                voice_config=self._with_tts(merged_voice, tts_voice),
+                voice_config=self._with_voices(
+                    merged_voice, tts_voice, fish_voice, voice_provider
+                ),
             )
         return {"persona": _row(local)}
+
+    def clone_voice(
+        self,
+        *,
+        audio: bytes,
+        filename: str,
+        content_type: str,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        if not audio:
+            raise AdminError(
+                self._settings.admin_error_fish_clip_empty,
+                reason="fish_clip_empty",
+            )
+        if len(audio) > self._settings.admin_fish_clone_max_bytes:
+            raise AdminError("file too large", status=413, reason="fish_clip_too_large")
+        if not clip_allowed(
+            filename=filename,
+            content_type=content_type,
+            content_types=parse_allowlist(self._settings.fish_clone_content_types),
+            suffixes=parse_allowlist(self._settings.fish_clone_suffixes),
+        ):
+            raise AdminError(
+                self._settings.admin_error_fish_clip_type,
+                reason="fish_clip_type",
+            )
+        current = self._require_active(persona_id)
+        try:
+            cloned: ClonedVoice = self._clone_factory(self._settings).create(
+                title=str(current["display_name"]),
+                audio=audio,
+                filename=filename,
+                content_type=content_type,
+            )
+        except FishCloneError as exc:
+            raise AdminError(str(exc), status=exc.status, reason=exc.reason) from exc
+        ready = self._settings.fish_clone_ready_state
+        if cloned.state and cloned.state != ready:
+            raise AdminError(
+                self._settings.admin_error_fish_untrained,
+                status=409,
+                reason="fish_untrained",
+            )
+        return self.update_local(
+            persona_id=current["id"],
+            handle=None,
+            display_name=None,
+            description=None,
+            voice_config=None,
+            fish_voice=cloned.voice_id,
+        )
 
     def publish(
         self,

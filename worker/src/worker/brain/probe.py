@@ -79,7 +79,10 @@ def main() -> int:
             return 1
 
         print(f"default_brain_mode={base.brain_mode}")
-        print(f"retrieve_top_k={base.engram_retrieve_top_k}")
+        print(
+            f"retrieve_top_k=shared {base.engram_retrieve_top_k_shared}"
+            f" / private {base.engram_retrieve_top_k_private}",
+        )
         print(f"model={base.openai_model}\n")
 
         timings: dict[str, list[float]] = {}
@@ -128,8 +131,13 @@ def main() -> int:
                 failed += 1
                 continue
             timings[mode].append(first_ms)
-            grounding = len(plan.memories) if mode == "retrieve" else len(
-                plan.outcome.messages if plan.outcome else []
+            grounding = (
+                f"{len(plan.persona_memories)} persona / "
+                f"{len(plan.caller_memories)} caller"
+                if mode == "retrieve"
+                else str(
+                    len(plan.outcome.messages if plan.outcome else []),
+                )
             )
             engram_s = (plan.brain_ms or 0) / 1000
             print(

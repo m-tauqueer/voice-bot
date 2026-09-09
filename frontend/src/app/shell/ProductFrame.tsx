@@ -73,6 +73,7 @@ export function ProductFrame() {
       personaName={session.persona?.display_name ?? nav.appName}
       accountEmail={session.me.email}
       signOutLabel={nav.signOutLabel}
+      flush={matchPath(path, ROUTES.voice)}
       onSignOut={() => {
         window.location.href = logoutUrl(path);
       }}

@@ -12,6 +12,7 @@ import {
   voiceAudioPersistEnabled,
   voiceAudioReady,
   voiceCallReady,
+  voiceSocketReady,
 } from "../config.js";
 import {
   DeepgramAgentError,
@@ -43,6 +44,7 @@ import {
   isFatalFailure,
   voiceFailurePayload,
 } from "../voice/failures.js";
+import { runFishVoiceCall } from "../voice/fishSession.js";
 import { applyVoiceLatency, readVoiceLatency } from "../voice/latency.js";
 import { createVoiceNoticeHub } from "../voice/notices.js";
 import {
@@ -53,6 +55,7 @@ import {
   ttsMeta,
 } from "../voice/record.js";
 import { redisQuiet } from "../voice/redisSafe.js";
+import { resolveVoiceSitting } from "../voice/transport.js";
 import { pcmDurationMs } from "../voice/wav.js";
 
 type Sql = ReturnType<typeof postgres>;
@@ -129,7 +132,7 @@ export async function registerVoiceRoutes(
         return;
       }
 
-      const readyError = voiceCallReady(config);
+      const readyError = voiceSocketReady(config);
       if (readyError) {
         request.log.warn({ reason: readyError }, "voice call refused");
         sendJson(socket, {
@@ -209,6 +212,83 @@ export async function registerVoiceRoutes(
             return;
           }
           sessionId = session.id;
+          const sitting = resolveVoiceSitting(persona.voiceConfig, {
+            ttsKey: config.PERSONA_VOICE_TTS_KEY,
+            fishKey: config.PERSONA_VOICE_FISH_KEY,
+            providerKey: config.PERSONA_VOICE_PROVIDER_KEY,
+            auraValue: config.PERSONA_VOICE_PROVIDER_AURA,
+            fishValue: config.PERSONA_VOICE_PROVIDER_FISH,
+            auraFallback: config.DEEPGRAM_TTS_VOICE,
+            missingVoiceCode: config.FAILURE_CODE_FISH_VOICE_MISSING,
+            providerCode: config.FAILURE_CODE_VOICE_PROVIDER,
+          });
+          if (sitting.kind === "error") {
+            sendJson(socket, voiceFailurePayload(config, sitting.code));
+            closeClient(socket);
+            await endVoiceSession(sql, session.id).catch(
+              (endError: unknown) => {
+                request.log.error(
+                  { err: endError, sessionId: session.id },
+                  "voice session not closed",
+                );
+              },
+            );
+            return;
+          }
+          if (sitting.kind === "fish") {
+            socket.off("close", markClientGone);
+            socket.off("error", markClientGone);
+            if (!config.FISH_API_KEY) {
+              sendJson(
+                socket,
+                voiceFailurePayload(
+                  config,
+                  config.FAILURE_CODE_FISH_KEY_MISSING,
+                ),
+              );
+              closeClient(socket);
+              await endVoiceSession(sql, session.id).catch(
+                (endError: unknown) => {
+                  request.log.error(
+                    { err: endError, sessionId: session.id },
+                    "voice session not closed",
+                  );
+                },
+              );
+              return;
+            }
+            await runFishVoiceCall({
+              socket,
+              request,
+              config,
+              sql,
+              redis,
+              notices,
+              user,
+              persona,
+              session,
+              voiceId: sitting.voiceId,
+            });
+            return;
+          }
+          const auraReady = voiceCallReady(config);
+          if (auraReady) {
+            request.log.warn({ reason: auraReady }, "voice call refused");
+            sendJson(socket, {
+              type: config.VOICE_CLIENT_ERROR_TYPE,
+              error: auraReady,
+            });
+            closeClient(socket);
+            await endVoiceSession(sql, session.id).catch(
+              (endError: unknown) => {
+                request.log.error(
+                  { err: endError, sessionId: session.id },
+                  "voice session not closed",
+                );
+              },
+            );
+            return;
+          }
           const settings = buildVoiceAgentSettings(
             config,
             {

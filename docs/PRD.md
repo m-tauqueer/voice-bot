@@ -1,12 +1,12 @@
 # PRD — Voice Persona Bot
 
-Status: Locked for build. Owner: Tauqueer. Companion documents: [TRD](TRD.md), [ENGRAM](ENGRAM.md), [Phase 5](PHASE_5_PLAN.md).
+Status: Locked for build. Owner: Tauqueer. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Decisions: [decisions/README.md](decisions/README.md). Companions: [TRD](TRD.md), [ENGRAM](ENGRAM.md), [current work](PHASE_6_PLAN.md), [personas](PHASE_5_PLAN.md).
 
 ---
 
 ## 1. Vision
 
-A person opens the app in their browser, picks a **persona**, presses talk, and has a natural spoken conversation with that named character — one that genuinely remembers them across turns and across sessions, separately from any other persona they also use. The persona's knowledge and memory are powered by Engram; speech recognition, turn-taking, and speech synthesis are powered by Deepgram; a small reframing LLM turns the persona's recalled answer into fluent spoken language.
+A person opens the app in their browser, picks a **persona**, presses talk, and has a natural spoken conversation with that named character — one that genuinely remembers them across turns and across sessions, separately from any other persona they also use. The persona's knowledge and memory are powered by Engram; speech recognition and turn-taking are powered by Deepgram; speech synthesis is Deepgram Aura unless that persona has a cloned Fish Audio voice; a small reframing LLM turns the persona's recalled answer into fluent spoken language.
 
 The product's reason to exist is **persona memory**: without Engram there is no product.
 
@@ -22,13 +22,13 @@ The product's reason to exist is **persona memory**: without Engram there is no 
 
 ## 3. Non-goals (for the first build)
 
-These were out of scope for the first build. **Personas (several, member picks) are current work** — [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Launch ops and later product live in [FUTURE.md](FUTURE.md).
+These were out of scope for the first build. **Cloned voices and member UI are current work** — [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas (several, member picks) are built — leftover sittings in [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4. Launch ops and parked product live in [FUTURE.md](FUTURE.md).
 
-- Multi-persona: several personas a member can pick, with memory and history per (user, persona). *(In progress: Phase 5.)*
+- Multi-persona: several personas a member can pick, with memory and history per (user, persona). *(Built.)*
 - Telephony / WhatsApp / mobile-native channels. *(Parked.)*
 - Video, facial-emotion, or any non-text modality into Engram. *(Still out of scope.)*
 - Billing/usage dashboards and cost optimization. *(Parked if we charge; cost guardrails and quotas: shipped.)*
-- Voice cloning (groundwork only, in the hardening phase). *(Parked.)*
+- Voice cloning on a persona (hosted Fish Audio; Deepgram Aura otherwise). *(Current: [PHASE_6_PLAN.md](PHASE_6_PLAN.md).)*
 - Formal compliance / consent / delete-my-data flows. *(Shipped.)*
 - Open self-serve signup. Launch is **waitlist-gated**: anyone can request access, the owner approves in batches. *(Shipped.)*
 
@@ -81,17 +81,18 @@ The build is successful when, in the browser:
 
 ## 8. Scope mapped to phases
 
-See [PHASE_PLAN.md](PHASE_PLAN.md) for the index. History: [SHIPPED.md](SHIPPED.md). Current: [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Later: [FUTURE.md](FUTURE.md).
+See [PHASE_PLAN.md](PHASE_PLAN.md) for the index. Map: [README.md](README.md). History: [SHIPPED.md](SHIPPED.md). Current: [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Later: [FUTURE.md](FUTURE.md).
 
-- **Phases 0–4 product (complete):** setup, typed chat, voice, hardening, waitlist, quotas, lifecycle, `/status`. One active persona in the app today.
-- **Phase 5 (current):** several personas; member picks on voice; memory per (user, persona).
-- **After that:** onboarding/UX and accounts, then parked product, then Plan X (Azure last).
+- **Phases 0–4 product (complete):** setup, typed chat, voice, hardening, waitlist, quotas, lifecycle, `/status`.
+- **Personas (built):** several personas; member picks on voice and chat; memory per (user, persona).
+- **Current:** cloned Fish voices per persona, then Home/picker UI, onboarding, mobile, accessibility, accounts.
+- **After that:** parked product, then Plan X (Azure last).
 
 ---
 
 ## 9. Assumptions & dependencies
 
-- Deepgram **Voice Agent API** is the primary transport (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a bring-your-own-LLM brain. The custom split pipeline was the documented fallback if the Voice Agent API could not host Engram-as-brain acceptably; it was **not needed** — the latency was resolved inside the brain instead.
+- Deepgram **Voice Agent API** is the transport for personas without a Fish voice id (single WebSocket: Nova-3 STT + Aura-2 TTS + turn-taking + barge-in) with a bring-your-own-LLM brain. Personas with a Fish voice id keep Deepgram for STT and use hosted Fish Audio for TTS (split pipeline). The brain stays behind the same interface.
 - Engram is used on its **alpha** API; churn is acceptable, but the client is wrapped behind an interface.
-- Accounts for Deepgram, Engram, OpenAI, Azure Blob, and Google OAuth are available.
+- Accounts for Deepgram, Engram, OpenAI, Azure Blob, Google OAuth, and Fish Audio (when a persona uses a cloned voice) are available.
 - Persona content (which historical figure, its source material, the exact voice) is chosen by the owner and treated as content, not engineering.

@@ -35,6 +35,7 @@
     "brains": "uv run --directory worker python -m worker.brain.probe",
     "voice": "npm run voice -w gateway",
     "call": "npm run call -w gateway",
+    "fish": "npm run fish -w gateway",
     "isolation": "npm run isolation -w gateway",
     "nav": "npm run nav -w frontend",
     "audio": "npm run audio -w gateway",

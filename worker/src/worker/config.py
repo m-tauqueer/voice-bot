@@ -117,7 +117,11 @@ class WorkerSettings(BaseSettings):
             "correlation_id,session_id,turn_ids,action,reasons,"
             "brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,"
             "retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,"
-            "member_authenticated,engram_credential"
+            "retrieve_hits_shared,retrieve_hits_shared_grounded,"
+            "retrieve_hits_shared_dropped,retrieve_hits_private,"
+            "retrieve_hits_private_grounded,retrieve_hits_private_dropped,"
+            "member_authenticated,engram_credential,"
+            "retrieve_scope,retrieve_scope_reason"
         ),
         min_length=1,
     )
@@ -184,10 +188,72 @@ class WorkerSettings(BaseSettings):
     # Refresh a member session token this long before expires_in elapses.
     engram_member_token_refresh_skew_seconds: int = Field(default=1800, ge=0)
     engram_retrieve_top_k: int = Field(default=25, gt=0)
+    # Prefix the SDK discovers from /config. Our own scoped retrieve posts
+    # need it explicitly. Unknown scope values must reach Engram (422).
+    engram_api_version_path: str = Field(default="/v1", min_length=1)
+    engram_retrieve_scope_shared: str = Field(default="shared", min_length=1)
+    engram_retrieve_scope_private: str = Field(default="private", min_length=1)
+    engram_retrieve_scope_both: str = Field(default="both", min_length=1)
+    engram_retrieve_top_k_shared: int = Field(default=25, gt=0)
+    engram_retrieve_top_k_private: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
     engram_converse_writeback: bool = Field(default=True)
     engram_writeback_workers: int = Field(default=2, gt=0)
+    # Reads sit on the path to first word, so they get a pool of their own
+    # rather than sharing the write-back one. Each turn submits a single
+    # private read; the shared read runs on the calling thread.
+    engram_retrieve_workers: int = Field(default=4, gt=0)
+    # Scope classifier. Runs beside the two retrieves, never in front of
+    # them. Timeout, error, or an unrecognised value falls open to both
+    # pools. Off until the owner turns it on — fail-open is the default
+    # path either way.
+    engram_scope_router_enabled: bool = Field(default=False)
+    engram_scope_router_model: str | None = None
+    engram_scope_router_timeout_seconds: float = Field(default=1.0, gt=0)
+    engram_scope_router_system_prompt: str | None = None
+    engram_scope_router_workers: int = Field(default=4, gt=0)
+    engram_scope_router_temperature: float = Field(default=0.0, ge=0, le=2)
+    engram_scope_router_max_tokens: int = Field(default=64, gt=0)
+    engram_scope_router_scope_key: str = Field(default="scope", min_length=1)
+    engram_scope_router_reason_key: str = Field(default="reason", min_length=1)
+    engram_scope_router_question_key: str = Field(default="question", min_length=1)
+    engram_scope_router_response_format_type: str = Field(
+        default="json_object",
+        min_length=1,
+    )
+    engram_scope_router_reason_shared: str = Field(
+        default="persona_directed",
+        min_length=1,
+    )
+    engram_scope_router_reason_private: str = Field(
+        default="self_directed",
+        min_length=1,
+    )
+    engram_scope_router_reason_both: str = Field(
+        default="ambiguous",
+        min_length=1,
+    )
+    engram_scope_router_reason_timeout: str = Field(
+        default="timeout",
+        min_length=1,
+    )
+    engram_scope_router_reason_error: str = Field(
+        default="error",
+        min_length=1,
+    )
+    engram_scope_router_reason_unrecognised: str = Field(
+        default="unrecognised",
+        min_length=1,
+    )
+    engram_scope_router_reason_disabled: str = Field(
+        default="disabled",
+        min_length=1,
+    )
+    engram_scope_router_reason_unauthenticated: str = Field(
+        default="unauthenticated",
+        min_length=1,
+    )
     engram_converse_user_speaker: str = Field(default="user", min_length=1)
     engram_converse_persona_speaker: str = Field(default="persona", min_length=1)
     engram_persona_id: str | None = None
@@ -223,6 +289,69 @@ class WorkerSettings(BaseSettings):
         min_length=1,
     )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
+    persona_voice_fish_key: str = Field(default="fish_voice", min_length=1)
+    persona_voice_provider_key: str = Field(
+        default="voice_provider",
+        min_length=1,
+    )
+    persona_voice_provider_aura: str = Field(default="aura", min_length=1)
+    persona_voice_provider_fish: str = Field(default="fish", min_length=1)
+    admin_error_voice_provider: str = Field(
+        default="voice provider is not a configured choice",
+        min_length=1,
+    )
+    fish_api_key: str | None = None
+    fish_api_base_url: str = Field(
+        default="https://api.fish.audio",
+        min_length=1,
+    )
+    fish_tts_model: str = Field(default="s2.1-pro-free", min_length=1)
+    fish_tts_format: str = Field(default="pcm", min_length=1)
+    fish_tts_sample_rate: int = Field(default=24000, gt=0)
+    fish_tts_latency: str = Field(default="balanced", min_length=1)
+    fish_clone_type: str = Field(default="tts", min_length=1)
+    fish_clone_train_mode: str = Field(default="fast", min_length=1)
+    fish_clone_visibility: str = Field(default="private", min_length=1)
+    fish_clone_enhance: bool = Field(default=True)
+    fish_clone_ready_state: str = Field(default="trained", min_length=1)
+    fish_clone_timeout_seconds: float = Field(default=60, gt=0)
+    admin_fish_clone_max_bytes: int = Field(default=10485760, gt=0)
+    fish_clone_content_types: str = Field(
+        default="audio/wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/x-wav",
+        min_length=1,
+    )
+    fish_clone_suffixes: str = Field(
+        default=".wav,.mp3,.m4a,.opus,.webm,.ogg",
+        min_length=1,
+    )
+    admin_error_fish_key_missing: str = Field(
+        default="Fish API key is not set",
+        min_length=1,
+    )
+    admin_error_fish_unauthorized: str = Field(
+        default="Fish rejected the API key",
+        min_length=1,
+    )
+    admin_error_fish_payment: str = Field(
+        default="Fish has no remaining API credits",
+        min_length=1,
+    )
+    admin_error_fish_clone_failed: str = Field(
+        default="Fish could not clone that clip",
+        min_length=1,
+    )
+    admin_error_fish_untrained: str = Field(
+        default="Fish has not finished training that voice",
+        min_length=1,
+    )
+    admin_error_fish_clip_type: str = Field(
+        default="clip type is not allowed",
+        min_length=1,
+    )
+    admin_error_fish_clip_empty: str = Field(
+        default="clip is empty",
+        min_length=1,
+    )
     db_pool_min_size: int = Field(default=1, ge=0)
     db_pool_max_size: int = Field(default=8, gt=0)
     db_pool_timeout_seconds: float = Field(default=10, gt=0)
@@ -240,6 +369,36 @@ class WorkerSettings(BaseSettings):
     reframe_system_prompt: str | None = None
     answer_system_prompt: str | None = None
     answer_max_tokens: int = Field(default=320, gt=0)
+    answer_payload_persona_memories_key: str = Field(
+        default="persona_memories",
+        min_length=1,
+    )
+    answer_payload_caller_memories_key: str = Field(
+        default="caller_memories",
+        min_length=1,
+    )
+    # The persona's own name and description. Under BRAIN_MODE=chat Engram
+    # composes the reply and already grounds on these; on the retrieve path we
+    # compose, so without them the persona cannot answer "what is your name?"
+    # from anything but a memory that happens to state it in the first person.
+    answer_payload_persona_identity_key: str = Field(
+        default="persona_identity",
+        min_length=1,
+    )
+    persona_identity_name_key: str = Field(default="name", min_length=1)
+    persona_identity_description_key: str = Field(
+        default="description",
+        min_length=1,
+    )
+    answer_payload_history_key: str = Field(default="history", min_length=1)
+    answer_payload_question_key: str = Field(default="question", min_length=1)
+    answer_payload_voice_config_key: str = Field(
+        default="voice_config",
+        min_length=1,
+    )
+    memory_ref_pool_key: str = Field(default="pool", min_length=1)
+    memory_ref_pool_persona: str = Field(default="persona", min_length=1)
+    memory_ref_pool_caller: str = Field(default="caller", min_length=1)
     byo_llm_chat_completions_path: str = Field(
         default="/v1/chat/completions",
         min_length=1,
@@ -311,10 +470,13 @@ class WorkerSettings(BaseSettings):
         "engram_member_secret_key",
         "probe_persona_id",
         "openai_api_key",
+        "fish_api_key",
         "openai_base_url",
         "openai_api_base_url",
         "reframe_system_prompt",
         "answer_system_prompt",
+        "engram_scope_router_model",
+        "engram_scope_router_system_prompt",
         "redis_url",
         mode="before",
     )
@@ -362,6 +524,100 @@ class WorkerSettings(BaseSettings):
         if not value.startswith("/"):
             raise ValueError("BYO_LLM_CHAT_COMPLETIONS_PATH must start with /")
         return value
+
+    @field_validator("engram_api_version_path")
+    @classmethod
+    def engram_version_path_absolute(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("ENGRAM_API_VERSION_PATH must start with /")
+        return value
+
+    @model_validator(mode="after")
+    def distinct_answer_and_memory_ref_keys(self) -> WorkerSettings:
+        payload = {
+            self.answer_payload_persona_memories_key,
+            self.answer_payload_caller_memories_key,
+            self.answer_payload_persona_identity_key,
+            self.answer_payload_history_key,
+            self.answer_payload_question_key,
+            self.answer_payload_voice_config_key,
+        }
+        if len(payload) != 6:
+            raise ValueError(
+                "ANSWER_PAYLOAD_PERSONA_MEMORIES_KEY, "
+                "ANSWER_PAYLOAD_CALLER_MEMORIES_KEY, "
+                "ANSWER_PAYLOAD_PERSONA_IDENTITY_KEY, "
+                "ANSWER_PAYLOAD_HISTORY_KEY, ANSWER_PAYLOAD_QUESTION_KEY, and "
+                "ANSWER_PAYLOAD_VOICE_CONFIG_KEY must be distinct"
+            )
+        if self.persona_identity_name_key == self.persona_identity_description_key:
+            raise ValueError(
+                "PERSONA_IDENTITY_NAME_KEY must differ from "
+                "PERSONA_IDENTITY_DESCRIPTION_KEY"
+            )
+        if self.memory_ref_pool_persona == self.memory_ref_pool_caller:
+            raise ValueError(
+                "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def distinct_scope_router_keys(self) -> WorkerSettings:
+        payload = {
+            self.engram_scope_router_scope_key,
+            self.engram_scope_router_reason_key,
+            self.engram_scope_router_question_key,
+        }
+        if len(payload) != 3:
+            raise ValueError(
+                "ENGRAM_SCOPE_ROUTER_SCOPE_KEY, "
+                "ENGRAM_SCOPE_ROUTER_REASON_KEY, and "
+                "ENGRAM_SCOPE_ROUTER_QUESTION_KEY must be distinct"
+            )
+        reasons = {
+            self.engram_scope_router_reason_shared,
+            self.engram_scope_router_reason_private,
+            self.engram_scope_router_reason_both,
+            self.engram_scope_router_reason_timeout,
+            self.engram_scope_router_reason_error,
+            self.engram_scope_router_reason_unrecognised,
+            self.engram_scope_router_reason_disabled,
+            self.engram_scope_router_reason_unauthenticated,
+        }
+        if len(reasons) != 8:
+            raise ValueError(
+                "ENGRAM_SCOPE_ROUTER reason codes must be distinct"
+            )
+        scopes = {
+            self.engram_retrieve_scope_shared,
+            self.engram_retrieve_scope_private,
+            self.engram_retrieve_scope_both,
+        }
+        if len(scopes) != 3:
+            raise ValueError(
+                "ENGRAM_RETRIEVE_SCOPE_SHARED, ENGRAM_RETRIEVE_SCOPE_PRIVATE, "
+                "and ENGRAM_RETRIEVE_SCOPE_BOTH must be distinct"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def distinct_persona_voice_keys(self) -> WorkerSettings:
+        keys = {
+            self.persona_voice_tts_key,
+            self.persona_voice_fish_key,
+            self.persona_voice_provider_key,
+        }
+        if len(keys) != 3:
+            raise ValueError(
+                "PERSONA_VOICE_TTS_KEY, PERSONA_VOICE_FISH_KEY, and "
+                "PERSONA_VOICE_PROVIDER_KEY must be distinct"
+            )
+        if self.persona_voice_provider_aura == self.persona_voice_provider_fish:
+            raise ValueError(
+                "PERSONA_VOICE_PROVIDER_AURA must differ from "
+                "PERSONA_VOICE_PROVIDER_FISH"
+            )
+        return self
 
     @model_validator(mode="after")
     def refuse_chat_without_member_session_auth(self) -> WorkerSettings:

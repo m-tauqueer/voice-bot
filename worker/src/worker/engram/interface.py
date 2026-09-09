@@ -132,6 +132,17 @@ class PersonaBrain(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def retrieve_scoped(
+        self,
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        raise NotImplementedError
+
+    @abstractmethod
     def converse(
         self,
         persona_id: str,

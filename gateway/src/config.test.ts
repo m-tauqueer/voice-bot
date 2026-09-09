@@ -56,4 +56,28 @@ describe("config helpers", () => {
       "ws://localhost:5188/ws/voice?persona_id=11111111-1111-1111-1111-111111111111",
     );
   });
+
+  it("loads Fish env as optional and keeps catalog keys distinct", () => {
+    const config = testConfig();
+    expect(config.PERSONA_VOICE_TTS_KEY).toBe("tts_voice");
+    expect(config.PERSONA_VOICE_FISH_KEY).toBe("fish_voice");
+    expect(config.PERSONA_VOICE_PROVIDER_KEY).toBe("voice_provider");
+    expect(config.PERSONA_VOICE_PROVIDER_AURA).toBe("aura");
+    expect(config.PERSONA_VOICE_PROVIDER_FISH).toBe("fish");
+    expect(config.FISH_API_KEY).toBeUndefined();
+    expect(config.FISH_API_BASE_URL).toBe("https://api.fish.audio");
+    expect(config.ADMIN_FISH_CLONE_MAX_BYTES).toBe(10485760);
+    expect(testConfig({ FISH_API_KEY: "fish-test-key" }).FISH_API_KEY).toBe(
+      "fish-test-key",
+    );
+    const withFish = testConfig({ FISH_API_KEY: "fish-test-key" });
+    expect(withFish.FAILURE_CODE_FISH).toBe("fish_unavailable");
+    expect(withFish.FISH_TTS_LIVE_PATH).toBe("/v1/tts/live");
+    expect(() =>
+      testConfig({
+        PERSONA_VOICE_TTS_KEY: "voice",
+        PERSONA_VOICE_FISH_KEY: "voice",
+      }),
+    ).toThrow("PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY");
+  });
 });

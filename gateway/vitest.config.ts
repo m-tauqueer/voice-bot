@@ -40,6 +40,7 @@ export default defineConfig({
         "src/chat/turns.ts",
         "src/personas.ts",
         "src/deepgram/settings.ts",
+        "src/voice/transport.ts",
       ],
       thresholds: coverage,
     },

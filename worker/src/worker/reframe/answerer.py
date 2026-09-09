@@ -19,20 +19,29 @@ from worker.reframe.reframer import translate_openai_error
 from worker.reframe.types import HistoryTurn
 
 
+def _kept(items: list[str]) -> list[str]:
+    return [item for item in items if isinstance(item, str) and item.strip()]
+
+
 def _payload(
-    memories: list[str],
+    settings: WorkerSettings,
+    persona_memories: list[str],
+    caller_memories: list[str],
+    persona_identity: dict[str, Any],
     history: list[HistoryTurn],
     question: str,
     voice_config: dict[str, Any],
 ) -> str:
     return json.dumps(
         {
-            "memories": memories,
-            "history": [
+            settings.answer_payload_persona_memories_key: persona_memories,
+            settings.answer_payload_caller_memories_key: caller_memories,
+            settings.answer_payload_persona_identity_key: persona_identity,
+            settings.answer_payload_history_key: [
                 {"speaker": turn.speaker, "text": turn.text} for turn in history
             ],
-            "question": question,
-            "voice_config": voice_config,
+            settings.answer_payload_question_key: question,
+            settings.answer_payload_voice_config_key: voice_config,
         },
         ensure_ascii=False,
     )
@@ -43,7 +52,7 @@ class Answerer:
 
     Used when the brain reads memory and composes the reply here rather than
     asking the memory service to compose it. Same fact lock as the reframer:
-    the retrieved memories are the only permitted source of facts.
+    the two labelled lists are the only permitted source of facts.
     """
 
     def __init__(
@@ -62,18 +71,22 @@ class Answerer:
 
     def _request(
         self,
-        memories: list[str],
+        *,
+        persona_memories: list[str],
+        caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
     ) -> tuple[str, list[dict[str, str]]]:
-        grounded = [
-            item for item in memories if isinstance(item, str) and item.strip()
-        ]
-        if not grounded:
-            raise ReframeEmptyInputError("answering requires at least one memory")
+        persona = _kept(persona_memories)
+        caller = _kept(caller_memories)
+        if not isinstance(question, str) or not question.strip():
+            raise ReframeEmptyInputError("answering requires a question")
         if not isinstance(voice_config, dict):
             raise ReframeError("voice_config must be an object")
+        if not isinstance(persona_identity, dict):
+            raise ReframeError("persona_identity must be an object")
 
         limit = self._settings.reframe_history_turns
         recent = history[-limit:] if limit > 0 else []
@@ -85,18 +98,36 @@ class Answerer:
             {"role": "system", "content": system},
             {
                 "role": "user",
-                "content": _payload(grounded, recent, question, voice_config),
+                "content": _payload(
+                    self._settings,
+                    persona,
+                    caller,
+                    persona_identity,
+                    recent,
+                    question,
+                    voice_config,
+                ),
             },
         ]
 
     def answer(
         self,
-        memories: list[str],
+        *,
+        persona_memories: list[str],
+        caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
     ) -> str:
-        model, request = self._request(memories, history, question, voice_config)
+        model, request = self._request(
+            persona_memories=persona_memories,
+            caller_memories=caller_memories,
+            persona_identity=persona_identity,
+            history=history,
+            question=question,
+            voice_config=voice_config,
+        )
         try:
             completion = self._client.chat.completions.create(
                 model=model,
@@ -119,12 +150,22 @@ class Answerer:
 
     def stream(
         self,
-        memories: list[str],
+        *,
+        persona_memories: list[str],
+        caller_memories: list[str],
+        persona_identity: dict[str, Any],
         history: list[HistoryTurn],
         question: str,
         voice_config: dict[str, Any],
     ) -> Iterator[str]:
-        model, request = self._request(memories, history, question, voice_config)
+        model, request = self._request(
+            persona_memories=persona_memories,
+            caller_memories=caller_memories,
+            persona_identity=persona_identity,
+            history=history,
+            question=question,
+            voice_config=voice_config,
+        )
         try:
             stream = self._client.chat.completions.create(
                 model=model,

@@ -4,8 +4,10 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+import httpx
+from engram_sdk import _common as sdk_common
 from engram_sdk.errors import ConflictError as SdkConflictError
-from engram_sdk.errors import EngramAPIError
+from engram_sdk.errors import EngramAPIError, raise_for_status
 from engram_sdk.errors import EngramError as SdkEngramError
 from engram_sdk.errors import ForbiddenError as SdkForbiddenError
 from engram_sdk.errors import NotFoundError as SdkNotFoundError
@@ -107,6 +109,8 @@ class EngramBrain(PersonaBrain):
         # Member session token when this brain talks as the member; None means
         # the org key (or a test-injected client). Never logged.
         self._member_token = api_key
+        self._owned_http: httpx.Client | None = None
+        self._owns_http = False
         if client is not None:
             self._client = client
         elif api_key is not None:
@@ -120,6 +124,79 @@ class EngramBrain(PersonaBrain):
 
     def uses_member_token(self, api_key: str | None) -> bool:
         return self._member_token == api_key
+
+    def _retrieve_bearer(self) -> str:
+        if self._member_token:
+            return self._member_token
+        key = self._settings.engram_api_key
+        if not key:
+            raise RuntimeError(
+                "Engram is not configured (ENGRAM_API_KEY, ENGRAM_ORG_ID, "
+                "ENGRAM_BASE_URL)",
+            )
+        return key
+
+    def _http(self) -> httpx.Client:
+        borrowed = getattr(self._client, "_client", None)
+        if isinstance(borrowed, httpx.Client):
+            return borrowed
+        if self._owned_http is None:
+            if self._settings.engram_base_url is None:
+                raise RuntimeError(
+                    "Engram is not configured (ENGRAM_API_KEY, ENGRAM_ORG_ID, "
+                    "ENGRAM_BASE_URL)",
+                )
+            self._owned_http = httpx.Client(
+                base_url=str(self._settings.engram_base_url),
+                timeout=float(self._settings.engram_timeout_seconds),
+            )
+            self._owns_http = True
+        return self._owned_http
+
+    def _post_persona_retrieve(self, persona_id: str, body: dict[str, Any]) -> Any:
+        if "user_id" in body:
+            raise app.BrainError("scoped retrieve must not send user_id")
+        org = self._settings.engram_org_id
+        if not org:
+            raise RuntimeError(
+                "Engram is not configured (ENGRAM_API_KEY, ENGRAM_ORG_ID, "
+                "ENGRAM_BASE_URL)",
+            )
+        path = (
+            self._settings.engram_api_version_path.rstrip("/")
+            + sdk_common.org_path(org, "personas", persona_id, "retrieve")
+        )
+        try:
+            resp = self._http().request(
+                "POST",
+                path,
+                json=body,
+                headers=sdk_common.auth_headers(self._retrieve_bearer()),
+            )
+        except httpx.TransportError as exc:
+            raise SdkEngramError(f"network error: {exc}") from exc
+        parsed = sdk_common.parse_json(resp)
+        raise_for_status(resp.status_code, parsed)
+        return parsed
+
+    def _parse_retrieve(self, payload: Any) -> RetrieveOutcome:
+        raw = payload if isinstance(payload, dict) else {"value": payload}
+        rows = raw.get("results")
+        hits: list[RetrieveHit] = []
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                tenant = row.get("tenant")
+                text = row.get("text")
+                hits.append(
+                    RetrieveHit(
+                        tenant=tenant if isinstance(tenant, str) else None,
+                        text=text if isinstance(text, str) else None,
+                        raw=row,
+                    ),
+                )
+        return RetrieveOutcome(results=hits, raw=raw)
 
     def _read(self, op: Callable[[], T]) -> T:
         attempts = 0
@@ -258,23 +335,25 @@ class EngramBrain(PersonaBrain):
         payload = self._read(
             lambda: self._client.personas.retrieve(persona_id, query, top_k=top_k),
         )
-        raw = payload if isinstance(payload, dict) else {"value": payload}
-        rows = raw.get("results")
-        hits: list[RetrieveHit] = []
-        if isinstance(rows, list):
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                tenant = row.get("tenant")
-                text = row.get("text")
-                hits.append(
-                    RetrieveHit(
-                        tenant=tenant if isinstance(tenant, str) else None,
-                        text=text if isinstance(text, str) else None,
-                        raw=row,
-                    ),
-                )
-        return RetrieveOutcome(results=hits, raw=raw)
+        return self._parse_retrieve(payload)
+
+    def retrieve_scoped(
+        self,
+        persona_id: str,
+        query: str,
+        *,
+        scope: str,
+        top_k: int,
+    ) -> RetrieveOutcome:
+        body = {
+            "query": query,
+            "top_k": top_k,
+            "scope": scope,
+        }
+        payload = self._read(
+            lambda: self._post_persona_retrieve(persona_id, body),
+        )
+        return self._parse_retrieve(payload)
 
     def converse(
         self,
@@ -294,4 +373,8 @@ class EngramBrain(PersonaBrain):
         )
 
     def close(self) -> None:
+        if self._owns_http and self._owned_http is not None:
+            self._owned_http.close()
+            self._owned_http = None
+            self._owns_http = False
         self._client.close()

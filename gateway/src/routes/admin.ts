@@ -182,6 +182,36 @@ export async function registerAdminRoutes(
         return sendWorker(reply, response);
       });
 
+      admin.post("/persona/clone", async (request, reply) => {
+        const pinned = workerPersonaPath(
+          "/internal/admin/persona/clone",
+          request.query,
+          config.PERSONA_ID_QUERY,
+        );
+        if (!pinned.ok) {
+          return reply.code(400).send({ error: "invalid query" });
+        }
+        const uploaded = await request.file();
+        if (!uploaded) {
+          return reply.code(400).send({ error: "file required" });
+        }
+        const buffer = await uploaded.toBuffer();
+        if (buffer.byteLength > config.ADMIN_FISH_CLONE_MAX_BYTES) {
+          return reply.code(413).send({ error: "file too large" });
+        }
+        const form = new FormData();
+        form.append(
+          "file",
+          new Blob([buffer], { type: uploaded.mimetype }),
+          uploaded.filename,
+        );
+        const response = await callWorker(config, pinned.path, {
+          method: "POST",
+          body: form,
+        });
+        return sendWorker(reply, response);
+      });
+
       admin.post("/subscribe", async (request, reply) => {
         const response = await callWorker(config, "/internal/admin/subscribe", {
           method: "POST",

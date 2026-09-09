@@ -416,7 +416,7 @@ const envFileSchema = z.object({
       .string()
       .min(1)
       .default(
-        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable,speaking_llm_failed,record_lost",
+        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable,speaking_llm_failed,record_lost,fish_unavailable,fish_key_missing,fish_voice_missing,fish_unauthorized,fish_payment",
       ),
   ),
   OPS_FORCE_CODE: z.preprocess(
@@ -505,6 +505,10 @@ const envFileSchema = z.object({
   ADMIN_INGEST_MAX_BYTES: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(8388608),
+  ),
+  ADMIN_FISH_CLONE_MAX_BYTES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(10485760),
   ),
   INSIGHTS_PAGE_SIZE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -596,7 +600,7 @@ const envFileSchema = z.object({
       .string()
       .min(1)
       .default(
-        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,member_authenticated,engram_credential",
+        "correlation_id,session_id,turn_ids,action,reasons,brain_ms,reframe_ms,reframe_first_token_ms,brain_mode,recorded,retrieve_hits,retrieve_hits_grounded,retrieve_hits_dropped,retrieve_hits_shared,retrieve_hits_shared_grounded,retrieve_hits_shared_dropped,retrieve_hits_private,retrieve_hits_private_grounded,retrieve_hits_private_dropped,member_authenticated,engram_credential,retrieve_scope,retrieve_scope_reason",
       ),
   ),
   LOG_TURN_EVENT: z.preprocess(
@@ -651,6 +655,149 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("tts_voice"),
   ),
+  PERSONA_VOICE_FISH_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_voice"),
+  ),
+  PERSONA_VOICE_PROVIDER_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice_provider"),
+  ),
+  PERSONA_VOICE_PROVIDER_AURA: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("aura"),
+  ),
+  PERSONA_VOICE_PROVIDER_FISH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish"),
+  ),
+  FISH_API_KEY: optionalNonEmpty,
+  FISH_API_BASE_URL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().url().default("https://api.fish.audio"),
+  ),
+  FISH_TTS_MODEL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("s2.1-pro-free"),
+  ),
+  FISH_TTS_FORMAT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("pcm"),
+  ),
+  FISH_TTS_SAMPLE_RATE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(24000),
+  ),
+  FISH_TTS_LATENCY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("balanced"),
+  ),
+  FISH_TTS_LIVE_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/v1/tts/live"),
+  ),
+  FISH_TTS_TIMEOUT_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(60000),
+  ),
+  FISH_AUTH_HEADER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Authorization"),
+  ),
+  FISH_AUTH_SCHEME: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Bearer"),
+  ),
+  FISH_MODEL_HEADER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("model"),
+  ),
+  FISH_WS_EVENT_START: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("start"),
+  ),
+  FISH_WS_EVENT_TEXT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("text"),
+  ),
+  FISH_WS_EVENT_FLUSH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("flush"),
+  ),
+  FISH_WS_EVENT_STOP: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("stop"),
+  ),
+  FISH_WS_EVENT_AUDIO: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("audio"),
+  ),
+  FISH_WS_EVENT_FINISH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("finish"),
+  ),
+  FISH_WS_FINISH_REASON_ERROR: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("error"),
+  ),
+  FISH_PROBE_TEXT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Hello from the live voice check."),
+  ),
+  FISH_PROBE_REFERENCE_ID: optionalNonEmpty,
+  DEEPGRAM_LISTEN_WSS_URL: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().url().default("wss://api.deepgram.com/v1/listen"),
+  ),
+  DEEPGRAM_AUDIO_INPUT_CHANNELS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(1),
+  ),
+  // Silence Listen VAD needs before speech_final. UtteranceEnd below is the
+  // fallback that carries an echoey room, so this can stay short.
+  DEEPGRAM_LISTEN_ENDPOINTING_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(600),
+  ),
+  // How long the user must keep producing words, while the persona is still
+  // speaking, before the persona stops. Not a VAD click and not the first
+  // word: sustained speech. Thinking still waits for the utterance to end.
+  VOICE_BARGE_IN_HOLD_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(500),
+  ),
+  DEEPGRAM_LISTEN_UTTERANCE_END_MS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().positive().default(1000),
+  ),
+  DEEPGRAM_LISTEN_INTERIM_RESULTS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  DEEPGRAM_LISTEN_VAD_EVENTS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  DEEPGRAM_LISTEN_PUNCTUATE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  DEEPGRAM_LISTEN_SMART_FORMAT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["true", "false"]).default("true"),
+  ),
+  DEEPGRAM_LISTEN_MSG_RESULTS: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Results"),
+  ),
+  DEEPGRAM_LISTEN_MSG_SPEECH_STARTED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("SpeechStarted"),
+  ),
+  DEEPGRAM_LISTEN_MSG_UTTERANCE_END: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("UtteranceEnd"),
+  ),
   MEMORY_PANEL_ENABLED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.enum(["true", "false"]).default("true"),
@@ -662,6 +809,18 @@ const envFileSchema = z.object({
   MEMORY_PANEL_NO_PERSONA: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("session not found"),
+  ),
+  MEMORY_REF_POOL_KEY: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("pool"),
+  ),
+  MEMORY_REF_POOL_PERSONA: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("persona"),
+  ),
+  MEMORY_REF_POOL_CALLER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("caller"),
   ),
   ENGRAM_PERSONA_ID: optionalNonEmpty,
   AZURE_STORAGE_ACCOUNT: optionalNonEmpty,
@@ -762,6 +921,10 @@ const envFileSchema = z.object({
   VOICE_TRANSCRIPT_USER_ROLE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("user"),
+  ),
+  VOICE_TRANSCRIPT_ASSISTANT_ROLE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("assistant"),
   ),
   DEEPGRAM_MSG_USER_STARTED: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -872,6 +1035,30 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("think_failed"),
   ),
+  FAILURE_CODE_FISH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_unavailable"),
+  ),
+  FAILURE_CODE_FISH_KEY_MISSING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_key_missing"),
+  ),
+  FAILURE_CODE_FISH_VOICE_MISSING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_voice_missing"),
+  ),
+  FAILURE_CODE_FISH_UNAUTHORIZED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_unauthorized"),
+  ),
+  FAILURE_CODE_FISH_PAYMENT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("fish_payment"),
+  ),
+  FAILURE_CODE_VOICE_PROVIDER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice_provider"),
+  ),
   FAILURE_MESSAGE_ENGRAM: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z
@@ -943,6 +1130,36 @@ const envFileSchema = z.object({
       .min(1)
       .default("The persona could not answer. The call has ended."),
   ),
+  FAILURE_MESSAGE_FISH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("The cloned voice could not speak. The call has ended."),
+  ),
+  FAILURE_MESSAGE_FISH_KEY_MISSING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Fish API key is not set"),
+  ),
+  FAILURE_MESSAGE_FISH_VOICE_MISSING: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z
+      .string()
+      .min(1)
+      .default("This persona is set to Fish Audio but has no Fish voice id."),
+  ),
+  FAILURE_MESSAGE_FISH_UNAUTHORIZED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Fish rejected the API key"),
+  ),
+  FAILURE_MESSAGE_FISH_PAYMENT: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("Fish has no remaining API credits"),
+  ),
+  FAILURE_MESSAGE_VOICE_PROVIDER: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("voice provider is not a configured choice"),
+  ),
   FAILURE_MESSAGE_UNKNOWN: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("Something went wrong."),
@@ -953,7 +1170,7 @@ const envFileSchema = z.object({
       .string()
       .min(1)
       .default(
-        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable",
+        "engram_unavailable,deepgram_unavailable,think_failed,database_unavailable,fish_unavailable,fish_key_missing,fish_voice_missing,fish_unauthorized,fish_payment,voice_provider",
       ),
   ),
   BYO_LLM_CHAT_COMPLETIONS_PATH: z.preprocess(
@@ -975,6 +1192,18 @@ const envFileSchema = z.object({
   BYO_LLM_SESSION_HEADER: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("x-session-id"),
+  ),
+  BYO_LLM_USER_ROLE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("user"),
+  ),
+  BYO_LLM_SSE_DONE: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("[DONE]"),
+  ),
+  BYO_LLM_SSE_DATA_PREFIX: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("data:"),
   ),
   BYO_LLM_ENDPOINT_EXTRA_HEADERS: z.preprocess((val) => {
     if (val === undefined || val === "") {
@@ -1147,12 +1376,45 @@ export function loadGatewayConfig(
     validateOpsConfig(parsed.data);
     validateStatusCopy(parsed.data);
     validateStatusApiPath(parsed.data);
+    validatePersonaVoiceKeys(parsed.data);
+    if (
+      parsed.data.MEMORY_REF_POOL_PERSONA === parsed.data.MEMORY_REF_POOL_CALLER
+    ) {
+      throw new Error(
+        "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER",
+      );
+    }
   } catch (error) {
     throw new Error(
       error instanceof Error ? error.message : "Invalid insights environment",
     );
   }
   return parsed.data;
+}
+
+export function validatePersonaVoiceKeys(config: GatewayConfig): void {
+  if (config.PERSONA_VOICE_FISH_KEY === config.PERSONA_VOICE_TTS_KEY) {
+    throw new Error(
+      "PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY",
+    );
+  }
+  const keys = [
+    config.PERSONA_VOICE_TTS_KEY,
+    config.PERSONA_VOICE_FISH_KEY,
+    config.PERSONA_VOICE_PROVIDER_KEY,
+  ];
+  if (new Set(keys).size !== keys.length) {
+    throw new Error(
+      "PERSONA_VOICE_TTS_KEY, PERSONA_VOICE_FISH_KEY, and PERSONA_VOICE_PROVIDER_KEY must be distinct",
+    );
+  }
+  if (
+    config.PERSONA_VOICE_PROVIDER_AURA === config.PERSONA_VOICE_PROVIDER_FISH
+  ) {
+    throw new Error(
+      "PERSONA_VOICE_PROVIDER_AURA must differ from PERSONA_VOICE_PROVIDER_FISH",
+    );
+  }
 }
 
 export function validateAccessConfig(config: GatewayConfig): void {
@@ -1329,12 +1591,9 @@ export function isOwnerEmail(email: string, config: GatewayConfig): boolean {
   return ownerEmails(config).has(email.trim().toLowerCase());
 }
 
-export function voiceCallReady(config: GatewayConfig): string | null {
+export function voiceSocketReady(config: GatewayConfig): string | null {
   if (!config.DEEPGRAM_API_KEY) {
     return "DEEPGRAM_API_KEY is not set";
-  }
-  if (!config.BYO_LLM_PUBLIC_URL) {
-    return "BYO_LLM_PUBLIC_URL is not set";
   }
   if (!config.DEEPGRAM_STT_MODEL) {
     return "DEEPGRAM_STT_MODEL is not set";
@@ -1342,14 +1601,39 @@ export function voiceCallReady(config: GatewayConfig): string | null {
   if (!config.DEEPGRAM_STT_LANGUAGE) {
     return "DEEPGRAM_STT_LANGUAGE is not set";
   }
-  if (!config.DEEPGRAM_TTS_VOICE) {
-    return "DEEPGRAM_TTS_VOICE is not set";
-  }
   if (!config.VOICE_WS_PATH.startsWith("/")) {
     return "VOICE_WS_PATH must start with /";
   }
   if (!config.BYO_LLM_CHAT_COMPLETIONS_PATH.startsWith("/")) {
     return "BYO_LLM_CHAT_COMPLETIONS_PATH must start with /";
+  }
+  if (!config.FISH_TTS_LIVE_PATH.startsWith("/")) {
+    return "FISH_TTS_LIVE_PATH must start with /";
+  }
+  return null;
+}
+
+export function voiceCallReady(config: GatewayConfig): string | null {
+  const shared = voiceSocketReady(config);
+  if (shared) {
+    return shared;
+  }
+  if (!config.BYO_LLM_PUBLIC_URL) {
+    return "BYO_LLM_PUBLIC_URL is not set";
+  }
+  if (!config.DEEPGRAM_TTS_VOICE) {
+    return "DEEPGRAM_TTS_VOICE is not set";
+  }
+  return null;
+}
+
+export function voiceFishReady(config: GatewayConfig): string | null {
+  const shared = voiceSocketReady(config);
+  if (shared) {
+    return shared;
+  }
+  if (!config.FISH_API_KEY) {
+    return config.FAILURE_MESSAGE_FISH_KEY_MISSING;
   }
   return null;
 }
@@ -1360,6 +1644,50 @@ export function thinkEndpointUrl(config: GatewayConfig): string {
     throw new Error("BYO_LLM_PUBLIC_URL is not set");
   }
   return new URL(config.BYO_LLM_CHAT_COMPLETIONS_PATH, `${base}/`).toString();
+}
+
+export function internalThinkUrl(config: GatewayConfig): string {
+  return new URL(
+    config.BYO_LLM_CHAT_COMPLETIONS_PATH,
+    `${config.WORKER_URL.replace(/\/$/, "")}/`,
+  ).toString();
+}
+
+export function fishLiveUrl(config: GatewayConfig): string {
+  const http = new URL(config.FISH_API_BASE_URL);
+  const protocol = http.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${http.host}${config.FISH_TTS_LIVE_PATH}`;
+}
+
+export function deepgramListenUrl(config: GatewayConfig): string {
+  const url = new URL(config.DEEPGRAM_LISTEN_WSS_URL);
+  url.searchParams.set("model", config.DEEPGRAM_STT_MODEL ?? "");
+  url.searchParams.set("language", config.DEEPGRAM_STT_LANGUAGE ?? "");
+  url.searchParams.set("encoding", config.DEEPGRAM_AUDIO_INPUT_ENCODING);
+  url.searchParams.set(
+    "sample_rate",
+    String(config.DEEPGRAM_AUDIO_INPUT_SAMPLE_RATE),
+  );
+  url.searchParams.set(
+    "channels",
+    String(config.DEEPGRAM_AUDIO_INPUT_CHANNELS),
+  );
+  url.searchParams.set(
+    "interim_results",
+    config.DEEPGRAM_LISTEN_INTERIM_RESULTS,
+  );
+  url.searchParams.set(
+    "endpointing",
+    String(config.DEEPGRAM_LISTEN_ENDPOINTING_MS),
+  );
+  url.searchParams.set(
+    "utterance_end_ms",
+    String(config.DEEPGRAM_LISTEN_UTTERANCE_END_MS),
+  );
+  url.searchParams.set("vad_events", config.DEEPGRAM_LISTEN_VAD_EVENTS);
+  url.searchParams.set("punctuate", config.DEEPGRAM_LISTEN_PUNCTUATE);
+  url.searchParams.set("smart_format", config.DEEPGRAM_LISTEN_SMART_FORMAT);
+  return url.toString();
 }
 
 export function thinkEndpointHeaders(

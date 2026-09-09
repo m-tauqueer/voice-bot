@@ -1,12 +1,14 @@
 # Production plan (moved)
 
-This file used to hold Phases 4–6 plus Plan X. It was split so agents do not mix current work with shipped history or parked ops.
+This file used to hold later phases plus Plan X. It was split so agents do not mix current work with shipped history or parked ops.
 
 | What | Where |
 | --- | --- |
-| **Current work — personas** | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) |
-| What already shipped (0–4 product) | [SHIPPED.md](SHIPPED.md) |
-| Phase 6, parked product, Plan X (CI/CD, backups, security 2.0, Azure last) | [FUTURE.md](FUTURE.md) |
+| Docs map / context / decisions / workflow | [README.md](README.md), [CONTEXT.md](CONTEXT.md), [decisions/](decisions/README.md), [WORKFLOW.md](WORKFLOW.md) |
+| **Current work — cloned voices, then member UI** | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) |
+| Personas (built; leftover sittings in §4) | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) |
+| What already shipped | [SHIPPED.md](SHIPPED.md) |
+| Parked product, Plan X (CI/CD, backups, security 2.0, Azure last) | [FUTURE.md](FUTURE.md) |
 | Engram | [ENGRAM.md](ENGRAM.md) |
 | Index | [PHASE_PLAN.md](PHASE_PLAN.md) |
 

@@ -52,9 +52,10 @@ export function ttsMeta(
   config: GatewayConfig,
   audio: { bytes: number; durationMs: number; interrupted: boolean },
   requestId: string | null,
+  voice?: string,
 ): JsonObject {
   return {
-    voice: config.DEEPGRAM_TTS_VOICE ?? null,
+    voice: voice ?? config.DEEPGRAM_TTS_VOICE ?? null,
     encoding: config.DEEPGRAM_AUDIO_OUTPUT_ENCODING,
     sample_rate: config.DEEPGRAM_AUDIO_OUTPUT_SAMPLE_RATE,
     container: config.DEEPGRAM_AUDIO_OUTPUT_CONTAINER,
