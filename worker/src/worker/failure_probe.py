@@ -53,6 +53,9 @@ class DeadBrain:
     def converse(self, *_args: object, **_kwargs: object) -> None:
         return None
 
+    def ingest_private_text(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
     def subscribe(self, *_args: object, **_kwargs: object) -> dict[str, bool]:
         # Join is skipped via a temporary mirrored subscription; this is a guard.
         return {"subscribed": True}
@@ -85,6 +88,9 @@ class GroundedBrain:
         )
 
     def converse(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+    def ingest_private_text(self, *_args: object, **_kwargs: object) -> None:
         return None
 
     def subscribe(self, *_args: object, **_kwargs: object) -> dict[str, bool]:

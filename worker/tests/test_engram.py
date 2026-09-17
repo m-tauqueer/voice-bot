@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -32,6 +33,8 @@ class FakePersonas:
     def __init__(self) -> None:
         self.retrieves: list[tuple[str, str, int]] = []
         self.converses: list[dict[str, object]] = []
+        self.private_calls: list[tuple[str, str | None]] = []
+        self.private_texts: list[str] = []
         self.retrieve_errors: list[Exception] = []
         self.chat_error: Exception | None = None
         self.subscribed: list[tuple[str, str]] = []
@@ -74,6 +77,25 @@ class FakePersonas:
             }
         )
         return {"ok": True}
+
+    def private(self, persona_id: str, user_id: str | None = None):
+        self.private_calls.append((persona_id, user_id))
+        return self
+
+    def text(
+        self,
+        text: str,
+        *,
+        metadata: object = None,
+        session_id: str | None = None,
+    ):
+        self.private_texts.append(text)
+        return SimpleNamespace(
+            gid=1,
+            perception=None,
+            incomplete=False,
+            raw={"ok": True},
+        )
 
     def create(self, name: str, handle: str, description: str):
         return _persona()
@@ -148,6 +170,14 @@ def test_chat_and_persona_helpers(settings: WorkerSettings) -> None:
     outcome = brain.chat("persona-1", "hello", session_id="sess-9")
     assert outcome.messages == ["The river was high."]
     brain.converse("persona-1", "hi", session_id="sess-9", speaker="user")
+    private = brain.ingest_private_text(
+        "persona-1",
+        "The caller lives in Pune.",
+    )
+    assert private.gid == 1
+    assert client.personas.private_calls == [("persona-1", None)]
+    assert client.personas.private_texts == ["The caller lives in Pune."]
+    assert client.personas.converses[-1]["text"] == "hi"
     brain.close()
 
 

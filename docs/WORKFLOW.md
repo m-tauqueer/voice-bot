@@ -8,7 +8,7 @@ This is the process Tauqueer asked for: **one named part**, **subparts in order*
 
 ## 1. Product sitting (code or docs)
 
-1. Tauqueer names a **phase** and a **part** from the current plan ([PHASE_6_PLAN.md](PHASE_6_PLAN.md) unless he names another file).
+1. Tauqueer names a **phase** and a **part** from the current plan ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) unless he names another file).
 2. Do **only that part**. Its **subparts in order**. Nothing from later parts.
 3. After **each subpart**: run the automated checks that cover the change, then a **logic check** of the diff (config not hardcoding; no keyword/heuristic language understanding; isolation and fail-closed; no tenant strings built by hand; audio never sent to Engram).
 4. After the last subpart: **tell Tauqueer** whether a manual sitting is needed (live call, real Fish id, browser). If the part lists a Manual test, walk him through it and wait until it passes. If it lists none, say so. If UI changed, verify in the browser. Do not mark the part done until that is settled.

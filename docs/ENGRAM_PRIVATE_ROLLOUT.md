@@ -2,7 +2,7 @@
 
 Owner: Tauqueer. Status: **Both phases shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes were confirmed by hand on two Google accounts. The earlier subject-ingest workaround plan is withdrawn. Nothing here is left to implement — see §Outstanding for the operator tasks that remain. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Product map: [README.md](README.md).
 
-Working rule: Tauqueer names **one phase and one part**. This file is not the current product plan ([PHASE_6_PLAN.md](PHASE_6_PLAN.md) is). If he names a leftover operator task from here, finish only that, run its manual test, stop, and **commit only when he asks**. Do not mention phase/part numbers in commit messages.
+Working rule: Tauqueer names **one phase and one part**. This file is not the current product plan ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) is). If he names a leftover operator task from here, finish only that, run its manual test, stop, and **commit only when he asks**. Do not mention phase/part numbers in commit messages.
 
 Sibling to [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Personas product parts stay there. This file is the memory-isolation work.
 

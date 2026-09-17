@@ -1,6 +1,6 @@
 # Component library
 
-The Metacognition gallery and unused primitives do **not** live in this repo. Product docs: [docs/README.md](../docs/README.md). Card-grid work is a named part in [PHASE_6_PLAN.md](../docs/PHASE_6_PLAN.md), not something to start from this file.
+The Metacognition gallery and unused primitives do **not** live in this repo. Product docs: [docs/README.md](../docs/README.md). The card-grid picker is a named part in [PHASE_6_PLAN.md](../docs/PHASE_6_PLAN.md) (paused). Current work is [CALLER_MEMORY_PLAN.md](../docs/CALLER_MEMORY_PLAN.md). Do not start UI copy from this file.
 
 **Source of truth:** `Desktop/component-library` (or whichever copy Tauqueer keeps on disk). Open that project when you need a primitive, a chart, or a shell piece. Copy only the file the product is about to use into `frontend/src`. Do not copy the gallery, and do not add this library as an npm dependency.
 

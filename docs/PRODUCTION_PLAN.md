@@ -5,7 +5,8 @@ This file used to hold later phases plus Plan X. It was split so agents do not m
 | What | Where |
 | --- | --- |
 | Docs map / context / decisions / workflow | [README.md](README.md), [CONTEXT.md](CONTEXT.md), [decisions/](decisions/README.md), [WORKFLOW.md](WORKFLOW.md) |
-| **Current work — cloned voices, then member UI** | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) |
+| **Current work — caller facts, not transcript dump** | [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) |
+| Cloned voices, then member UI (paused) | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) |
 | Personas (built; leftover sittings in §4) | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) |
 | What already shipped | [SHIPPED.md](SHIPPED.md) |
 | Parked product, Plan X (CI/CD, backups, security 2.0, Azure last) | [FUTURE.md](FUTURE.md) |

@@ -137,6 +137,10 @@ class WorkerSettings(BaseSettings):
         default="engram_credential_unavailable",
         min_length=1,
     )
+    log_engram_writeback_skipped: str = Field(
+        default="engram_writeback_skipped",
+        min_length=1,
+    )
     log_retrieve_grounded_event: str = Field(
         default="retrieve grounded",
         min_length=1,
@@ -172,13 +176,13 @@ class WorkerSettings(BaseSettings):
     engram_message_join: str = Field(default=" ")
     engram_read_max_retries: int = Field(default=2, ge=0)
     engram_client_cache_size: int = Field(default=8, gt=0)
-    # "retrieve" reads memory and lets the answer model compose the reply,
-    # writing the turn back with converse. "chat" lets Engram compose it, which
-    # costs about ten more seconds a turn.
+    # "retrieve" reads memory and lets the answer model compose the reply.
+    # Sitting transcript stays in Postgres; Engram private is not converse-written.
+    # "chat" lets Engram compose it, which costs about ten more seconds a turn.
     brain_mode: Literal["chat", "retrieve"] = "retrieve"
     # When true, member turns authenticate as that member (session token).
     # Leave false until that credential path exists. False is containment:
-    # converse write-back is off and BRAIN_MODE=chat cannot boot, so we stop
+    # private write-back is off and BRAIN_MODE=chat cannot boot, so we stop
     # growing the API key owner's private pool. See docs/ENGRAM.md §2.3.
     engram_member_session_auth: bool = False
     # 32 random bytes, base64. Encrypts each member's Engram password at rest.
@@ -198,8 +202,63 @@ class WorkerSettings(BaseSettings):
     engram_retrieve_top_k_private: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
+    # Gates the off-path write worker. That worker extracts caller facts and
+    # writes them as private text. It does not converse the sitting. Degraded
+    # members never write regardless of this flag.
     engram_converse_writeback: bool = Field(default=True)
     engram_writeback_workers: int = Field(default=2, gt=0)
+    engram_writeback_reason_paused: str = Field(
+        default="private_write_paused",
+        min_length=1,
+    )
+    engram_writeback_reason_unauthenticated: str = Field(
+        default="unauthenticated",
+        min_length=1,
+    )
+    log_engram_writeback: str = Field(default="engram_writeback", min_length=1)
+    engram_writeback_reason_claim_failed: str = Field(
+        default="claim_failed",
+        min_length=1,
+    )
+    engram_writeback_reason_write_failed: str = Field(
+        default="write_failed",
+        min_length=1,
+    )
+    # Off the reply path. Empty model uses OPENAI_MODEL.
+    caller_fact_model: str | None = None
+    caller_fact_timeout_seconds: float = Field(default=15.0, gt=0)
+    caller_fact_temperature: float = Field(default=0.0, ge=0, le=2)
+    caller_fact_max_tokens: int = Field(default=256, gt=0)
+    caller_fact_max_facts: int = Field(default=8, gt=0)
+    caller_fact_system_prompt: str | None = None
+    caller_fact_prefix: str = Field(default="The caller", min_length=1)
+    caller_fact_payload_history_key: str = Field(default="history", min_length=1)
+    caller_fact_payload_user_turn_key: str = Field(
+        default="user_turn",
+        min_length=1,
+    )
+    caller_fact_payload_persona_reply_key: str = Field(
+        default="persona_reply",
+        min_length=1,
+    )
+    caller_fact_payload_facts_key: str = Field(
+        default="caller_facts",
+        min_length=1,
+    )
+    caller_fact_payload_speaker_key: str = Field(default="speaker", min_length=1)
+    caller_fact_payload_text_key: str = Field(default="text", min_length=1)
+    caller_fact_response_format_type: str = Field(
+        default="json_object",
+        min_length=1,
+    )
+    caller_fact_reason_empty: str = Field(default="empty", min_length=1)
+    caller_fact_reason_extracted: str = Field(default="extracted", min_length=1)
+    caller_fact_reason_timeout: str = Field(default="timeout", min_length=1)
+    caller_fact_reason_error: str = Field(default="error", min_length=1)
+    caller_fact_reason_unrecognised: str = Field(
+        default="unrecognised",
+        min_length=1,
+    )
     # Reads sit on the path to first word, so they get a pool of their own
     # rather than sharing the write-back one. Each turn submits a single
     # private read; the shared read runs on the calling thread.
@@ -361,7 +420,7 @@ class WorkerSettings(BaseSettings):
     openai_model: str = Field(default="gpt-4o-mini")
     openai_base_url: str | None = None
     openai_api_base_url: str | None = None
-    reframe_history_turns: int = Field(default=8, ge=0)
+    reframe_history_turns: int = Field(default=24, ge=0)
     reframe_temperature: float = Field(default=0.2, ge=0, le=2)
     reframe_max_tokens: int = Field(default=256, gt=0)
     reframe_timeout_seconds: float = Field(default=30, gt=0)
@@ -559,6 +618,46 @@ class WorkerSettings(BaseSettings):
             raise ValueError(
                 "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER"
             )
+        writeback_reasons = {
+            self.engram_writeback_reason_paused,
+            self.engram_writeback_reason_unauthenticated,
+            self.engram_writeback_reason_claim_failed,
+            self.engram_writeback_reason_write_failed,
+        }
+        if len(writeback_reasons) != 4:
+            raise ValueError(
+                "ENGRAM_WRITEBACK reason codes must be distinct"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def distinct_caller_fact_keys(self) -> WorkerSettings:
+        payload = {
+            self.caller_fact_payload_history_key,
+            self.caller_fact_payload_user_turn_key,
+            self.caller_fact_payload_persona_reply_key,
+            self.caller_fact_payload_facts_key,
+            self.caller_fact_payload_speaker_key,
+            self.caller_fact_payload_text_key,
+        }
+        if len(payload) != 6:
+            raise ValueError(
+                "CALLER_FACT_PAYLOAD_HISTORY_KEY, "
+                "CALLER_FACT_PAYLOAD_USER_TURN_KEY, "
+                "CALLER_FACT_PAYLOAD_PERSONA_REPLY_KEY, "
+                "CALLER_FACT_PAYLOAD_FACTS_KEY, "
+                "CALLER_FACT_PAYLOAD_SPEAKER_KEY, and "
+                "CALLER_FACT_PAYLOAD_TEXT_KEY must be distinct"
+            )
+        reasons = {
+            self.caller_fact_reason_empty,
+            self.caller_fact_reason_extracted,
+            self.caller_fact_reason_timeout,
+            self.caller_fact_reason_error,
+            self.caller_fact_reason_unrecognised,
+        }
+        if len(reasons) != 5:
+            raise ValueError("CALLER_FACT reason codes must be distinct")
         return self
 
     @model_validator(mode="after")

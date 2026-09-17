@@ -14,6 +14,7 @@ from worker.clients import create_openai
 from worker.config import WorkerSettings
 from worker.controller.controller import Controller
 from worker.controller.decision import Action, Decision, ReasonCode, TurnSignals
+from worker.engram.caller_facts import CallerFactExtractor
 from worker.engram.errors import (
     BrainError,
     ConflictError,
@@ -279,7 +280,7 @@ class TurnRunner:
         )
         # Reads are on the path to first word and must never queue behind a
         # write-back, so they get their own pool. Sharing one would put a
-        # `converse` round trip in front of the next turn's retrieve.
+        # private write in front of the next turn's retrieve.
         self._readers = ThreadPoolExecutor(
             max_workers=settings.engram_retrieve_workers,
             thread_name_prefix="engram-retrieve",
@@ -294,6 +295,7 @@ class TurnRunner:
         self._reframer: Reframer | None = None
         self._answerer: Answerer | None = None
         self._scope_router: ScopeRouter | None = None
+        self._extractor: CallerFactExtractor | None = None
         self._grant_tried: set[tuple[str, str]] = set()
 
     def _llm(self) -> Any:
@@ -323,6 +325,16 @@ class TurnRunner:
                 client = None
             self._scope_router = ScopeRouter(self._settings, client)
         return self._scope_router
+
+    def _extract_client(self) -> CallerFactExtractor:
+        if self._extractor is None:
+            client: Any | None
+            try:
+                client = self._llm()
+            except ReframeUnavailableError:
+                client = None
+            self._extractor = CallerFactExtractor(self._settings, client)
+        return self._extractor
 
     def run(
         self,
@@ -1099,9 +1111,11 @@ class TurnRunner:
         return engine_id
 
     def _should_write_back(self, plan: TurnPlan) -> bool:
-        # converse writes the authenticated caller's private pool. A degraded
-        # or flag-off turn is still the org key, so write-back stays off
-        # (docs/ENGRAM.md §2.3). Gated on this plan, not the global setting.
+        # Private Engram writes are extracted caller facts on the member JWT.
+        # This gate still decides who would write (authenticated retrieve).
+        # A degraded or flag-off turn is still the org key, so write-back
+        # stays off (docs/ENGRAM.md §2.3). Gated on this plan, not the global
+        # setting.
         if not plan.member_authenticated:
             return False
         # chat writes the caller's private pool itself; only retrieve owes one.
@@ -1112,15 +1126,25 @@ class TurnRunner:
         return bool(plan.engram_user_id and plan.engram_persona_id)
 
     def _write_back(self, plan: TurnPlan) -> None:
-        """Record the exchange in Engram after the reply has been delivered.
+        """Off the reply path. Extract caller facts; never converse the sitting.
 
-        Runs off the reply path, so a slow or failing write costs the
-        conversation nothing. Writes are never retried (TRD §3).
+        Postgres already recorded the turn via write_receipts. Claiming
+        writeback_at keeps a retried think from extracting twice. Timeout,
+        error, or unrecognised JSON writes nothing extra. Empty facts is
+        success. Never dump user text or spoken reply.
         """
+        settings = self._settings
+        if not plan.member_authenticated or plan.app_user_id is None:
+            log.warning(
+                settings.log_engram_writeback,
+                session_id=str(plan.session_id),
+                reason=settings.engram_writeback_reason_unauthenticated,
+            )
+            return
         if not plan.engram_user_id or not plan.engram_persona_id:
             return
         try:
-            with borrow(self._settings) as conn:
+            with borrow(settings) as conn:
                 claimed = claim_writeback(
                     conn,
                     plan.session_id,
@@ -1131,70 +1155,87 @@ class TurnRunner:
                 return
         except Exception:
             log.warning(
-                "engram write-back claim failed",
+                settings.log_engram_writeback,
                 session_id=str(plan.session_id),
+                reason=settings.engram_writeback_reason_claim_failed,
             )
             return
-        sid = plan.engram_session_id
-        entries: list[tuple[str, str]] = [
-            (plan.text, self._settings.engram_converse_user_speaker),
-        ]
-        if plan.spoken:
-            entries.append(
-                (plan.spoken, self._settings.engram_converse_persona_speaker),
+        extracted = self._extract_client().extract(
+            history=plan.history,
+            user_turn=plan.text,
+            persona_reply=plan.spoken or "",
+        )
+        if extracted.reason not in {
+            settings.caller_fact_reason_empty,
+            settings.caller_fact_reason_extracted,
+        }:
+            log.info(
+                settings.log_engram_writeback,
+                session_id=str(plan.session_id),
+                reason=extracted.reason,
             )
-        if not plan.member_authenticated or plan.app_user_id is None:
             return
-        email = None
+        if not extracted.facts:
+            log.info(
+                settings.log_engram_writeback,
+                session_id=str(plan.session_id),
+                reason=settings.caller_fact_reason_empty,
+            )
+            return
+        email = ""
         try:
-            with borrow(self._settings) as conn:
-                email = user_email(conn, plan.app_user_id)
+            with borrow(settings) as conn:
+                loaded = user_email(conn, plan.app_user_id)
+            email = loaded or ""
         except Exception:
             log.warning(
-                "engram write-back skipped",
+                settings.log_engram_writeback,
                 session_id=str(plan.session_id),
-                reason="unauthenticated",
+                reason=settings.engram_writeback_reason_unauthenticated,
             )
             return
-        for body, speaker in entries:
-            if not body.strip():
-                continue
+        written = 0
+        for fact in extracted.facts:
             try:
-                written = self._run_member_op(
+                stored = self._run_member_op(
                     None,
                     member_authenticated=True,
                     app_user_id=plan.app_user_id,
                     engram_user_id=plan.engram_user_id,
-                    email=email or "",
-                    op=lambda active, text=body, who=speaker: active.converse(
+                    email=email,
+                    op=lambda active, body=fact: active.ingest_private_text(
                         plan.engram_persona_id,
-                        text,
-                        session_id=sid,
-                        speaker=who,
+                        body,
                     ),
                 )
-                if written is None:
+                if stored is None:
                     log.warning(
-                        "engram write-back skipped",
+                        settings.log_engram_writeback,
                         session_id=str(plan.session_id),
-                        reason="unauthenticated",
+                        reason=settings.engram_writeback_reason_unauthenticated,
                     )
                     return
-            except BrainError as exc:
+                written += 1
+            except BrainError:
                 log.warning(
-                    "engram write-back failed",
+                    settings.log_engram_writeback,
                     session_id=str(plan.session_id),
-                    speaker=speaker,
-                    error=str(exc),
+                    reason=settings.engram_writeback_reason_write_failed,
                 )
                 return
-            except Exception as exc:  # noqa: BLE001 - a writer thread must not die
+            except Exception:  # noqa: BLE001 - a writer thread must not die
                 log.warning(
-                    "engram write-back raised",
+                    settings.log_engram_writeback,
                     session_id=str(plan.session_id),
-                    error=str(exc),
+                    reason=settings.engram_writeback_reason_write_failed,
                 )
                 return
+        log.info(
+            settings.log_engram_writeback,
+            session_id=str(plan.session_id),
+            reason=settings.caller_fact_reason_extracted,
+            fact_count=written,
+        )
 
     def _start_scope_router(
         self,

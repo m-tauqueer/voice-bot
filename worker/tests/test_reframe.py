@@ -63,7 +63,7 @@ def test_reframe_rejects_empty_messages(settings: WorkerSettings) -> None:
         reframer._request(["", "  "], [], {})
 
 
-def test_answer_request_uses_labelled_lists_as_only_facts(
+def test_answer_request_keeps_labelled_lists_and_sitting_history(
     settings: WorkerSettings,
 ) -> None:
     answerer = Answerer(settings, DummyClient())
@@ -89,7 +89,55 @@ def test_answer_request_uses_labelled_lists_as_only_facts(
         "I taught in Oxford.",
     ]
     assert payload[settings.answer_payload_caller_memories_key] == ["They sail."]
+    assert payload[settings.answer_payload_history_key] == [
+        {"speaker": "user", "text": "Where did you teach?"},
+    ]
     assert payload[settings.answer_payload_question_key] == "Where did you teach?"
+    assert "Where did you teach?" not in payload[
+        settings.answer_payload_persona_memories_key
+    ]
+    assert "Where did you teach?" not in payload[
+        settings.answer_payload_caller_memories_key
+    ]
+
+
+def test_answer_history_length_follows_config(settings: WorkerSettings) -> None:
+    loaded = settings.model_copy(update={"reframe_history_turns": 2})
+    answerer = Answerer(loaded, DummyClient())
+    history = [
+        HistoryTurn(speaker="user", text="one"),
+        HistoryTurn(speaker="persona", text="two"),
+        HistoryTurn(speaker="user", text="three"),
+        HistoryTurn(speaker="persona", text="four"),
+    ]
+    _, messages = answerer._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=history,
+        question="what did I just say",
+        persona_identity={},
+        voice_config={},
+    )
+    payload = json.loads(messages[1]["content"])
+    assert payload[loaded.answer_payload_history_key] == [
+        {"speaker": "user", "text": "three"},
+        {"speaker": "persona", "text": "four"},
+    ]
+    assert payload[loaded.answer_payload_persona_memories_key] == ["persona fact"]
+    assert payload[loaded.answer_payload_caller_memories_key] == ["caller fact"]
+    empty = loaded.model_copy(update={"reframe_history_turns": 0})
+    _, none = Answerer(empty, DummyClient())._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=history,
+        question="what did I just say",
+        persona_identity={},
+        voice_config={},
+    )
+    none_payload = json.loads(none[1]["content"])
+    assert none_payload[empty.answer_payload_history_key] == []
+    assert none_payload[empty.answer_payload_persona_memories_key] == ["persona fact"]
+    assert none_payload[empty.answer_payload_caller_memories_key] == ["caller fact"]
 
 
 def test_answer_allows_both_lists_empty_when_the_question_is_present(

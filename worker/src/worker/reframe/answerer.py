@@ -51,8 +51,9 @@ class Answerer:
     """Speaks as the persona from memories retrieved for this turn.
 
     Used when the brain reads memory and composes the reply here rather than
-    asking the memory service to compose it. Same fact lock as the reframer:
-    the two labelled lists are the only permitted source of facts.
+    asking the memory service to compose it. Long-term facts come from
+    persona_identity and the two labelled lists. This sitting's speaker-labelled
+    history is this-call context, not those lists.
     """
 
     def __init__(

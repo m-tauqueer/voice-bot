@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md).
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)): retrieve writes extracted caller facts as private text; it does not converse the sitting. A closing pass at hang-up is not shipped yet. Existing converse rows stay dirty until a named purge.
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>
@@ -25,7 +25,7 @@ Three Engram objects that are easy to confuse, and that we must not mix:
 | Name | What it is | This product |
 | --- | --- | --- |
 | `sessions.open/close` | Groups generic `memory.ingest` writes on `{org}` or `{org}:{user}` | **Do not use** for persona chat |
-| Persona `session_id` | One conversation thread in `{org}:{persona}:{user}` | **This is our thread.** Carry it on every `chat` / `converse` / `retrieve` write-back |
+| Persona `session_id` | One conversation thread in `{org}:{persona}:{user}` | **This is our thread.** Carry it on `chat` / `retrieve`. The retrieve path no longer converse-writes. |
 | `threads.*` | Verbatim append-only log (core conversational mode) | **Do not use** |
 
 `sessions.list()` after persona chats is empty, correctly. Reaching for it to find chats is the wrong object.
@@ -114,12 +114,12 @@ Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](EN
 | --- | --- | --- |
 | Teach Ada a fact | `personas.teach(ada, text)` or `answer` | shared `{org}:ada` |
 | Teach Ada from a document | `personas.pool(ada, "shared").document(...)` | shared |
-| Member says something / persona replies (`retrieve` brain) | two scoped `retrieve`s then `personas.converse(..., session_id=, speaker=)` | private `{org}:ada:alice` |
+| Member says something / persona replies (`retrieve` brain) | two scoped `retrieve`s; sitting in Postgres; off-path extract may `private(pid).text` caller facts on the **member JWT** | private `{org}:ada:alice` grows extracted facts only — never the transcript |
 | Member says something (`chat` brain switch) | `personas.chat(ada, msg, session_id=)` | private (Engram writes both sides) |
 | Extra private media (receipt, note) | `personas.private(ada).text/image/...` | private |
 | Generic `client.ingest.text` while bound as Alice | `{org}:alice` **personal** | **Not used for this product’s conversations** |
 
-`converse` **does not reply**. Our default brain (`BRAIN_MODE=retrieve`) is retrieve + answer model + converse write-back. That is correct. Building a UI on converse alone would look like the persona is ignoring people.
+`converse` **does not reply**. Our default brain (`BRAIN_MODE=retrieve`) is retrieve + answer model. The sitting is Postgres. Durable caller facts are private text ingest (`personas.private(pid).text` on the member JWT). We do not converse-write user text or spoken reply. Building a UI on converse alone would look like the persona is ignoring people.
 
 `personas.private` returns an **ingest surface**, not a full client. There is no `memory.list` on the private tenant. Read private via `retrieve` or admin `user_memories`.
 
@@ -217,7 +217,8 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | --- | --- | --- | --- |
 | `retrieve(pid, query, top_k)` | SDK 0.4.0 path (probes, leftover callers) | — | **shared only** on backend 0.5.0. Private is opt-in via `scope` / `user_id`. Member turns must not send `user_id`; `scope="private"` defaults to the caller. |
 | `retrieve_scoped(pid, query, scope=, top_k)` | default brain: two parallel reads; memory panel: private only | — | turn path: one **shared** + one **private** on the **member JWT**. Degraded members and org-key fallback: shared only — never a private read. Memory panel: **private** on the member JWT; empty if we cannot credential the member. |
-| `converse(pid, text, session_id=, speaker=)` | write-back after retrieve reply | caller private — **member JWT** | — |
+| `private(pid).text(text)` | off-path caller-fact write after a retrieve reply | caller private — **member JWT**; omit `user_id` and `session_id` | — |
+| `converse(pid, text, session_id=, speaker=)` | unused on the member turn path (probes only) | caller private — **member JWT** | — |
 | `chat(pid, message, session_id=)` | `BRAIN_MODE=chat` switch | caller private — **member JWT** | shared + caller private |
 | `auth.login(email, password)` | mint a member session on a cold cache (once per 12h) | — | bearer token for that member |
 | `members.add(email, password=)` | first talk | People row **and the only credential we will ever have** | — |
@@ -287,7 +288,7 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 ## 11. Our wrapper today
 
-`worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, subscribe/unsubscribe, chat, retrieve (tenant off each row), `retrieve_scoped` (httpx body with `scope` from config, never `user_id`), converse. The default turn path issues a shared retrieve and a private retrieve **in parallel** on the member JWT, grounds each list with `may_ground`, and hands the answerer two labelled lists (`persona_memories` / `caller_memories`). A config-pluggable classifier may run **beside** those reads and drop one list; it cannot add a list or skip `may_ground`. Timeout, error, or an unrecognised value keeps both lists. An empty caller list is answered honestly, never substituted from shared. `memory_refs` stores which pool each grounded row came from. The chosen scope and reason code join the per-turn log allowlist; memory text does not. The memory panel (`/internal/memories`) issues a **private** scoped read and still filters with `is_own_private_pool`. A member we cannot credential gets the shared read alone on the turn path and an empty panel. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
+`worker/src/worker/engram/engram_brain.py` already exposes create/get/delete, teach/answer/questions, shared ingest via `pool`, private text ingest via `private(pid).text` (no `user_id` on a member JWT), subscribe/unsubscribe, chat, retrieve (tenant off each row), `retrieve_scoped` (httpx body with `scope` from config, never `user_id`), converse. The default turn path issues a shared retrieve and a private retrieve **in parallel** on the member JWT, grounds each list with `may_ground`, and hands the answerer two labelled lists (`persona_memories` / `caller_memories`) plus speaker-labelled sitting history from Postgres. After the reply, a write-back thread extracts caller facts and writes them as private text; it does not converse the sitting. Timeout, error, or unrecognised JSON writes nothing extra. An empty fact list is success. Degraded members never write. A config-pluggable classifier may run **beside** those reads and drop one list; it cannot add a list or skip `may_ground`. Timeout, error, or an unrecognised value keeps both lists. An empty caller list is answered honestly, never substituted from shared. `memory_refs` stores which pool each grounded row came from. The chosen scope and reason code join the per-turn log allowlist; memory text does not. Extract reason codes live on the dedicated write-back log, not the turn allow-list. The memory panel (`/internal/memories`) issues a **private** scoped read and still filters with `is_own_private_pool`. A member we cannot credential gets the shared read alone on the turn path and an empty panel. Client factory is `EngramClient(org, user_id)` with `max_retries=0`. That surface is enough for multi-persona **if** the gateway stops assuming there is one local row.
 
 The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, publish or unpublish locally, and destroy. Destroy calls `personas.delete` (shared pool plus every member's private pool) after the owner types the handle, then clears the local subscriptions, sittings and persona row. The gateway does not guess one local row.
 

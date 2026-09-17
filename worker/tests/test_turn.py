@@ -2,11 +2,16 @@ from threading import Barrier, Event
 from time import perf_counter
 from uuid import uuid4
 
+import pytest
+
 from worker.config import WorkerSettings
 from worker.controller.decision import Action, Decision, ReasonCode
+from worker.engram.caller_facts import CallerFactExtract, CallerFactExtractor
+from worker.engram.errors import BrainError
 from worker.engram.interface import RetrieveHit, RetrieveOutcome
 from worker.engram.scope_router import ScopeDecision
 from worker.observe.fields import turn_log_fields
+from worker.reframe.types import HistoryTurn
 from worker.turn.service import TurnPlan, TurnRunner, _persona_identity
 
 ORG = "100912164da2419885314c9fdb5358b7"
@@ -344,6 +349,7 @@ class _KindBrain:
         self.retrieves = 0
         self.chats = 0
         self.converses = 0
+        self.private_texts = 0
 
     def retrieve(self, persona_id: str, query: str, *, top_k: int = 10):
         self.retrieves += 1
@@ -366,6 +372,10 @@ class _KindBrain:
 
     def converse(self, *args: object, **kwargs: object) -> dict[str, bool]:
         self.converses += 1
+        return {"ok": True}
+
+    def ingest_private_text(self, *args: object, **kwargs: object) -> dict[str, bool]:
+        self.private_texts += 1
         return {"ok": True}
 
     def close(self) -> None:
@@ -595,10 +605,7 @@ def test_forget_member_session_drops_cached_token(
         runner.close()
 
 
-def test_degraded_write_back_never_converses(
-    settings: WorkerSettings,
-    monkeypatch,
-) -> None:
+def _stub_writeback_db(monkeypatch, *, claimed: bool = True) -> None:
     from worker.turn import service as turn_mod
 
     class _Conn:
@@ -612,8 +619,36 @@ def test_degraded_write_back_never_converses(
         def __exit__(self, *args: object) -> bool:
             return False
 
-    monkeypatch.setattr(turn_mod, "claim_writeback", lambda *_a, **_k: True)
+    monkeypatch.setattr(turn_mod, "claim_writeback", lambda *_a, **_k: claimed)
     monkeypatch.setattr(turn_mod, "borrow", lambda _s: _Borrow())
+    monkeypatch.setattr(turn_mod, "user_email", lambda *_a, **_k: "a@example.com")
+
+
+class _Extract:
+    def __init__(self, result: CallerFactExtract) -> None:
+        self.result = result
+        self.calls: list[dict[str, object]] = []
+
+    def extract(
+        self,
+        *,
+        history: list[HistoryTurn],
+        user_turn: str,
+        persona_reply: str,
+    ) -> CallerFactExtract:
+        self.calls.append(
+            {
+                "history": history,
+                "user_turn": user_turn,
+                "persona_reply": persona_reply,
+            }
+        )
+        return self.result
+
+
+def test_degraded_write_back_never_converses(
+    settings: WorkerSettings,
+) -> None:
     settings.engram_converse_writeback = True
     settings.engram_member_session_auth = True
     runner = TurnRunner(settings)
@@ -627,6 +662,202 @@ def test_degraded_write_back_never_converses(
     plan.app_user_id = uuid4()
     try:
         runner._write_back(plan)
+        assert called == []
+    finally:
+        runner.close()
+
+
+@pytest.mark.parametrize(
+    ("user_turn", "persona_reply", "facts"),
+    [
+        ("hi", "hello", []),
+        ("I live in Pune", "good to know", ["The caller lives in Pune."]),
+        ("are you working at Metacognition?", "yes", []),
+        ("tell me about yourself", "I work at Metacognition", []),
+    ],
+)
+def test_write_back_mocked_extract_writes_private_text_not_converse(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    user_turn: str,
+    persona_reply: str,
+    facts: list[str],
+) -> None:
+    _stub_writeback_db(monkeypatch)
+    settings.engram_converse_writeback = True
+    settings.engram_member_session_auth = True
+    runner = TurnRunner(settings)
+    reason = (
+        settings.caller_fact_reason_extracted
+        if facts
+        else settings.caller_fact_reason_empty
+    )
+    extractor = _Extract(CallerFactExtract(facts, reason))
+    runner._extractor = extractor  # type: ignore[assignment]
+    ingested: list[str] = []
+    conversed: list[str] = []
+    shared: list[str] = []
+
+    class _Active:
+        def ingest_private_text(self, persona_id: str, text: str) -> dict[str, bool]:
+            ingested.append(text)
+            assert persona_id == PERSONA
+            return {"ok": True}
+
+        def ingest_shared_text(
+            self,
+            *args: object,
+            **kwargs: object,
+        ) -> dict[str, bool]:
+            shared.append("shared")
+            return {"ok": True}
+
+        def converse(self, *args: object, **kwargs: object) -> dict[str, bool]:
+            conversed.append("converse")
+            return {"ok": True}
+
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda *a, **k: k["op"](_Active())
+    )
+    plan = _retrieve_plan()
+    plan.member_authenticated = True
+    plan.text = user_turn
+    plan.spoken = persona_reply
+    plan.app_user_id = uuid4()
+    try:
+        runner._write_back(plan)
+        assert ingested == facts
+        assert conversed == []
+        assert shared == []
+        assert extractor.calls[0]["user_turn"] == user_turn
+        assert extractor.calls[0]["persona_reply"] == persona_reply
+        assert runner._should_write_back(plan) is True
+    finally:
+        runner.close()
+
+
+def test_write_back_extract_error_writes_nothing(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_writeback_db(monkeypatch)
+    settings.engram_converse_writeback = True
+    settings.engram_member_session_auth = True
+    runner = TurnRunner(settings)
+    extractor = _Extract(
+        CallerFactExtract([], settings.caller_fact_reason_timeout),
+    )
+    runner._extractor = extractor  # type: ignore[assignment]
+    called: list[str] = []
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda *a, **k: called.append("write") or {"ok": True}
+    )
+    plan = _retrieve_plan()
+    plan.member_authenticated = True
+    plan.spoken = "I work at Metacognition"
+    plan.text = "hello"
+    plan.app_user_id = uuid4()
+    try:
+        runner._write_back(plan)
+        assert called == []
+    finally:
+        runner.close()
+
+
+def test_write_back_missing_client_writes_nothing(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_writeback_db(monkeypatch)
+    settings.engram_converse_writeback = True
+    settings.engram_member_session_auth = True
+    runner = TurnRunner(settings)
+    runner._extractor = CallerFactExtractor(settings, None)
+    called: list[str] = []
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda *a, **k: called.append("write") or {"ok": True}
+    )
+    plan = _retrieve_plan()
+    plan.member_authenticated = True
+    plan.text = "I live in Pune"
+    plan.spoken = "good to know"
+    plan.app_user_id = uuid4()
+    try:
+        runner._write_back(plan)
+        assert called == []
+    finally:
+        runner.close()
+
+
+def test_write_back_brain_error_does_not_dump_transcript(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_writeback_db(monkeypatch)
+    settings.engram_converse_writeback = True
+    settings.engram_member_session_auth = True
+    runner = TurnRunner(settings)
+    extractor = _Extract(
+        CallerFactExtract(
+            ["The caller lives in Pune."],
+            settings.caller_fact_reason_extracted,
+        ),
+    )
+    runner._extractor = extractor  # type: ignore[assignment]
+    conversed: list[str] = []
+
+    class _Active:
+        def ingest_private_text(
+            self,
+            *args: object,
+            **kwargs: object,
+        ) -> dict[str, bool]:
+            raise BrainError("ingest failed")
+
+        def converse(self, *args: object, **kwargs: object) -> dict[str, bool]:
+            conversed.append("converse")
+            return {"ok": True}
+
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda *a, **k: k["op"](_Active())
+    )
+    plan = _retrieve_plan()
+    plan.member_authenticated = True
+    plan.text = "I live in Pune"
+    plan.spoken = "good to know"
+    plan.app_user_id = uuid4()
+    try:
+        runner._write_back(plan)
+        assert conversed == []
+    finally:
+        runner.close()
+
+
+def test_write_back_skips_extract_when_receipt_already_claimed(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_writeback_db(monkeypatch, claimed=False)
+    settings.engram_converse_writeback = True
+    settings.engram_member_session_auth = True
+    runner = TurnRunner(settings)
+    extractor = _Extract(
+        CallerFactExtract(
+            ["The caller lives in Pune."],
+            settings.caller_fact_reason_extracted,
+        ),
+    )
+    runner._extractor = extractor  # type: ignore[assignment]
+    called: list[str] = []
+    runner._run_member_op = (  # type: ignore[method-assign]
+        lambda *a, **k: called.append("write") or {"ok": True}
+    )
+    plan = _retrieve_plan()
+    plan.member_authenticated = True
+    plan.app_user_id = uuid4()
+    try:
+        runner._write_back(plan)
+        assert extractor.calls == []
         assert called == []
     finally:
         runner.close()

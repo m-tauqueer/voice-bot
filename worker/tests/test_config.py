@@ -53,6 +53,15 @@ def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
     assert loaded.engram_scope_router_reason_shared == "persona_directed"
     assert loaded.engram_scope_router_reason_private == "self_directed"
     assert loaded.engram_scope_router_reason_both == "ambiguous"
+    assert loaded.reframe_history_turns == 24
+    assert loaded.engram_writeback_reason_paused == "private_write_paused"
+    assert loaded.engram_writeback_reason_unauthenticated == "unauthenticated"
+    assert loaded.log_engram_writeback == "engram_writeback"
+    assert loaded.caller_fact_reason_empty == "empty"
+    assert loaded.caller_fact_reason_extracted == "extracted"
+    assert loaded.caller_fact_prefix == "The caller"
+    assert loaded.caller_fact_timeout_seconds == 15.0
+    assert loaded.caller_fact_max_facts == 8
     assert "retrieve_scope" in loaded.log_turn_fields
     assert "retrieve_scope_reason" in loaded.log_turn_fields
     kwargs = settings.model_dump()
@@ -92,6 +101,24 @@ def test_scope_router_keys_and_reason_codes_must_be_distinct(
     with pytest.raises(ValidationError) as caught:
         WorkerSettings(_env_file=None, **kwargs)
     assert "ENGRAM_RETRIEVE_SCOPE" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["engram_writeback_reason_paused"] = "same"
+    kwargs["engram_writeback_reason_unauthenticated"] = "same"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "ENGRAM_WRITEBACK reason codes" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["caller_fact_payload_history_key"] = "same"
+    kwargs["caller_fact_payload_facts_key"] = "same"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "CALLER_FACT_PAYLOAD" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["caller_fact_reason_empty"] = "error"
+    kwargs["caller_fact_reason_error"] = "error"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "CALLER_FACT reason codes" in str(caught.value)
 
 
 def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(

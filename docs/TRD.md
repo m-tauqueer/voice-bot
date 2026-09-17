@@ -1,6 +1,6 @@
 # TRD — Voice Persona Bot
 
-Technical Requirements & Design. This is the source of truth for **how** the system is built. Owner: Tauqueer. Why a choice was made: [decisions/](decisions/README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Map: [README.md](README.md). Companions: [PRD](PRD.md), [ENGRAM](ENGRAM.md), [current work](PHASE_6_PLAN.md), [personas](PHASE_5_PLAN.md), [index](PHASE_PLAN.md).
+Technical Requirements & Design. This is the source of truth for **how** the system is built. Owner: Tauqueer. Why a choice was made: [decisions/](decisions/README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Map: [README.md](README.md). Companions: [PRD](PRD.md), [ENGRAM](ENGRAM.md), [current work](CALLER_MEMORY_PLAN.md), [personas](PHASE_5_PLAN.md), [index](PHASE_PLAN.md).
 
 ---
 
@@ -22,13 +22,13 @@ Every decision below is confirmed. Do not silently change any of them; if realit
 
 - **Engram is the brain and the memory.** Which Engram call answers a turn is now config (`BRAIN_MODE`), and both paths keep memory in Engram:
   - **`chat`.** One `personas.chat` per turn; it retrieves shared + caller-private, grounds, and returns the reply, and writes the caller's private pool itself. Measured ~11s of Engram-side generation per turn.
-  - **`retrieve` (default).** Two scoped `retrieve` calls in parallel (shared + private, each with its own `top_k`); a small structured classifier runs **beside** those reads (never in front) and may drop one labelled list before the answer model runs. The answerer composes from `persona_memories` and `caller_memories` under the same fact lock, and `personas.converse` writes both sides of the turn back to the caller's private pool off the reply path. SDK 0.4.0 `personas.retrieve` is shared-only on backend 0.5.0; we post `scope` ourselves. The classifier is off until `ENGRAM_SCOPE_ROUTER_ENABLED` is true; timeout, error, or an unrecognised value falls open to both pools. Measured ~2.5s to first word, ~4s on a live spoken call (before the second retrieve; the extra retrieve and the classifier share that window so added latency is overrun past Engram, not a new round trip).
+  - **`retrieve` (default).** Two scoped `retrieve` calls in parallel (shared + private, each with its own `top_k`); a small structured classifier runs **beside** those reads (never in front) and may drop one labelled list before the answer model runs. The answerer composes from `persona_identity`, `persona_memories`, `caller_memories`, and speaker-labelled sitting `history` (Postgres; window from config). It does **not** `personas.converse` the sitting into private. After the reply, a write-back thread extracts caller facts (structured JSON) and writes each as `personas.private(pid).text` on the **member JWT**. Empty facts is success; timeout, error, or unrecognised JSON writes nothing extra. First word is unchanged. A later closing pass over the full sitting is still named ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)). SDK 0.4.0 `personas.retrieve` is shared-only on backend 0.5.0; we post `scope` ourselves. The classifier is off until `ENGRAM_SCOPE_ROUTER_ENABLED` is true; timeout, error, or an unrecognised value falls open to both pools. Measured ~2.5s to first word, ~4s on a live spoken call (before the second retrieve; the extra retrieve and the classifier share that window so added latency is overrun past Engram, not a new round trip).
   The controller gates speak/silence on whichever result comes back. `retrieve` became the default after a side-by-side run (`npm run brains`) showed it equal or better on memory recall, private recall, conversational continuity and refusing to invent when memory does not cover the question — at a quarter of the latency. `chat` remains available as a switch.
-- **The speaking LLM** (config-pluggable, default `gpt-4o-mini`) always runs, streamed so speech starts on the first token. It sees the last N turns plus persona voice rules, and is **fact-locked** in both modes: it may not introduce facts beyond what Engram returned (minor connective phrasing only).
+- **The speaking LLM** (config-pluggable, default `gpt-4o-mini`) always runs, streamed so speech starts on the first token. It sees the last N turns (config `reframe_history_turns`) plus persona voice rules. Long-term facts are locked to Engram's labelled lists; this sitting is Postgres history:
   - Under `chat` it is the **reframer**: it paraphrases Engram's composed reply.
-  - Under `retrieve` it is the **answerer**: it composes the reply from `persona_memories` (shared teach) and `caller_memories` (this member's private history). Neither list may be used as the other. An empty caller list is answered honestly, never substituted from the persona list.
+  - Under `retrieve` it is the **answerer**: it composes the reply from `persona_memories` (shared teach) and `caller_memories` (this member's private facts). Neither list may be used as the other. Speaker-labelled `history` is this-call context, not those lists. An empty caller list is answered honestly from this sitting if history has it, never substituted from the persona list.
 - Persona identity = the catalog row's **name and description** (passed to the answerer as `persona_identity`) **+ Engram shared pool** (`teach` / `answer` / document ingest) **+** app voice rules in the reframe prompt. Engram grounds a `chat`-mode reply on the persona's own name and description; the `retrieve` path composes the reply in the worker, so it is told the same thing. `persona_identity` answers *who you are*; it is never used to fill an empty `caller_memories`.
-- Pools: **persona shared + per-(user, persona) private**. **One Engram `session_id` per sitting** (one Postgres session with that persona on one channel). A later sitting mints a new thread id; long-term recall is the private pool, not that thread. Chat and voice do not share one Engram `session_id`. The caller's private pool is written by `chat` automatically, or by `converse` on the `retrieve` path. Do not write product chats into `{org}:{user}`.
+- Pools: **persona shared + per-(user, persona) private**. **One Engram `session_id` per sitting** (one Postgres session with that persona on one channel). A later sitting mints a new thread id; long-term recall is the private pool, not that thread. Chat and voice do not share one Engram `session_id`. The retrieve path writes extracted caller facts as private text; it does not converse the sitting. The `chat` switch still writes both sides inside Engram and stays off. Do not write product chats into `{org}:{user}`.
 - **Text-only into Engram** (audio is never sent to Engram).
 - **Engram down = product down** for the first build.
 
@@ -102,7 +102,6 @@ flowchart LR
   brain --> engram
   brain --> reframe
   reframe -->|"utterance, streamed by token"| dg
-  worker -->|"converse write-back (retrieve path)"| engram
   bridge --> redis
   worker --> pg
   bridge --> blob
@@ -127,12 +126,12 @@ sequenceDiagram
   W->>W: controller gate (speak/silence)
   W->>E: personas.retrieve(pid, text) — or personas.chat on the switch
   E-->>W: memories (or a composed PersonaReply)
-  W->>W: compose or reframe, grounded only in what Engram returned
+  W->>W: compose or reframe (Engram lists + this sitting's history)
   W-->>D: utterance, streamed token by token
   D-->>G: Aura-2 audio (starts on the first token)
   G-->>U: playback
   W->>P: persist turn, decision, engram ids, latency
-  W->>E: personas.converse write-back (retrieve path, after the reply)
+  Note over W,E: retrieve path does not converse the sitting into private
   G->>P: persist audio URLs (user + bot)
 ```
 
@@ -163,7 +162,7 @@ Rules the worker MUST follow:
 - **Session id:** carry one conversation id for the whole conversation — omitting it makes the persona amnesiac. The app claims it (`uuid4().hex`, which is what the SDK mints too) when a session first needs one, so two turns starting at once share a thread instead of minting one each. Engram treats it as an opaque caller-chosen key.
 - **No streaming:** `chat` is a single blocking call; the SDK exposes no token stream. Nothing downstream can start before it returns, which is why it costs the whole turn.
 - **Seeding (admin):** `personas.create(name, handle=..., description=...)`; teach via `personas.teach(pid, text)` and `personas.answer(pid, question_key, text)` (question bank from `personas.questions(pid)`); ingest documents into the shared pool via `personas.shared(pid).document(...)`. Subscribe testers by joining People (`members.add`) then `personas.subscribe(pid, user_id)` — chatting without a subscription returns 403.
-- **Writes:** on `chat`, Engram writes the caller's private pool automatically (both user turn and reply). On `retrieve`, the app writes both sides with `personas.converse(pid, text, session_id=..., speaker=...)` **after** the reply has been delivered, on a small thread pool so it never holds the reply open. Written turns are retrievable immediately. Never blind-retried; a failed write-back is logged and dropped.
+- **Writes:** on `chat`, Engram writes the caller's private pool automatically (both user turn and reply). On `retrieve`, the sitting is recorded in Postgres only. The off-path write worker does not `personas.converse` user text or spoken reply. Caller-fact private writes are not on this path yet. Never dump the transcript as a fallback. Never blind-retried.
 - **Subscriptions:** Engram docs require an active subscription for chat (403 otherwise). Live subscribe needs `org:manage`; `members.add` needs `members:manage`. First talk joins People by Google email, persists Engram’s `user_id`, then subscribes that persona, then talks as that id. Fail closed if join or subscribe fails (except already subscribed). App published list is who may see a persona. Gateway mints a placeholder `engram_user_id` at admit; the worker replaces it with Engram’s id on first join. See [ENGRAM.md](ENGRAM.md) §4. The private tenant `{org}:{persona}:{user}` is the intended isolation boundary but is **not** honoured by the conversation endpoints today — [ENGRAM.md](ENGRAM.md) §2.3.
 - **Consent:** we send text only, so audio/video/FER consent flags do not apply. Do not send audio to Engram.
 - **Request logs:** `engram.insights.logs(limit=...)` is org-scoped (`GET /orgs/{org}/logs`, SDK `EngramClient(org_id)` / empty `user_id`). Rows are metadata only. `result` distinguishes a refusal (`denied`) from a fault (`error`). The call is gated by `audit:read`; a 403 is reported as `SKIP` by `npm run budgets`, not treated as a product outage.
@@ -195,7 +194,7 @@ Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurabl
 - `subscriptions` — mirror of Engram subscribe for admin visibility. Not the isolation control. Subscribe on first talk.
 - `sessions` — a voice/chat session: app session id, user id, persona id, **Engram `session_id`**, channel, started/ended.
 - `turns` — one row per turn: session id, ordinal, speaker (user/persona), text, STT/TTS metadata, controller decision + reason codes, `brain_mode` (which brain answered, so an A/B run is readable from SQL), `correlation_id` (the same id as the gateway and worker log lines for that turn; added in `infra/migrations/0005_correlation_id.sql`; nullable on rows written before that), created_at.
-- `write_receipts` — one persist + converse write-back per `(session_id, correlation_id)` so a retried think does not double-record.
+- `write_receipts` — one persist per `(session_id, correlation_id)` so a retried think does not double-record Postgres turns. `writeback_at` is claimed by the off-path caller-fact write so a retried think does not extract twice. The closing pass over a finished sitting uses its own receipt (not yet shipped).
 - `quota_settings` — at most one row. Daily turn and voice-minute caps, timezone, and warn ratio as set from the owner admin Overview. `0` turns a cap off. Env values are the fallback until that row exists. Caps are off until named back on.
 - `ops_events` — operator alerts: service (`gateway` / `worker`), failure code, message, optional `correlation_id`. No user text. Written best-effort when a recorded dependency fails, or by the watch probe's forced row. Owner Overview on `/admin` shows the full list. Public `/status` (unauthenticated `GET /api/status`) shows live health under product labels and recent incidents without `correlation_id`, service tokens, or probe (`ops_forced`) rows.
 - `consents` — one row per Google subject: current privacy and terms versions plus accepted-at. Existing members were backfilled as version `1`. Survives account delete so a later sign-in does not re-prompt until versions bump.
@@ -243,4 +242,4 @@ Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are dele
 
 ## 9. Future improvements (post first build)
 
-See [FUTURE.md](FUTURE.md) for parked product and Plan X. Cloned voices and member UI are **current** work ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)). Multi-persona is built ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)).
+See [FUTURE.md](FUTURE.md) for parked product and Plan X. Caller-fact private memory is **current** work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)). Cloned voices and member UI are paused ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)). Multi-persona is built ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)). Retrieve writes extracted caller facts as private text; it does not converse the sitting. A closing pass at hang-up is not shipped yet. Existing converse rows stay dirty until a named purge.
