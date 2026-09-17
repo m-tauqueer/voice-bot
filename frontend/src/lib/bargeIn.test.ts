@@ -36,6 +36,25 @@ describe("createVoiceBargeIn", () => {
     expect(flush).toHaveBeenCalledTimes(1);
   });
 
+  it("stops agent audio from the stop control even mid-utterance", () => {
+    const bargeIn = createVoiceBargeIn();
+    const flush = vi.fn();
+    bargeIn.acceptBinary();
+    bargeIn.stopAgentAudio(flush);
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(bargeIn.acceptBinary()).toBe(false);
+  });
+
+  it("keeps dropping after a stop until the next agent turn", () => {
+    const bargeIn = createVoiceBargeIn();
+    bargeIn.acceptBinary();
+    bargeIn.stopAgentAudio(() => undefined);
+    bargeIn.onAgentAudioDone();
+    expect(bargeIn.acceptBinary()).toBe(false);
+    bargeIn.onAgentThinking();
+    expect(bargeIn.acceptBinary()).toBe(true);
+  });
+
   it("clears the drop when a new agent turn starts", () => {
     const bargeIn = createVoiceBargeIn();
     bargeIn.acceptBinary();

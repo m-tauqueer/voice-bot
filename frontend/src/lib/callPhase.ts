@@ -10,6 +10,16 @@ export type CallPhase =
   | "reconnecting"
   | "error";
 
+export const CALL_PHASES = [
+  "idle",
+  "starting",
+  "listening",
+  "thinking",
+  "speaking",
+  "reconnecting",
+  "error",
+] as const satisfies readonly CallPhase[];
+
 export const VOICE_ORB_STATES = [
   "working",
   "searching",

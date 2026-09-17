@@ -1,0 +1,121 @@
+.chat-page {
+  display: grid;
+  gap: 16px;
+  width: min(100%, var(--chat-column-max));
+  margin: 0 auto;
+}
+
+.chat-page__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-page__who {
+  min-width: 0;
+  text-align: center;
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
+  background: var(--glass-chip);
+  border: 1px solid var(--stroke-2);
+}
+
+.chat-page__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-hi);
+}
+
+.chat-page__handle {
+  margin: 4px 0 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-mid);
+}
+
+.chat-box {
+  display: grid;
+  gap: 16px;
+  color-scheme: light;
+}
+
+.chat-box__thread {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-height: var(--chat-thread-min);
+  overflow-y: auto;
+}
+
+.chat-box__empty,
+.chat-box__thinking {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: inherit;
+  opacity: 0.55;
+}
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+
+.chat-bubble--user {
+  justify-self: end;
+  background: color-mix(in srgb, currentColor 12%, var(--paper));
+  border-bottom-right-radius: 6px;
+}
+
+.chat-bubble--assistant {
+  justify-self: start;
+  background: var(--brand-white);
+  border-bottom-left-radius: 6px;
+}
+
+.chat-box__composer {
+  display: grid;
+  gap: 12px;
+}
+
+.chat-box__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-box .ui-field__label {
+  color: inherit;
+  opacity: 0.5;
+}
+
+.chat-box .ui-input {
+  background: var(--brand-white);
+  border-color: color-mix(in srgb, currentColor 16%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.chat-box .ui-input:focus-within {
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+  background: var(--brand-white);
+}
+
+.chat-box .ui-input__el {
+  color: inherit;
+}
+
+.chat-box .ui-input__el::placeholder {
+  color: inherit;
+  opacity: 0.4;
+}

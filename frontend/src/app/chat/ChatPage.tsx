@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { Badge } from "../../components/ui/Badge";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatBox, type ChatThreadMessage } from "../../components/chat/ChatBox";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
-import { Textarea } from "../../components/ui/Input";
+import {
+  clearStoredChatSessionId,
+  readStoredChatSessionId,
+  writeStoredChatSessionId,
+} from "../../lib/chatSession";
 import {
   ApiError,
   api,
@@ -10,20 +14,16 @@ import {
   turnSpeakerPersona,
   turnSpeakerUser,
 } from "../../lib/gateway";
-import {
-  clearStoredChatSessionId,
-  readStoredChatSessionId,
-  writeStoredChatSessionId,
-} from "../../lib/chatSession";
+import { loadNavConfig } from "../../lib/nav";
 import { personaPinField } from "../../lib/personaVoice";
 import {
   parsePublishedDirectory,
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
-import { loadNavConfig } from "../../lib/nav";
 import { loadUiCopy } from "../../lib/uiCopy";
-import { PersonaPicker } from "../PersonaPicker";
+import { loadVoiceClientConfig } from "../../lib/voiceConfig";
 import { useSession } from "../session";
+import { AgentSelector } from "../voice/AgentSelector";
 
 type TranscriptTurn = {
   ordinal: number;
@@ -52,30 +52,6 @@ type Banner = {
   text: string;
 };
 
-const wrapStyle: CSSProperties = {
-  maxWidth: 840,
-  margin: "0 auto",
-  display: "grid",
-  gap: 18,
-};
-
-const headStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 16,
-};
-
-const bubbleStyle = (speaker: string, userSpeaker: string): CSSProperties => ({
-  justifySelf: speaker === userSpeaker ? "end" : "start",
-  maxWidth: "85%",
-  padding: "12px 14px",
-  borderRadius: 14,
-  background: speaker === userSpeaker ? "var(--surface-2)" : "var(--surface-1)",
-  color: "var(--text-hi)",
-  whiteSpace: "pre-wrap",
-});
-
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
@@ -86,9 +62,38 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function threadMessages(
+  turns: readonly TranscriptTurn[],
+  userSpeaker: string,
+): ChatThreadMessage[] {
+  return turns.map((turn) => ({
+    id: String(turn.ordinal),
+    role: turn.speaker === userSpeaker ? "user" : "assistant",
+    text: turn.text,
+  }));
+}
+
+function BannerCard({ banner }: { banner: Banner }) {
+  return (
+    <Card>
+      <p
+        className="ui-field__error"
+        style={banner.tone === "warning" ? { color: "var(--text-mid)" } : undefined}
+      >
+        {banner.text}
+      </p>
+    </Card>
+  );
+}
+
 export function ChatPage() {
   const session = useSession();
   const copy = loadUiCopy();
+  const voiceUi = loadVoiceClientConfig();
   const { loadingLabel } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
@@ -101,9 +106,15 @@ export function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [sittingLoad, setSittingLoad] = useState(false);
   const [ending, setEnding] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const picked = directory.find((row) => row.id === pickedId) ?? null;
   const blocked = busy || sittingLoad || ending;
+  const userSpeaker = turnSpeakerUser();
+  const personaSpeaker = turnSpeakerPersona();
+  const pageStyle = {
+    ["--chat-column-max" as string]: `${copy.chatColumnMaxPx}px`,
+    ["--chat-thread-min" as string]: `${copy.chatThreadMinPx}px`,
+  };
 
   const applySession = useCallback(
     (userId: string, personaId: string, next: string) => {
@@ -140,8 +151,10 @@ export function ChatPage() {
   }, [me]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView?.({ block: "end" });
-  }, [turns, busy]);
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   async function loadSitting(userId: string, personaId: string) {
     const stored = readStoredChatSessionId(userId, personaId);
@@ -190,15 +203,33 @@ export function ChatPage() {
     }
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!me || !picked || !text || busy || sittingLoad || ending) {
+  function leaveSitting() {
+    if (blocked) {
       return;
     }
+    setPickedId(null);
+    setBanner(null);
+    setDraft("");
+    setTurns([]);
+    setSessionId(null);
+  }
+
+  async function send(text: string) {
+    if (!me || !picked || !text || blocked) {
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const pendingOrdinal = (turns.at(-1)?.ordinal ?? 0) + 1;
     setBusy(true);
     setBanner(null);
     setDraft("");
+    setTurns((current) => [
+      ...current,
+      { ordinal: pendingOrdinal, speaker: userSpeaker, text },
+    ]);
+    let posted: ChatPostResponse | null = null;
     try {
       const payload: Record<string, string> = { text };
       if (sessionId) {
@@ -206,54 +237,67 @@ export function ChatPage() {
       } else {
         payload[personaPinField()] = picked.id;
       }
-      const result = await api<ChatPostResponse>("/api/chat", {
+      posted = await api<ChatPostResponse>("/api/chat", {
         method: "POST",
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
-      applySession(me.id, picked.id, result.session_id);
-      if (result.recorded === false) {
-        const userSpeaker = turnSpeakerUser();
-        const personaSpeaker = turnSpeakerPersona();
+      applySession(me.id, picked.id, posted.session_id);
+      if (posted.recorded === false) {
         setTurns((current) => {
-          const next = [...current];
-          const lastOrdinal = next.at(-1)?.ordinal ?? 0;
-          next.push({
-            ordinal: lastOrdinal + 1,
-            speaker: userSpeaker,
-            text,
-          });
-          if (result.reply_text) {
-            next.push({
-              ordinal: lastOrdinal + 2,
-              speaker: personaSpeaker,
-              text: result.reply_text,
-            });
+          if (!posted?.reply_text) {
+            return current;
           }
-          return next;
+          const lastOrdinal = current.at(-1)?.ordinal ?? pendingOrdinal;
+          return [
+            ...current,
+            {
+              ordinal: lastOrdinal + 1,
+              speaker: personaSpeaker,
+              text: posted.reply_text,
+            },
+          ];
         });
       } else {
         const history = await api<ChatGetResponse>(
-          `/api/chat?session_id=${encodeURIComponent(result.session_id)}`,
+          `/api/chat?session_id=${encodeURIComponent(posted.session_id)}`,
+          { signal: controller.signal },
         );
         setTurns(history.turns);
       }
-      if (result.warning) {
-        setBanner({ tone: "warning", text: result.warning });
-      } else if (result.reply_text == null) {
+      if (posted.warning) {
+        setBanner({ tone: "warning", text: posted.warning });
+      } else if (posted.reply_text == null) {
         setBanner({ tone: "warning", text: chatSilenceStatus() });
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        if (!posted) {
+          setTurns((current) => current.filter((turn) => turn.ordinal !== pendingOrdinal));
+          setDraft(text);
+        }
+        return;
+      }
+      setTurns((current) => current.filter((turn) => turn.ordinal !== pendingOrdinal));
       setDraft(text);
       setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
     } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       setBusy(false);
     }
+  }
+
+  function stopSend() {
+    abortRef.current?.abort();
   }
 
   async function hangUp() {
     if (!me || !picked || !sessionId || blocked) {
       return;
     }
+    abortRef.current?.abort();
     setEnding(true);
     setBanner(null);
     try {
@@ -279,110 +323,70 @@ export function ChatPage() {
 
   if (!me || boot === "loading") {
     return (
-      <div style={wrapStyle}>
+      <div className="chat-page" style={pageStyle}>
         <p>{loadingLabel}</p>
       </div>
     );
   }
 
-  const canTalk = Boolean(picked);
-  const userSpeaker = turnSpeakerUser();
-
-  return (
-    <div style={wrapStyle}>
-        <div style={headStyle}>
-          <div>
-            <h1 className="mc-pagehead__title">
-              {picked?.display_name ?? copy.personaPickerTitle}
-            </h1>
-            <p style={{ color: "var(--text-mid)", marginTop: 6 }}>
-              {picked?.handle ? `@${picked.handle}` : copy.personaPickerChatHelp}
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => {
-              void hangUp();
-            }}
-            disabled={blocked || !sessionId}
-          >
-            {copy.chatEndLabel}
-          </Button>
-        </div>
-
-        {banner && (
-          <Card>
-            <p
-              className="ui-field__error"
-              style={
-                banner.tone === "warning"
-                  ? { color: "var(--text-mid)" }
-                  : undefined
-              }
-            >
-              {banner.text}
-            </p>
-          </Card>
-        )}
-
-        <PersonaPicker
+  if (!picked) {
+    return (
+      <div className="chat-page" style={pageStyle}>
+        {banner ? <BannerCard banner={banner} /> : null}
+        <AgentSelector
           directory={directory}
-          pickedId={pickedId}
-          locked={blocked}
           title={copy.personaPickerTitle}
           empty={copy.personaPickerEmpty}
           help={copy.personaPickerChatHelp}
+          config={voiceUi}
           onPick={(id) => {
             void pickPersona(id);
           }}
         />
+      </div>
+    );
+  }
 
-        <Card>
-          <div style={{ display: "grid", gap: 10, minHeight: 280 }}>
-            {turns.length === 0 && !busy && !sittingLoad && (
-              <p style={{ color: "var(--text-mid)" }}>
-                {picked ? copy.personaChatReady : copy.personaNeedPick}
-              </p>
-            )}
-            {turns.map((turn) => (
-              <div key={turn.ordinal} style={bubbleStyle(turn.speaker, userSpeaker)}>
-                {turn.text}
-              </div>
-            ))}
-            {busy && (
-              <p style={{ color: "var(--text-mid)" }}>{copy.chatThinkingLabel}</p>
-            )}
-            <div ref={bottom} />
-          </div>
-        </Card>
-
-        <Card>
-          <form onSubmit={send} style={{ display: "grid", gap: 12 }}>
-            <Textarea
-              label={copy.chatMessageLabel}
-              rows={3}
-              value={draft}
-              disabled={busy || sittingLoad || ending || !canTalk}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <Button
-                type="submit"
-                variant="solid"
-                disabled={busy || sittingLoad || ending || !canTalk || draft.trim().length === 0}
-              >
-                {busy ? copy.chatSendingLabel : copy.chatSendLabel}
-              </Button>
-              {sessionId && <Badge>{copy.callSessionSavedBadge}</Badge>}
-            </div>
-          </form>
-        </Card>
+  return (
+    <div className="chat-page" style={pageStyle} role="region" aria-label={picked.display_name}>
+      <div className="chat-page__toolbar">
+        <Button type="button" variant="glass" disabled={blocked} onClick={leaveSitting}>
+          {copy.callBackLabel}
+        </Button>
+        <div className="chat-page__who">
+          <h1 className="chat-page__title">{picked.display_name}</h1>
+          <p className="chat-page__handle">@{picked.handle}</p>
+        </div>
+        <Button
+          type="button"
+          variant="glass"
+          disabled={blocked || !sessionId}
+          onClick={() => {
+            void hangUp();
+          }}
+        >
+          {copy.chatEndLabel}
+        </Button>
+      </div>
+      {banner ? <BannerCard banner={banner} /> : null}
+      <ChatBox
+        messages={threadMessages(turns, userSpeaker)}
+        empty={copy.personaChatReady}
+        thinkingLabel={copy.chatThinkingLabel}
+        streaming={busy}
+        placeholder={copy.chatInputPlaceholder}
+        messageLabel={copy.chatMessageLabel}
+        sendLabel={copy.chatSendLabel}
+        stopLabel={copy.chatStopLabel}
+        inputMaxPx={copy.chatInputMaxPx}
+        value={draft}
+        onChange={setDraft}
+        onSend={(content) => {
+          void send(content);
+        }}
+        onStop={stopSend}
+        disabled={sittingLoad || ending}
+      />
     </div>
   );
 }

@@ -182,7 +182,12 @@
 .mc-ctx__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 .mc-canvas { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 32px 20px; }
-.mc-canvas--flush { padding: 0; overflow: hidden; }
+.mc-canvas--flush {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
 .mc-canvas::-webkit-scrollbar { width: 9px; }
 .mc-canvas::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 .mc-canvas::-webkit-scrollbar-thumb:hover { background: var(--rule-strong); background-clip: padding-box; }

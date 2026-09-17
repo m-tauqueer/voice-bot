@@ -164,9 +164,13 @@ export type UiCopy = {
   callStartLabel: string;
   callStartingLabel: string;
   callEndLabel: string;
+  callMuteLabel: string;
+  callUnmuteLabel: string;
   callBackLabel: string;
+  callStopSpeakLabel: string;
   callMicLabel: string;
   callSessionSavedBadge: string;
+  callTranscriptTitle: string;
   callTranscriptListening: string;
   callTranscriptIdle: string;
   chatEndLabel: string;
@@ -174,6 +178,11 @@ export type UiCopy = {
   chatMessageLabel: string;
   chatSendLabel: string;
   chatSendingLabel: string;
+  chatStopLabel: string;
+  chatInputPlaceholder: string;
+  chatColumnMaxPx: number;
+  chatInputMaxPx: number;
+  chatThreadMinPx: number;
   personaHandleLabel: string;
   personaNameLabel: string;
   personaDescriptionLabel: string;
@@ -232,6 +241,12 @@ let cached: UiCopy | null = null;
 
 export function resetUiCopy(): void {
   cached = null;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    cached = null;
+  });
 }
 
 export function loadUiCopy(): UiCopy {
@@ -426,9 +441,13 @@ export function loadUiCopy(): UiCopy {
     callStartLabel: requiredVite("VITE_CALL_START_LABEL"),
     callStartingLabel: requiredVite("VITE_CALL_STARTING_LABEL"),
     callEndLabel: requiredVite("VITE_CALL_END_LABEL"),
+    callMuteLabel: requiredVite("VITE_CALL_MUTE_LABEL"),
+    callUnmuteLabel: requiredVite("VITE_CALL_UNMUTE_LABEL"),
     callBackLabel: requiredVite("VITE_CALL_BACK_LABEL"),
+    callStopSpeakLabel: requiredVite("VITE_CALL_STOP_SPEAK_LABEL"),
     callMicLabel: requiredVite("VITE_CALL_MIC_LABEL"),
     callSessionSavedBadge: requiredVite("VITE_CALL_SESSION_SAVED_BADGE"),
+    callTranscriptTitle: requiredVite("VITE_CALL_TRANSCRIPT_TITLE"),
     callTranscriptListening: requiredVite("VITE_CALL_TRANSCRIPT_LISTENING"),
     callTranscriptIdle: requiredVite("VITE_CALL_TRANSCRIPT_IDLE"),
     chatEndLabel: requiredVite("VITE_CHAT_END_LABEL"),
@@ -436,6 +455,11 @@ export function loadUiCopy(): UiCopy {
     chatMessageLabel: requiredVite("VITE_CHAT_MESSAGE_LABEL"),
     chatSendLabel: requiredVite("VITE_CHAT_SEND_LABEL"),
     chatSendingLabel: requiredVite("VITE_CHAT_SENDING_LABEL"),
+    chatStopLabel: requiredVite("VITE_CHAT_STOP_LABEL"),
+    chatInputPlaceholder: requiredVite("VITE_CHAT_INPUT_PLACEHOLDER"),
+    chatColumnMaxPx: requiredViteInt("VITE_CHAT_COLUMN_MAX_PX"),
+    chatInputMaxPx: requiredViteInt("VITE_CHAT_INPUT_MAX_PX"),
+    chatThreadMinPx: requiredViteInt("VITE_CHAT_THREAD_MIN_PX"),
     personaHandleLabel: requiredVite("VITE_PERSONA_HANDLE_LABEL"),
     personaNameLabel: requiredVite("VITE_PERSONA_NAME_LABEL"),
     personaDescriptionLabel: requiredVite("VITE_PERSONA_DESCRIPTION_LABEL"),
