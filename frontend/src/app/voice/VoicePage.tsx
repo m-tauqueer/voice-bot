@@ -317,6 +317,7 @@ export function VoicePage() {
       session.current.closedByUs = false;
       const playback = createPcmPlayback(config);
       session.current.playback = playback;
+      await playback.ready;
       const bargeIn = createVoiceBargeIn();
       session.current.bargeIn = bargeIn;
       const thinkingCue = createThinkingCue(config);

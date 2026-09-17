@@ -1,7 +1,12 @@
 import { int16LeToFloat, rmsLevel } from "./pcm";
 import type { VoiceClientConfig } from "./voiceConfig";
+import {
+  attachMediaPlayback,
+  type MediaPlayback,
+} from "./voicePlaybackElement";
 
 export type PcmPlayback = {
+  ready: Promise<void>;
   enqueue: (bytes: ArrayBuffer) => void;
   duck: () => void;
   restore: () => void;
@@ -55,9 +60,35 @@ export function createPlaybackLevel(
 }
 
 export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
-  const context = new AudioContext({ sampleRate: config.outputSampleRate });
+  const context = new AudioContext({
+    sampleRate: config.outputSampleRate,
+    latencyHint: config.audioLatencyHint,
+  });
   const output = context.createGain();
-  output.connect(context.destination);
+  let media: MediaPlayback | null = null;
+  if (typeof context.createMediaStreamDestination === "function") {
+    const dest = context.createMediaStreamDestination();
+    output.connect(dest);
+    media = attachMediaPlayback(dest.stream);
+  } else {
+    output.connect(context.destination);
+  }
+  const ready = (async () => {
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+    if (!media) {
+      return;
+    }
+    try {
+      await media.start();
+    } catch {
+      output.disconnect();
+      output.connect(context.destination);
+      media.stop();
+      media = null;
+    }
+  })();
   const level = createPlaybackLevel(
     config.playbackSpeakGain,
     config.playbackDuckGain,
@@ -92,6 +123,7 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
   }
 
   return {
+    ready,
     enqueue(bytes: ArrayBuffer) {
       if (stopped || bytes.byteLength < 2) {
         return;
@@ -153,6 +185,8 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
     async stop() {
       stopped = true;
       silenceAndDrop();
+      media?.stop();
+      media = null;
       if (context.state !== "closed") {
         await context.close();
       }

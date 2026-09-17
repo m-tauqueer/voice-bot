@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_CHANNEL_COUNT: string;
   readonly VITE_VOICE_CAPTURE_FRAME_SAMPLES: string;
   readonly VITE_VOICE_ECHO_CANCELLATION: string;
+  readonly VITE_VOICE_AUDIO_LATENCY_HINT: string;
   readonly VITE_VOICE_WORKLET_NAME: string;
   readonly VITE_VOICE_CLIENT_READY_TYPE: string;
   readonly VITE_VOICE_CLIENT_ERROR_TYPE: string;

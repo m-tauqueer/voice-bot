@@ -10,6 +10,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_VOICE_CHANNEL_COUNT: "1",
   VITE_VOICE_CAPTURE_FRAME_SAMPLES: "320",
   VITE_VOICE_ECHO_CANCELLATION: "true",
+  VITE_VOICE_AUDIO_LATENCY_HINT: "interactive",
   VITE_VOICE_WORKLET_NAME: "voice-capture",
   VITE_VOICE_CLIENT_READY_TYPE: "voice.ready",
   VITE_VOICE_CLIENT_ERROR_TYPE: "voice.error",
