@@ -44,6 +44,13 @@ export function floatToInt16Le(input: Float32Array): ArrayBuffer {
   return output.buffer;
 }
 
+export function uplinkMicFrame(frame: ArrayBuffer, muted: boolean): ArrayBuffer {
+  if (!muted) {
+    return frame;
+  }
+  return new ArrayBuffer(frame.byteLength);
+}
+
 export function int16LeToFloat(bytes: ArrayBuffer): Float32Array {
   const view = new DataView(bytes);
   const samples = Math.floor(bytes.byteLength / 2);

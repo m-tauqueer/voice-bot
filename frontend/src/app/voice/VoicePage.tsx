@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { CallPhaseBadge } from "../../components/voice/CallPhaseBadge";
-import { VoiceRing } from "../../components/voice/VoiceRing";
+import { VoiceSwarm } from "../../components/voice/VoiceSwarm";
+import { VoiceTranscript } from "../../components/voice/VoiceTranscript";
 import { ApiError, api } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { callIsLive, type CallPhase } from "../../lib/callPhase";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
+import { uplinkMicFrame } from "../../lib/pcm";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
 import { createPcmPlayback, type PcmPlayback } from "../../lib/pcmPlayback";
 import { loadNavConfig } from "../../lib/nav";
 import { ringAmplitude, ringSourceForPhase } from "../../lib/ringAmplitude";
+import { swarmHearTarget } from "../../lib/swarmHear";
 import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
 import { loadUiCopy } from "../../lib/uiCopy";
@@ -18,6 +21,10 @@ import {
   parsePublishedDirectory,
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
+import {
+  applyTranscriptEvent,
+  type TranscriptLine,
+} from "../../lib/voiceTranscript";
 import { useSession } from "../session";
 import { AgentSelector } from "./AgentSelector";
 
@@ -68,6 +75,8 @@ export function VoicePage() {
   const [directory, setDirectory] = useState<PublishedPersona[]>([]);
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [signalLevel, setSignalLevel] = useState(0);
+  const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
+  const [muted, setMuted] = useState(false);
   const session = useRef<{
     socket: VoiceSocket | null;
     mic: MicCapture | null;
@@ -89,6 +98,9 @@ export function VoicePage() {
   });
   const phaseRef = useRef<CallPhase>(phase);
   phaseRef.current = phase;
+  const mutedRef = useRef(false);
+  mutedRef.current = muted;
+  const transcriptSeq = useRef(1);
   const picked = directory.find((row) => row.id === pickedId) ?? null;
 
   useEffect(() => {
@@ -137,6 +149,10 @@ export function VoicePage() {
   }
 
   function publishMicLevel(level: number) {
+    if (mutedRef.current) {
+      publishLevel(0);
+      return;
+    }
     if (ringSourceForPhase(phaseRef.current) !== "mic") {
       return;
     }
@@ -165,6 +181,7 @@ export function VoicePage() {
     await current.mic?.stop();
     await current.playback?.stop();
     setSignalLevel(0);
+    setMuted(false);
     setPhase("idle");
   }
 
@@ -208,10 +225,22 @@ export function VoicePage() {
       return;
     }
     const interim = event.final === false;
+    const text = content.trim();
+    if (text.length > 0) {
+      setTranscript((current) => {
+        const applied = applyTranscriptEvent(
+          current,
+          { role, text, interim },
+          transcriptSeq.current,
+        );
+        transcriptSeq.current = applied.nextId;
+        return applied.lines;
+      });
+    }
     if (
       interim &&
       role === config.transcriptUserRole &&
-      content.trim().length > 0
+      text.length > 0
     ) {
       session.current.bargeIn?.onUserInterim(() => {
         session.current.playback?.duck();
@@ -231,6 +260,7 @@ export function VoicePage() {
     }
     setPhase("starting");
     setBanner(null);
+    setMuted(false);
     try {
       const config = loadVoiceClientConfig();
       session.current.closedByUs = false;
@@ -244,7 +274,9 @@ export function VoicePage() {
       const mic = await startMicCapture(config, {
         onFrame: (frame) => {
           if (live.current) {
-            session.current.socket?.sendBinary(frame);
+            session.current.socket?.sendBinary(
+              uplinkMicFrame(frame, mutedRef.current),
+            );
           }
         },
         onLevel: publishMicLevel,
@@ -307,14 +339,28 @@ export function VoicePage() {
     setPickedId(null);
     setBanner(null);
     setPhase("idle");
+    setTranscript([]);
+    transcriptSeq.current = 1;
   }
 
-  function toggleCall() {
-    if (callIsLive(phase)) {
-      void endCall();
+  function toggleMute() {
+    if (!callIsLive(phaseRef.current)) {
       return;
     }
-    void startCall();
+    setMuted((value) => !value);
+  }
+
+  function stopSpeaking() {
+    if (!callIsLive(phaseRef.current)) {
+      return;
+    }
+    session.current.thinkingCue?.stop();
+    session.current.bargeIn?.stopAgentAudio(() => {
+      session.current.playback?.flush();
+    });
+    session.current.playback?.flush();
+    setSignalLevel(0);
+    setPhase("listening");
   }
 
   if (!me || boot === "loading") {
@@ -366,11 +412,7 @@ export function VoicePage() {
     );
   }
 
-  const callLabel = inCall
-    ? copy.callEndLabel
-    : starting
-      ? copy.callStartingLabel
-      : copy.callStartLabel;
+  const startLabel = starting ? copy.callStartingLabel : copy.callStartLabel;
 
   return (
     <div
@@ -378,46 +420,101 @@ export function VoicePage() {
       role="region"
       aria-label={picked.display_name}
       style={{
-        ["--voice-amp" as string]: String(amplitude),
-        ["--voice-btn-size" as string]: `${voiceUi.ringButtonPx}px`,
-        ["--voice-btn-scale" as string]: String(voiceUi.ringButtonScale),
+        ["--voice-hit-ratio" as string]: String(voiceUi.swarmHitRatio),
+        ["--voice-dock-gap" as string]: `${voiceUi.swarmDockGapPx}px`,
+        ["--voice-transcript-width" as string]: `${voiceUi.transcriptWidthPx}px`,
       }}
     >
-      <VoiceRing
-        amplitude={amplitude}
-        smoothing={voiceUi.ringSmoothing}
-        className="voice-sit__canvas"
-      />
-      {!inCall && !starting && (
-        <div className="voice-sit__back">
-          <Button type="button" variant="ghost" onClick={leaveSitting}>
-            {copy.callBackLabel}
-          </Button>
-        </div>
-      )}
-      <CallPhaseBadge phase={phase} copy={copy} config={voiceUi} />
-      {banner && (
-        <div className="voice-sit__banner">
-          <Card>
-            <p
-              className="ui-field__error"
-              style={
-                banner.tone === "warning"
-                  ? { color: "var(--text-mid)" }
-                  : undefined
-              }
+      <div className="voice-sit__stage">
+        <VoiceSwarm
+          hear={swarmHearTarget(phase, voiceUi.swarmHearingPhases)}
+          amplitude={amplitude}
+          config={voiceUi}
+          className="voice-sit__canvas"
+        />
+        {!inCall && (
+          <button
+            type="button"
+            className="voice-sit__hit"
+            disabled={starting}
+            aria-label={startLabel}
+            onClick={() => {
+              void startCall();
+            }}
+          />
+        )}
+        {!inCall && !starting && (
+          <div className="voice-sit__rail">
+            <Button type="button" variant="ghost" onClick={leaveSitting}>
+              {copy.callBackLabel}
+            </Button>
+          </div>
+        )}
+        <div className="voice-sit__dock">
+          {inCall ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              aria-pressed={muted}
+              onClick={toggleMute}
             >
-              {banner.text}
-            </p>
-          </Card>
+              {muted ? copy.callUnmuteLabel : copy.callMuteLabel}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              disabled={starting}
+              onClick={() => {
+                void startCall();
+              }}
+            >
+              {startLabel}
+            </Button>
+          )}
+          {inCall && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={stopSpeaking}
+            >
+              {copy.callStopSpeakLabel}
+            </Button>
+          )}
         </div>
-      )}
-      <button
-        type="button"
-        className="voice-sit__mic"
-        disabled={starting}
-        aria-label={callLabel}
-        onClick={toggleCall}
+        <CallPhaseBadge phase={phase} copy={copy} config={voiceUi} />
+        {banner && (
+          <div className="voice-sit__banner">
+            <Card>
+              <p
+                className="ui-field__error"
+                style={
+                  banner.tone === "warning"
+                    ? { color: "var(--text-mid)" }
+                    : undefined
+                }
+              >
+                {banner.text}
+              </p>
+            </Card>
+          </div>
+        )}
+      </div>
+      <VoiceTranscript
+        title={copy.callTranscriptTitle}
+        empty={
+          inCall || starting
+            ? copy.callTranscriptListening
+            : copy.callTranscriptIdle
+        }
+        lines={transcript}
+        userRole={voiceUi.transcriptUserRole}
+        assistantRole={voiceUi.transcriptAssistantRole}
+        userLabel={copy.audioUser}
+        assistantLabel={picked.display_name}
       />
     </div>
   );

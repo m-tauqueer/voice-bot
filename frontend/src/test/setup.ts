@@ -7,9 +7,10 @@ for (const [key, value] of Object.entries(viteTestEnv)) {
   vi.stubEnv(key, value);
 }
 
-if (typeof window !== "undefined" && !window.localStorage) {
+if (typeof window !== "undefined") {
   const store = new Map<string, string>();
   Object.defineProperty(window, "localStorage", {
+    configurable: true,
     value: {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -27,9 +28,6 @@ if (typeof window !== "undefined" && !window.localStorage) {
       },
     },
   });
-}
-
-if (typeof window !== "undefined") {
   window.scrollTo = () => undefined;
 }
 

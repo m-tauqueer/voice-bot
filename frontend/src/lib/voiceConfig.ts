@@ -1,7 +1,8 @@
 import type { OrbSize, OrbState, OrbTheme } from "thinking-orbs";
 import { requiredViteBool, requiredViteFloat, requiredViteGain, requiredViteInt, requiredViteOneOf } from "./env";
+import { VOICE_ORB_STATES, VOICE_ORB_THEMES, type CallPhase } from "./callPhase";
 import { gatewayOrigin } from "./gateway";
-import { VOICE_ORB_STATES, VOICE_ORB_THEMES } from "./callPhase";
+import { parseCallPhases } from "./swarmHear";
 
 function requiredString(name: string, value: string | undefined): string {
   if (typeof value !== "string" || value.length === 0) {
@@ -79,6 +80,35 @@ export type VoiceClientConfig = {
   avatarGrid: number;
   avatarHueSpread: number;
   avatarAnimated: boolean;
+  swarmCount: number;
+  swarmHearingPhases: ReadonlySet<CallPhase>;
+  swarmHearTauMs: number;
+  swarmDtCapMs: number;
+  swarmRadiusCalm: number;
+  swarmRadiusHear: number;
+  swarmSpeedCalm: number;
+  swarmSpeedHear: number;
+  swarmNoiseCalm: number;
+  swarmNoiseHear: number;
+  swarmPointCalm: number;
+  swarmPointHear: number;
+  swarmHueCalm: number;
+  swarmHueHear: number;
+  swarmSatCalm: number;
+  swarmSatHear: number;
+  swarmLightCalm: number;
+  swarmLightHear: number;
+  swarmPerspective: number;
+  swarmLevelNoise: number;
+  swarmWarpCalm: number;
+  swarmWarpHear: number;
+  swarmCoupling: number;
+  swarmSwirl: number;
+  swarmHitRatio: number;
+  swarmDockGapPx: number;
+  swarmRespectReducedMotion: boolean;
+  stopSpeakPhases: ReadonlySet<CallPhase>;
+  transcriptWidthPx: number;
 };
 
 export function loadVoiceClientConfig(): VoiceClientConfig {
@@ -233,12 +263,58 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     avatarGrid: requiredViteInt("VITE_VOICE_AVATAR_GRID"),
     avatarHueSpread: requiredViteFloat("VITE_VOICE_AVATAR_HUE_SPREAD", 0, 180),
     avatarAnimated: requiredViteBool("VITE_VOICE_AVATAR_ANIMATED"),
+    swarmCount: requiredViteInt("VITE_VOICE_SWARM_COUNT"),
+    swarmHearingPhases: parseCallPhases(
+      requiredString(
+        "VITE_VOICE_SWARM_HEARING_PHASES",
+        import.meta.env.VITE_VOICE_SWARM_HEARING_PHASES,
+      ),
+      "VITE_VOICE_SWARM_HEARING_PHASES",
+    ),
+    swarmHearTauMs: requiredViteFloat("VITE_VOICE_SWARM_HEAR_TAU_MS", 1, 20000),
+    swarmDtCapMs: requiredViteFloat("VITE_VOICE_SWARM_DT_CAP_MS", 1, 250),
+    swarmRadiusCalm: requiredViteFloat("VITE_VOICE_SWARM_RADIUS_CALM", 0, 2),
+    swarmRadiusHear: requiredViteFloat("VITE_VOICE_SWARM_RADIUS_HEAR", 0, 2),
+    swarmSpeedCalm: requiredViteFloat("VITE_VOICE_SWARM_SPEED_CALM", 0, 8),
+    swarmSpeedHear: requiredViteFloat("VITE_VOICE_SWARM_SPEED_HEAR", 0, 8),
+    swarmNoiseCalm: requiredViteFloat("VITE_VOICE_SWARM_NOISE_CALM", 0, 2),
+    swarmNoiseHear: requiredViteFloat("VITE_VOICE_SWARM_NOISE_HEAR", 0, 2),
+    swarmPointCalm: requiredViteFloat("VITE_VOICE_SWARM_POINT_CALM", 0.5, 16),
+    swarmPointHear: requiredViteFloat("VITE_VOICE_SWARM_POINT_HEAR", 0.5, 16),
+    swarmHueCalm: requiredViteFloat("VITE_VOICE_SWARM_HUE_CALM", 0, 1),
+    swarmHueHear: requiredViteFloat("VITE_VOICE_SWARM_HUE_HEAR", 0, 1),
+    swarmSatCalm: requiredViteFloat("VITE_VOICE_SWARM_SAT_CALM", 0, 1),
+    swarmSatHear: requiredViteFloat("VITE_VOICE_SWARM_SAT_HEAR", 0, 1),
+    swarmLightCalm: requiredViteFloat("VITE_VOICE_SWARM_LIGHT_CALM", 0, 1),
+    swarmLightHear: requiredViteFloat("VITE_VOICE_SWARM_LIGHT_HEAR", 0, 1),
+    swarmPerspective: requiredViteFloat("VITE_VOICE_SWARM_PERSPECTIVE", 0.2, 8),
+    swarmLevelNoise: requiredViteFloat("VITE_VOICE_SWARM_LEVEL_NOISE", 0, 2),
+    swarmWarpCalm: requiredViteFloat("VITE_VOICE_SWARM_WARP_CALM", 0, 8),
+    swarmWarpHear: requiredViteFloat("VITE_VOICE_SWARM_WARP_HEAR", 0, 8),
+    swarmCoupling: requiredViteFloat("VITE_VOICE_SWARM_COUPLING", 0, 2),
+    swarmSwirl: requiredViteFloat("VITE_VOICE_SWARM_SWIRL", 0, 2),
+    swarmHitRatio: requiredViteFloat("VITE_VOICE_SWARM_HIT_RATIO", 0.1, 1),
+    swarmDockGapPx: requiredViteInt("VITE_VOICE_DOCK_GAP_PX"),
+    swarmRespectReducedMotion: requiredViteBool(
+      "VITE_VOICE_SWARM_RESPECT_REDUCED_MOTION",
+    ),
+    stopSpeakPhases: parseCallPhases(
+      requiredString(
+        "VITE_VOICE_STOP_SPEAK_PHASES",
+        import.meta.env.VITE_VOICE_STOP_SPEAK_PHASES,
+      ),
+      "VITE_VOICE_STOP_SPEAK_PHASES",
+    ),
+    transcriptWidthPx: requiredViteInt("VITE_VOICE_TRANSCRIPT_WIDTH_PX"),
   };
 
   if (loaded.ringActiveMin > loaded.ringActiveMax) {
     throw new Error(
       "VITE_VOICE_RING_ACTIVE_MIN must be at most VITE_VOICE_RING_ACTIVE_MAX",
     );
+  }
+  if (loaded.swarmCount > 50000) {
+    throw new Error("VITE_VOICE_SWARM_COUNT must be at most 50000");
   }
   return loaded;
 }

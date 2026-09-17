@@ -29,6 +29,8 @@ export default defineConfig({
         "src/lib/memoryPanel.ts",
         "src/lib/personaVoice.ts",
         "src/lib/publishedPersonas.ts",
+        "src/lib/swarmHear.ts",
+        "src/lib/voiceTranscript.ts",
         "src/app/dashboard/MemoryPanel.tsx",
       ],
       thresholds: coverage,

@@ -74,6 +74,7 @@ export function ProductFrame() {
       accountEmail={session.me.email}
       signOutLabel={nav.signOutLabel}
       flush={matchPath(path, ROUTES.voice)}
+      startCollapsed={matchPath(path, ROUTES.voice)}
       onSignOut={() => {
         window.location.href = logoutUrl(path);
       }}

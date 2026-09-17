@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import Grainient from "../../components/Grainient";
 import { RadialMenu } from "../../components/RadialMenu";
@@ -16,6 +16,7 @@ interface AppShellProps {
   signOutLabel: string;
   onSignOut: () => void;
   flush?: boolean;
+  startCollapsed?: boolean;
   children: ReactNode;
 }
 
@@ -42,10 +43,17 @@ export function AppShell({
   signOutLabel,
   onSignOut,
   flush = false,
+  startCollapsed = false,
   children,
 }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(startCollapsed);
   const [dialOpen, setDialOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    if (startCollapsed) {
+      setCollapsed(true);
+    }
+  }, [startCollapsed]);
 
   useDialShortcut(setDialOpen);
 

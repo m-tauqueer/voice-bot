@@ -2,6 +2,7 @@ export type VoiceBargeIn = {
   acceptBinary: () => boolean;
   onUserInterim: (duck: () => void) => void;
   onUserStarted: (flush: () => void) => void;
+  stopAgentAudio: (flush: () => void) => void;
   onAgentThinking: () => void;
   onAgentAudioDone: () => void;
   dispose: () => void;
@@ -15,10 +16,12 @@ export type VoiceBargeIn = {
 export function createVoiceBargeIn(): VoiceBargeIn {
   let agentAudioOpen = false;
   let dropping = false;
+  let holdDrop = false;
 
   const reset = () => {
     agentAudioOpen = false;
     dropping = false;
+    holdDrop = false;
   };
 
   return {
@@ -42,8 +45,18 @@ export function createVoiceBargeIn(): VoiceBargeIn {
       flush();
       dropping = true;
     },
+    stopAgentAudio(flush) {
+      flush();
+      dropping = true;
+      holdDrop = true;
+    },
     onAgentThinking: reset,
-    onAgentAudioDone: reset,
+    onAgentAudioDone() {
+      agentAudioOpen = false;
+      if (!holdDrop) {
+        dropping = false;
+      }
+    },
     dispose: reset,
   };
 }

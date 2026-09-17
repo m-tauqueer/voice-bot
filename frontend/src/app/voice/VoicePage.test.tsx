@@ -69,10 +69,17 @@ describe("VoicePage picker", () => {
     render(<VoicePage />);
     expect(await screen.findByRole("button", { name: /@ada/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /@nova/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start chat" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /@ada/i }));
     expect(screen.getByRole("region", { name: "Ada" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start call" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Start chat" }).length).toBe(2);
+    expect(screen.queryByRole("button", { name: "Pause chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Live chat" })).toBeTruthy();
+    expect(
+      screen.getByText("Start a chat to see the live transcript."),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /@nova/i })).toBeNull();
   });
 
@@ -81,7 +88,7 @@ describe("VoicePage picker", () => {
     fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("button", { name: /@nova/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start chat" })).toBeNull();
   });
 
   it("shows empty copy when nothing is published", async () => {
@@ -90,6 +97,6 @@ describe("VoicePage picker", () => {
     expect(
       await screen.findByText("No published personas yet."),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start chat" })).toBeNull();
   });
 });

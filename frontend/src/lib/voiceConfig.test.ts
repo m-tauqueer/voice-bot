@@ -12,5 +12,17 @@ describe("loadVoiceClientConfig", () => {
     expect(config.orbThinking).toBe("working");
     expect(config.orbSpeaking).toBe("composing");
     expect(config.orbSize).toBe(20);
+    expect(config.swarmCount).toBe(20000);
+    expect(config.swarmHearingPhases.has("listening")).toBe(true);
+    expect(config.swarmHearTauMs).toBe(900);
+    expect(config.swarmNoiseCalm).toBe(0.016);
+    expect(config.swarmNoiseHear).toBe(0.09);
+    expect(config.swarmWarpHear).toBe(0.68);
+    expect(config.swarmRadiusCalm).toBe(0.52);
+    expect(config.swarmHitRatio).toBe(0.66);
+    expect(config.swarmDockGapPx).toBe(16);
+    expect(config.transcriptWidthPx).toBe(320);
+    expect(config.stopSpeakPhases.has("speaking")).toBe(true);
+    expect(config.stopSpeakPhases.has("listening")).toBe(true);
   });
 });

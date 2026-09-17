@@ -74,6 +74,7 @@
 
 .voice-sit {
   position: relative;
+  display: flex;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -81,18 +82,73 @@
   color: #fff;
 }
 
+.voice-sit__stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  container-type: size;
+}
+
 .voice-sit__canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 
-.voice-sit__back {
+.voice-sit__hit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  width: calc(var(--voice-hit-ratio) * min(100cqw, 100cqh));
+  height: calc(var(--voice-hit-ratio) * min(100cqw, 100cqh));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.voice-sit__hit:disabled {
+  cursor: wait;
+}
+
+.voice-sit__hit:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+}
+
+.voice-sit__rail {
   position: absolute;
   top: 18px;
   left: 18px;
   z-index: 4;
+}
+
+.voice-sit__rail .ui-btn--ghost {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.voice-sit__rail .ui-btn--ghost:hover,
+.voice-sit__rail .ui-btn--ghost:focus-visible {
+  color: #fff;
+}
+
+.voice-sit__badge,
+.voice-sit__dock {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 999px;
+  background: rgba(36, 36, 40, 0.88);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  letter-spacing: 0.01em;
 }
 
 .voice-sit__badge {
@@ -100,17 +156,44 @@
   top: 22px;
   left: 50%;
   z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 16px 7px 9px;
+  padding: 10px 22px 10px 12px;
   transform: translateX(-50%);
-  border-radius: 999px;
-  background: rgba(36, 36, 40, 0.88);
+}
+
+.voice-sit__dock {
+  position: absolute;
+  left: 50%;
+  top: calc(
+    50% + (var(--voice-hit-ratio) * min(100cqw, 100cqh) / 2) +
+      var(--voice-dock-gap)
+  );
+  z-index: 4;
+  gap: 4px;
+  padding: 8px 10px;
+  transform: translateX(-50%);
+}
+
+.voice-sit__dock .ui-btn--ghost {
+  height: 38px;
+  padding: 0 18px;
+  font-size: 14.5px;
   color: rgba(255, 255, 255, 0.78);
-  font-family: var(--font-ui);
-  font-size: 14px;
-  letter-spacing: 0.01em;
+  background: transparent;
+}
+
+.voice-sit__dock .ui-btn--ghost:hover,
+.voice-sit__dock .ui-btn--ghost:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.voice-sit__dock .ui-btn--ghost:disabled {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.voice-sit__dock .ui-btn--ghost[aria-pressed="true"] {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .voice-sit__banner {
@@ -122,36 +205,66 @@
   transform: translateX(-50%);
 }
 
-.voice-sit__mic {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
-  width: var(--voice-btn-size);
-  height: var(--voice-btn-size);
-  margin: calc(var(--voice-btn-size) / -2) 0 0 calc(var(--voice-btn-size) / -2);
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  transform: scale(calc(1 + var(--voice-amp) * var(--voice-btn-scale)));
-  box-shadow: 0 0 calc(12px + var(--voice-amp) * 80px)
-    rgba(255, 255, 255, calc(0.08 + var(--voice-amp) * 0.22));
+.voice-sit__transcript {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: var(--voice-transcript-width);
+  height: 100%;
+  padding: 18px 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 12, 14, 0.92);
+  z-index: 4;
 }
 
-.voice-sit__mic:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.voice-sit__transcript-title {
+  margin: 0 0 14px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.82);
 }
 
-.voice-sit__mic:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 4px;
+.voice-sit__transcript-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .voice-sit__mic {
-    transform: none;
-  }
+.voice-sit__transcript-empty {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.voice-sit__line {
+  display: grid;
+  gap: 4px;
+}
+
+.voice-sit__line-role {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.voice-sit__line-text {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: pre-wrap;
+}
+
+.voice-sit__line--interim .voice-sit__line-text {
+  color: rgba(255, 255, 255, 0.52);
 }
