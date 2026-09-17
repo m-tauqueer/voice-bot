@@ -1,3 +1,4 @@
+import { playbackIsActive } from "./captureHold";
 import { int16LeToFloat, rmsLevel } from "./pcm";
 import type { VoiceClientConfig } from "./voiceConfig";
 import {
@@ -13,6 +14,7 @@ export type PcmPlayback = {
   flush: () => boolean;
   stop: () => Promise<void>;
   level: () => number;
+  playing: () => boolean;
 };
 
 export function playbackFrameLevel(samples: Float32Array, gain: number): number {
@@ -181,6 +183,12 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
     },
     level() {
       return outputLevel;
+    },
+    playing() {
+      if (stopped) {
+        return false;
+      }
+      return playbackIsActive(sources.size, nextTime, context.currentTime);
     },
     async stop() {
       stopped = true;

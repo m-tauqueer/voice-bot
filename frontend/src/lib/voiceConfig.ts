@@ -62,6 +62,7 @@ export type VoiceClientConfig = {
   thinkingCueLabel: string;
   playbackSpeakGain: number;
   playbackDuckGain: number;
+  captureHoldAfterMs: number;
   audioLatencyHint: AudioContextLatencyCategory;
   reconnectingCode: string;
   reconnectedCode: string;
@@ -243,6 +244,7 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     ),
     playbackSpeakGain: requiredViteGain("VITE_VOICE_PLAYBACK_SPEAK_GAIN"),
     playbackDuckGain: requiredViteGain("VITE_VOICE_PLAYBACK_DUCK_GAIN"),
+    captureHoldAfterMs: requiredViteInt("VITE_VOICE_CAPTURE_HOLD_AFTER_MS"),
     audioLatencyHint: requiredViteOneOf("VITE_VOICE_AUDIO_LATENCY_HINT", [
       "balanced",
       "interactive",

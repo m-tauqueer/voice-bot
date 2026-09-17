@@ -7,6 +7,12 @@ import { VoiceTranscript } from "../../components/voice/VoiceTranscript";
 import { ApiError, api } from "../../lib/gateway";
 import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { callIsLive, type CallPhase } from "../../lib/callPhase";
+import {
+  captureHeld,
+  emptyCaptureHold,
+  noteCaptureHold,
+  type CaptureHold,
+} from "../../lib/captureHold";
 import { startMicCapture, type MicCapture } from "../../lib/micCapture";
 import { uplinkMicFrame } from "../../lib/pcm";
 import { createThinkingCue, type ThinkingCue } from "../../lib/thinkingCue";
@@ -118,6 +124,7 @@ export function VoicePage() {
     playback: PcmPlayback | null;
     bargeIn: VoiceBargeIn | null;
     thinkingCue: ThinkingCue | null;
+    captureHold: CaptureHold;
     closedByUs: boolean;
     levelRaf: number | null;
     pendingLevel: number;
@@ -127,6 +134,7 @@ export function VoicePage() {
     playback: null,
     bargeIn: null,
     thinkingCue: null,
+    captureHold: emptyCaptureHold(),
     closedByUs: false,
     levelRaf: null,
     pendingLevel: 0,
@@ -215,6 +223,7 @@ export function VoicePage() {
       playback: null,
       bargeIn: null,
       thinkingCue: null,
+      captureHold: emptyCaptureHold(),
       closedByUs: true,
       levelRaf: null,
       pendingLevel: 0,
@@ -239,6 +248,7 @@ export function VoicePage() {
       session.current.thinkingCue?.stop();
       session.current.bargeIn?.onUserStarted(() => {
         session.current.playback?.flush();
+        session.current.captureHold = emptyCaptureHold();
       });
       setPhase("listening");
       return;
@@ -315,6 +325,7 @@ export function VoicePage() {
     try {
       const config = loadVoiceClientConfig();
       session.current.closedByUs = false;
+      session.current.captureHold = emptyCaptureHold();
       const playback = createPcmPlayback(config);
       session.current.playback = playback;
       await playback.ready;
@@ -326,8 +337,18 @@ export function VoicePage() {
       const mic = await startMicCapture(config, {
         onFrame: (frame) => {
           if (live.current) {
+            const now = performance.now();
+            session.current.captureHold = noteCaptureHold(
+              session.current.captureHold,
+              session.current.playback?.playing() ?? false,
+              now,
+              config.captureHoldAfterMs,
+            );
             session.current.socket?.sendBinary(
-              uplinkMicFrame(frame, mutedRef.current),
+              uplinkMicFrame(
+                frame,
+                mutedRef.current || captureHeld(session.current.captureHold, now),
+              ),
             );
           }
         },
@@ -348,6 +369,12 @@ export function VoicePage() {
           thinkingCue.stop();
           setPhase("speaking");
           playback.enqueue(bytes);
+          session.current.captureHold = noteCaptureHold(
+            session.current.captureHold,
+            true,
+            performance.now(),
+            config.captureHoldAfterMs,
+          );
           publishLevel(playback.level());
         },
         onAgentEvent: (event) => {
@@ -411,6 +438,7 @@ export function VoicePage() {
       session.current.playback?.flush();
     });
     session.current.playback?.flush();
+    session.current.captureHold = emptyCaptureHold();
     setSignalLevel(0);
     setPhase("listening");
   }

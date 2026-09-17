@@ -33,6 +33,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_VOICE_THINKING_CUE_LABEL: "Thinking…",
   VITE_VOICE_PLAYBACK_SPEAK_GAIN: "1",
   VITE_VOICE_PLAYBACK_DUCK_GAIN: "0.25",
+  VITE_VOICE_CAPTURE_HOLD_AFTER_MS: "40",
   VITE_VOICE_RING_IDLE_AMPLITUDE: "0.06",
   VITE_VOICE_RING_ACTIVE_MIN: "0.08",
   VITE_VOICE_RING_ACTIVE_MAX: "1",
@@ -86,7 +87,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_TURN_SPEAKER_USER: "user",
   VITE_TURN_SPEAKER_PERSONA: "persona",
   VITE_APP_NAME: "Fern",
-  VITE_NAV_ITEMS: "chat|persona-chat|chat|chat;voice|Persona voice|ai-spark|voice;home|History|home|dashboard;data|Your data|shield|data",
+  VITE_NAV_ITEMS: "voice|Persona voice|ai-spark|voice;chat|persona-chat|chat|chat;home|History|home|dashboard;data|Your data|shield|data",
   VITE_NAV_ABOVE_NOTCH_COUNT: "2",
   VITE_NAV_OWNER_ITEMS: "admin|Admin|settings|admin",
   VITE_ADMIN_NAV_ITEMS:

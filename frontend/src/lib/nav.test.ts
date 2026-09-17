@@ -27,7 +27,7 @@ describe("nav config", () => {
     expect(member.map((item) => item.id)).toEqual(nav.items.map((item) => item.id));
     expect(member.some((item) => item.to === ROUTES.admin)).toBe(false);
     expect(nav.items.every((item) => !isAdminPath(item.to))).toBe(true);
-    expect(nav.items.map((item) => item.id)).toEqual(["chat", "voice", "home", "data"]);
+    expect(nav.items.map((item) => item.id)).toEqual(["voice", "chat", "home", "data"]);
     expect(nav.aboveNotchCount).toBe(2);
     expect(nav.appName).toBe("Fern");
     expect(nav.items.find((item) => item.id === "home")?.label).toBe("History");

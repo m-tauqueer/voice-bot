@@ -35,6 +35,7 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_THINKING_CUE_LABEL: string;
   readonly VITE_VOICE_PLAYBACK_SPEAK_GAIN: string;
   readonly VITE_VOICE_PLAYBACK_DUCK_GAIN: string;
+  readonly VITE_VOICE_CAPTURE_HOLD_AFTER_MS: string;
   readonly VITE_VOICE_RING_IDLE_AMPLITUDE: string;
   readonly VITE_VOICE_RING_ACTIVE_MIN: string;
   readonly VITE_VOICE_RING_ACTIVE_MAX: string;
