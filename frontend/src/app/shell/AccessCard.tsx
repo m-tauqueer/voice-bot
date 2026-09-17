@@ -27,11 +27,10 @@ export function AccessCard({
         : copy.waitlistBody;
   return (
     <GateLayout>
+      <p className="mc-gate__brand">{nav.appName}</p>
       <Card>
-        <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
-          {title}
-        </h1>
-        <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>{body}</p>
+        <h1 className="mc-pagehead__title mc-gate__title">{title}</h1>
+        <p className="mc-gate__body">{body}</p>
         <Button
           variant="solid"
           onClick={() => {

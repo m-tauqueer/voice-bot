@@ -12,6 +12,8 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_CHANNEL_COUNT: string;
   readonly VITE_VOICE_CAPTURE_FRAME_SAMPLES: string;
   readonly VITE_VOICE_ECHO_CANCELLATION: string;
+  readonly VITE_VOICE_NOISE_SUPPRESSION: string;
+  readonly VITE_VOICE_AUTO_GAIN_CONTROL: string;
   readonly VITE_VOICE_AUDIO_LATENCY_HINT: string;
   readonly VITE_VOICE_WORKLET_NAME: string;
   readonly VITE_VOICE_CLIENT_READY_TYPE: string;
@@ -88,6 +90,7 @@ interface ImportMetaEnv {
   readonly VITE_TURN_SPEAKER_PERSONA: string;
   readonly VITE_APP_NAME: string;
   readonly VITE_NAV_ITEMS: string;
+  readonly VITE_NAV_ABOVE_NOTCH_COUNT: string;
   readonly VITE_NAV_OWNER_ITEMS: string;
   readonly VITE_ADMIN_NAV_ITEMS: string;
   readonly VITE_ADMIN_APP_ITEMS: string;

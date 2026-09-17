@@ -27,9 +27,12 @@ describe("nav config", () => {
     expect(member.map((item) => item.id)).toEqual(nav.items.map((item) => item.id));
     expect(member.some((item) => item.to === ROUTES.admin)).toBe(false);
     expect(nav.items.every((item) => !isAdminPath(item.to))).toBe(true);
+    expect(nav.items.map((item) => item.id)).toEqual(["chat", "voice", "home", "data"]);
+    expect(nav.aboveNotchCount).toBe(2);
     expect(nav.appName).toBe("Fern");
+    expect(nav.items.find((item) => item.id === "home")?.label).toBe("History");
     expect(nav.items.find((item) => item.id === "chat")?.label).toBe("persona-chat");
-    expect(nav.items.find((item) => item.id === "voice")?.label).toBe("persona-bot");
+    expect(nav.items.find((item) => item.id === "voice")?.label).toBe("Persona voice");
   });
 
   it("adds owner items only for owners", () => {
@@ -83,7 +86,7 @@ describe("nav config", () => {
 
   it("selects sign-in copy from the path", () => {
     expect(signInCopy("/chat").title).toBe("persona-chat");
-    expect(signInCopy("/voice").title).toBe("persona-bot");
+    expect(signInCopy("/voice").title).toBe("Fern");
     expect(signInCopy("/admin/people").title).toBe("Admin");
     expect(signInCopy("/dashboard").title).toBe("Sign in");
   });

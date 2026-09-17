@@ -48,6 +48,8 @@ export async function startMicCapture(
         channelCount: config.channelCount,
         sampleRate: config.inputSampleRate,
         echoCancellation: config.echoCancellation,
+        noiseSuppression: config.noiseSuppression,
+        autoGainControl: config.autoGainControl,
       },
     });
   } catch (error) {

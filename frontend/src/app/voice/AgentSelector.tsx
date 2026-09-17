@@ -9,6 +9,7 @@ export function AgentSelector({
   empty,
   help,
   config,
+  pickedId = null,
   onPick,
 }: {
   directory: PublishedPersona[];
@@ -16,6 +17,7 @@ export function AgentSelector({
   empty: string;
   help: string;
   config: VoiceClientConfig;
+  pickedId?: string | null;
   onPick: (id: string) => void;
 }) {
   return (
@@ -31,6 +33,7 @@ export function AgentSelector({
               <button
                 type="button"
                 className="voice-pick__agent"
+                aria-pressed={pickedId === row.id}
                 onClick={() => onPick(row.id)}
                 aria-label={`${row.display_name} @${row.handle}`}
               >

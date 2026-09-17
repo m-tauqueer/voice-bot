@@ -1,5 +1,5 @@
 import { MEMORY_ICONS } from "./memory-icons";
-import { requiredVite } from "./env";
+import { requiredVite, requiredViteInt } from "./env";
 import { matchPath, matchPattern, pathWithin } from "./router";
 import {
   ADMIN_APP_NAV_ROUTE_IDS,
@@ -65,6 +65,7 @@ export type NavConfig = {
   ownerItems: NavItem[];
   adminItems: NavItem[];
   adminAppItems: NavItem[];
+  aboveNotchCount: number;
   signOutLabel: string;
   loadingLabel: string;
   continueLabel: string;
@@ -140,6 +141,7 @@ export function loadNavConfig(): NavConfig {
     ownerItems,
     adminItems,
     adminAppItems,
+    aboveNotchCount: requiredViteInt("VITE_NAV_ABOVE_NOTCH_COUNT"),
     signOutLabel: requiredVite("VITE_SIGNOUT_LABEL"),
     loadingLabel: requiredVite("VITE_LOADING_LABEL"),
     continueLabel: requiredVite("VITE_SIGNIN_CONTINUE"),

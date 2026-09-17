@@ -7,28 +7,9 @@ import { loadNavConfig } from "../../lib/nav";
 
 export function GateLayout({ children }: { children: ReactNode }) {
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        position: "relative",
-        padding: "32px 20px 72px",
-        color: "var(--text-hi)",
-        fontFamily: "var(--font-body)",
-      }}
-    >
+    <div className="mc-gate">
       <Grainient color3="#202028" saturation={0.7} />
-      <div
-        style={{
-          position: "relative",
-          zIndex: 1,
-          maxWidth: 840,
-          margin: "0 auto",
-          display: "grid",
-          gap: 18,
-        }}
-      >
-        {children}
-      </div>
+      <div className="mc-gate__inner">{children}</div>
     </div>
   );
 }
@@ -46,10 +27,8 @@ export function SignInCard({
   return (
     <GateLayout>
       <Card>
-        <h1 className="mc-pagehead__title" style={{ marginBottom: 8 }}>
-          {title}
-        </h1>
-        <p style={{ color: "var(--text-mid)", marginBottom: 18 }}>{body}</p>
+        <h1 className="mc-pagehead__title mc-gate__title">{title}</h1>
+        <p className="mc-gate__body">{body}</p>
         <Button
           variant="solid"
           onClick={() => {

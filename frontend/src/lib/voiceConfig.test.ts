@@ -7,6 +7,9 @@ describe("loadVoiceClientConfig", () => {
     expect(config.thinkingCueEnabled).toBe(false);
     expect(config.playbackSpeakGain).toBe(1);
     expect(config.playbackDuckGain).toBe(0.25);
+    expect(config.echoCancellation).toBe(false);
+    expect(config.noiseSuppression).toBe(false);
+    expect(config.autoGainControl).toBe(false);
     expect(config.audioLatencyHint).toBe("interactive");
     expect(config.ringIdleAmplitude).toBe(0.06);
     expect(config.orbListening).toBe("listening");

@@ -40,6 +40,8 @@ export type VoiceClientConfig = {
   channelCount: number;
   captureFrameSamples: number;
   echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
   workletName: string;
   readyType: string;
   errorType: string;
@@ -158,6 +160,14 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
     echoCancellation: requiredBool(
       "VITE_VOICE_ECHO_CANCELLATION",
       import.meta.env.VITE_VOICE_ECHO_CANCELLATION,
+    ),
+    noiseSuppression: requiredBool(
+      "VITE_VOICE_NOISE_SUPPRESSION",
+      import.meta.env.VITE_VOICE_NOISE_SUPPRESSION,
+    ),
+    autoGainControl: requiredBool(
+      "VITE_VOICE_AUTO_GAIN_CONTROL",
+      import.meta.env.VITE_VOICE_AUTO_GAIN_CONTROL,
     ),
     workletName: requiredString(
       "VITE_VOICE_WORKLET_NAME",

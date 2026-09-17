@@ -55,6 +55,7 @@ const nova = {
 describe("PersonalHome picker", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
@@ -68,6 +69,7 @@ describe("PersonalHome picker", () => {
       next_cursor: null,
     });
     fetchPersonalMemories.mockResolvedValue({ memories: [] });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   });
 
   it("does not load mixed sittings until a published persona is picked", async () => {

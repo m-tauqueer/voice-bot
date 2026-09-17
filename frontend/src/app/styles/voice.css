@@ -76,6 +76,24 @@
   border-radius: 12px;
 }
 
+.voice-pick__agent[aria-pressed="true"] .voice-pick__name {
+  color: #16161a;
+  font-weight: 650;
+}
+
+.voice-pick--inline {
+  flex: none;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.voice-pick--inline .voice-pick__card {
+  width: 100%;
+}
+
 .voice-pick__avatar {
   display: block;
   border-radius: 50%;

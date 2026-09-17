@@ -16,7 +16,8 @@ import {
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
 import { loadUiCopy } from "../../lib/uiCopy";
-import { PersonaPicker } from "../PersonaPicker";
+import { loadVoiceClientConfig } from "../../lib/voiceConfig";
+import { AgentSelector } from "../voice/AgentSelector";
 import { useSession } from "../session";
 import { EmptyNote, FetchError } from "./FetchState";
 import { MemoryPanel } from "./MemoryPanel";
@@ -36,6 +37,7 @@ function PersonalIndex() {
   const session = useSession();
   const nav = loadNavConfig();
   const copy = loadUiCopy();
+  const voiceUi = loadVoiceClientConfig();
   const me = session.status === "ready" ? session.me : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
   const [directory, setDirectory] = useState<PublishedPersona[]>([]);
@@ -133,15 +135,17 @@ function PersonalIndex() {
           </h1>
         </div>
       </div>
-      <PersonaPicker
-        directory={directory}
-        pickedId={pickedId}
-        locked={false}
-        title={copy.personaPickerTitle}
-        empty={copy.personaPickerEmpty}
-        help={copy.personaPickerHistoryHelp}
-        onPick={setPickedId}
-      />
+      <div className="voice-pick voice-pick--inline">
+        <AgentSelector
+          directory={directory}
+          title={copy.personaPickerTitle}
+          empty={copy.personaPickerEmpty}
+          help={copy.personaPickerHistoryHelp}
+          config={voiceUi}
+          pickedId={pickedId}
+          onPick={setPickedId}
+        />
+      </div>
       <Section title={copy.recentTitle} first>
         {error ? <FetchError error={error} onRetry={() => void load()} /> : null}
         {!error && !pickedId ? <EmptyNote text={copy.personaNeedPick} /> : null}

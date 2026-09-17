@@ -14,6 +14,7 @@ import "./app/styles/dashboard.css";
 import "./app/styles/status.css";
 import "./app/styles/voice.css";
 import "./app/styles/chat.css";
+import "./app/styles/gate.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

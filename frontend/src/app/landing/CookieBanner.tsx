@@ -25,33 +25,9 @@ export function CookieBanner() {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        right: 16,
-        bottom: 16,
-        left: 16,
-        zIndex: 40,
-        display: "flex",
-        justifyContent: "center",
-        pointerEvents: "none",
-      }}
-    >
-      <Card
-        style={{
-          pointerEvents: "auto",
-          maxWidth: 720,
-          width: "100%",
-          display: "flex",
-          gap: 16,
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-        }}
-      >
-        <p style={{ color: "var(--text-mid)", margin: 0, flex: "1 1 240px" }}>
-          {copy.cookieNoticeBody}
-        </p>
+    <div className="mc-cookie">
+      <Card className="mc-cookie__card">
+        <p className="mc-cookie__body">{copy.cookieNoticeBody}</p>
         <Button
           type="button"
           variant="solid"

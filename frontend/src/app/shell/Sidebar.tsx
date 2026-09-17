@@ -1,10 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { navigate } from "../../lib/router";
 import { MemoryIcon } from "../../lib/memory-icons";
+import { loadNavConfig, type NavItem } from "../../lib/nav";
 import { Menu } from "../../components/icons";
-import type { NavItem } from "../../lib/nav";
-
-const PREFERRED_ABOVE_NOTCH = 3;
 
 const PANEL_RADIUS = 26;
 const DIAL_RADIUS = 28;
@@ -49,18 +47,18 @@ function sidebarSilhouette(width: number, height: number) {
   ].join(" ");
 }
 
-function itemsThatFit(nav: HTMLElement, headroom: number) {
+function itemsThatFit(nav: HTMLElement, headroom: number, preferred: number) {
   const item = nav.querySelector<HTMLElement>(".mc-nav__item");
-  if (!item || !item.parentElement) return PREFERRED_ABOVE_NOTCH;
+  if (!item || !item.parentElement) return preferred;
 
   const gap = parseFloat(getComputedStyle(item.parentElement).rowGap) || 0;
   const pitch = item.offsetHeight + gap;
-  if (pitch <= 0) return PREFERRED_ABOVE_NOTCH;
+  if (pitch <= 0) return preferred;
 
   return Math.max(0, Math.floor((headroom + gap) / pitch));
 }
 
-function useSidebarSilhouette() {
+function useSidebarSilhouette(preferredAbove: number) {
   const ref = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const [shape, setShape] = useState({
@@ -69,7 +67,7 @@ function useSidebarSilhouette() {
     height: 0,
     headroom: 0,
     notch: 0,
-    aboveCount: PREFERRED_ABOVE_NOTCH,
+    aboveCount: preferredAbove,
   });
 
   useLayoutEffect(() => {
@@ -93,8 +91,8 @@ function useSidebarSilhouette() {
         headroom,
         notch: band.bottom - band.top,
         aboveCount: nav
-          ? Math.min(PREFERRED_ABOVE_NOTCH, itemsThatFit(nav, headroom))
-          : PREFERRED_ABOVE_NOTCH,
+          ? Math.min(preferredAbove, itemsThatFit(nav, headroom, preferredAbove))
+          : preferredAbove,
       });
     };
 
@@ -102,7 +100,7 @@ function useSidebarSilhouette() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [preferredAbove]);
 
   return { ref, navRef, ...shape };
 }
@@ -137,7 +135,8 @@ export function Sidebar({
   onToggle: () => void;
   onOpenDial: () => void;
 }) {
-  const silhouette = useSidebarSilhouette();
+  const { aboveNotchCount } = loadNavConfig();
+  const silhouette = useSidebarSilhouette(aboveNotchCount);
 
   return (
     <div className="mc-sidebar-slot">
