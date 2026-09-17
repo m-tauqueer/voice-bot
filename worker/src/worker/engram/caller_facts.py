@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from openai import APITimeoutError, OpenAI, OpenAIError
 
 from worker.config import WorkerSettings
 from worker.engram.caller_fact_defaults import (
+    DEFAULT_CALLER_FACT_CLOSING_SYSTEM_PROMPT,
     DEFAULT_CALLER_FACT_SYSTEM_PROMPT,
     render_caller_fact_prompt,
 )
@@ -17,6 +19,28 @@ from worker.reframe.types import HistoryTurn
 class CallerFactExtract:
     facts: list[str]
     reason: str
+
+
+def stamp_caller_fact(
+    fact: str,
+    settings: WorkerSettings,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Date the fact as it is written.
+
+    The private pool is append-only: a later sitting cannot retract what an
+    earlier one stored. Carrying the date in the row itself is what lets the
+    answerer prefer the newer of two conflicting caller memories.
+    """
+    if not settings.caller_fact_stamp_enabled:
+        return fact
+    when = now if now is not None else datetime.now(tz=UTC)
+    stamp = settings.caller_fact_stamp_template.replace(
+        "{date}",
+        when.strftime(settings.caller_fact_stamp_date_format),
+    )
+    return f"{fact}{stamp}"
 
 
 class CallerFactExtractor:
@@ -42,6 +66,7 @@ class CallerFactExtractor:
         user_turn: str,
         persona_reply: str,
         history_limit: int | None = None,
+        closing: bool = False,
     ) -> CallerFactExtract:
         closed = self._fail_closed()
         if self._client is None:
@@ -57,6 +82,7 @@ class CallerFactExtractor:
                     user_turn=user_turn,
                     persona_reply=persona_reply,
                     history_limit=history_limit,
+                    closing=closing,
                 ),
                 temperature=self._settings.caller_fact_temperature,
                 max_completion_tokens=self._settings.caller_fact_max_tokens,
@@ -94,12 +120,23 @@ class CallerFactExtractor:
             return CallerFactExtract([], unrecognised)
         facts: list[str] = []
         cap = self._settings.caller_fact_max_facts
+        prefix = self._settings.caller_fact_prefix.strip().casefold()
+        malformed = 0
         for item in raw_facts:
             if len(facts) >= cap:
                 break
-            if isinstance(item, str) and item.strip():
-                facts.append(item.strip())
+            if not isinstance(item, str) or not item.strip():
+                continue
+            text = item.strip()
+            # A row without the third-person prefix reads like persona speech
+            # once it is retrieved. Never let one into the private pool.
+            if prefix and not text.casefold().startswith(prefix):
+                malformed += 1
+                continue
+            facts.append(text)
         if not facts:
+            if malformed:
+                return CallerFactExtract([], unrecognised)
             return CallerFactExtract(
                 [],
                 self._settings.caller_fact_reason_empty,
@@ -122,11 +159,18 @@ class CallerFactExtractor:
         user_turn: str,
         persona_reply: str,
         history_limit: int | None = None,
+        closing: bool = False,
     ) -> list[dict[str, str]]:
         settings = self._settings
-        template = (
-            settings.caller_fact_system_prompt or DEFAULT_CALLER_FACT_SYSTEM_PROMPT
-        )
+        if closing:
+            template = (
+                settings.caller_fact_closing_system_prompt
+                or DEFAULT_CALLER_FACT_CLOSING_SYSTEM_PROMPT
+            )
+        else:
+            template = (
+                settings.caller_fact_system_prompt or DEFAULT_CALLER_FACT_SYSTEM_PROMPT
+            )
         system = render_caller_fact_prompt(
             template,
             {

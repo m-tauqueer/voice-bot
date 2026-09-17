@@ -23,6 +23,27 @@ def _kept(items: list[str]) -> list[str]:
     return [item for item in items if isinstance(item, str) and item.strip()]
 
 
+def _with_current_turn(
+    history: list[HistoryTurn],
+    question: str,
+    *,
+    speaker: str,
+    limit: int,
+) -> list[HistoryTurn]:
+    """This sitting includes what they just said. Limit 0 keeps history empty."""
+    if limit <= 0:
+        return []
+    recent = history[-limit:]
+    current = HistoryTurn(speaker=speaker, text=question.strip())
+    if (
+        recent
+        and recent[-1].speaker == current.speaker
+        and recent[-1].text == current.text
+    ):
+        return recent
+    return [*recent, current][-limit:]
+
+
 def _payload(
     settings: WorkerSettings,
     persona_memories: list[str],
@@ -53,7 +74,8 @@ class Answerer:
     Used when the brain reads memory and composes the reply here rather than
     asking the memory service to compose it. Long-term facts come from
     persona_identity and the two labelled lists. This sitting's speaker-labelled
-    history is this-call context, not those lists.
+    history is this-call context, not those lists. The current question is
+    included in that window so a same-call correction is sitting context.
     """
 
     def __init__(
@@ -90,7 +112,12 @@ class Answerer:
             raise ReframeError("persona_identity must be an object")
 
         limit = self._settings.reframe_history_turns
-        recent = history[-limit:] if limit > 0 else []
+        recent = _with_current_turn(
+            history,
+            question,
+            speaker=self._settings.engram_converse_user_speaker,
+            limit=limit,
+        )
         system = self._settings.answer_system_prompt or DEFAULT_ANSWER_SYSTEM_PROMPT
         model = self._settings.openai_model
         if not model:
@@ -133,7 +160,7 @@ class Answerer:
             completion = self._client.chat.completions.create(
                 model=model,
                 messages=request,
-                temperature=self._settings.reframe_temperature,
+                temperature=self._settings.answer_temperature,
                 max_completion_tokens=self._settings.answer_max_tokens,
                 timeout=self._settings.reframe_timeout_seconds,
             )
@@ -171,7 +198,7 @@ class Answerer:
             stream = self._client.chat.completions.create(
                 model=model,
                 messages=request,
-                temperature=self._settings.reframe_temperature,
+                temperature=self._settings.answer_temperature,
                 max_completion_tokens=self._settings.answer_max_tokens,
                 timeout=self._settings.reframe_timeout_seconds,
                 stream=True,

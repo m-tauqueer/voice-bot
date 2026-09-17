@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from worker.api.closing import build_closing_router
 from worker.config import WorkerSettings
-from worker.engram.caller_facts import CallerFactExtract
+from worker.engram.caller_facts import CallerFactExtract, stamp_caller_fact
 from worker.engram.closing import run_closing_pass, split_closing_window
 from worker.engram.errors import BrainError
 from worker.persistence.turns import cap_sitting
@@ -47,6 +47,7 @@ class _Extract:
         user_turn: str,
         persona_reply: str,
         history_limit: int | None = None,
+        closing: bool = False,
     ) -> CallerFactExtract:
         self.calls.append(
             {
@@ -54,6 +55,7 @@ class _Extract:
                 "user_turn": user_turn,
                 "persona_reply": persona_reply,
                 "history_limit": history_limit,
+                "closing": closing,
             }
         )
         if not self.results:
@@ -197,7 +199,10 @@ def test_closing_pass_double_hangup_extracts_once(
     )
     try:
         run_closing_pass(runner, SESSION, APP_USER)
-        assert ingested == ["The caller lives in Pune."]
+        assert ingested == [
+            stamp_caller_fact("The caller lives in Pune.", settings),
+        ]
+        assert extractor.calls[0]["closing"] is True
         assert first["claim"]
         ingested.clear()
         extractor.results = [
@@ -287,7 +292,7 @@ def test_closing_pass_retries_extract_then_writes(
     )
     try:
         run_closing_pass(runner, SESSION, APP_USER)
-        assert ingested == [fact]
+        assert ingested == [stamp_caller_fact(fact, settings)]
         assert len(extractor.calls) == 2
     finally:
         runner.close()

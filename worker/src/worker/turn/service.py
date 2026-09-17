@@ -14,7 +14,7 @@ from worker.clients import create_openai
 from worker.config import WorkerSettings
 from worker.controller.controller import Controller
 from worker.controller.decision import Action, Decision, ReasonCode, TurnSignals
-from worker.engram.caller_facts import CallerFactExtractor
+from worker.engram.caller_facts import CallerFactExtractor, stamp_caller_fact
 from worker.engram.closing import run_closing_pass
 from worker.engram.errors import (
     BrainError,
@@ -1204,7 +1204,10 @@ class TurnRunner:
                     app_user_id=plan.app_user_id,
                     engram_user_id=plan.engram_user_id,
                     email=email,
-                    op=lambda active, body=fact: active.ingest_private_text(
+                    op=lambda active, body=stamp_caller_fact(
+                        fact,
+                        settings,
+                    ): active.ingest_private_text(
                         plan.engram_persona_id,
                         body,
                     ),

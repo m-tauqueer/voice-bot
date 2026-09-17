@@ -231,7 +231,20 @@ class WorkerSettings(BaseSettings):
     caller_fact_max_tokens: int = Field(default=256, gt=0)
     caller_fact_max_facts: int = Field(default=8, gt=0)
     caller_fact_system_prompt: str | None = None
+    # The hang-up sweep runs the same extractor with a different brief: the
+    # per-turn pass already recorded each exchange, so closing only catches
+    # what needed the whole sitting to see.
+    caller_fact_closing_system_prompt: str | None = None
     caller_fact_prefix: str = Field(default="The caller", min_length=1)
+    # Private rows are append-only, so a corrected fact never removes the
+    # stale one. The date travels in the row so the answerer can prefer the
+    # newer of two conflicting caller memories.
+    caller_fact_stamp_enabled: bool = Field(default=True)
+    caller_fact_stamp_template: str = Field(
+        default=" (stated {date})",
+        min_length=1,
+    )
+    caller_fact_stamp_date_format: str = Field(default="%Y-%m-%d", min_length=1)
     caller_fact_payload_history_key: str = Field(default="history", min_length=1)
     caller_fact_payload_user_turn_key: str = Field(
         default="user_turn",
@@ -291,7 +304,7 @@ class WorkerSettings(BaseSettings):
     # path either way.
     engram_scope_router_enabled: bool = Field(default=False)
     engram_scope_router_model: str | None = None
-    engram_scope_router_timeout_seconds: float = Field(default=1.0, gt=0)
+    engram_scope_router_timeout_seconds: float = Field(default=1.5, gt=0)
     engram_scope_router_system_prompt: str | None = None
     engram_scope_router_workers: int = Field(default=4, gt=0)
     engram_scope_router_temperature: float = Field(default=0.0, ge=0, le=2)
@@ -463,6 +476,7 @@ class WorkerSettings(BaseSettings):
     reframe_stream_enabled: bool = Field(default=True)
     reframe_system_prompt: str | None = None
     answer_system_prompt: str | None = None
+    answer_temperature: float = Field(default=0, ge=0, le=2)
     answer_max_tokens: int = Field(default=320, gt=0)
     answer_payload_persona_memories_key: str = Field(
         default="persona_memories",
@@ -570,6 +584,8 @@ class WorkerSettings(BaseSettings):
         "openai_api_base_url",
         "reframe_system_prompt",
         "answer_system_prompt",
+        "caller_fact_system_prompt",
+        "caller_fact_closing_system_prompt",
         "engram_scope_router_model",
         "engram_scope_router_system_prompt",
         "redis_url",
@@ -708,6 +724,13 @@ class WorkerSettings(BaseSettings):
         }
         if len(closing) != 3:
             raise ValueError("CALLER_FACT_CLOSING reason codes must be distinct")
+        if (
+            self.caller_fact_stamp_enabled
+            and "{date}" not in self.caller_fact_stamp_template
+        ):
+            raise ValueError(
+                "CALLER_FACT_STAMP_TEMPLATE must contain {date} when stamping is on"
+            )
         return self
 
     @model_validator(mode="after")

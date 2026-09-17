@@ -79,7 +79,7 @@ Every member turn used one org API key, so Engram resolved every conversation to
 - First talk creates the member's Engram account with a password we generate and keep, encrypted at rest (AES-GCM, `ENGRAM_MEMBER_SECRET_KEY`, migration `0014`). The password can be set exactly once — an org admin cannot reset an Engram password — so it is stored, never derived from a master secret.
 - `auth.login` mints a 12h JWT per member, cached in memory with a per-member mint lock. A live token costs no database read on the reply path; a cold one costs one login. `401` re-logs in once, then that turn degrades.
 - `retrieve` / `converse` / `chat` run on `EngramClient(org, member_id, api_key=<JWT>)`. Everything admin-shaped — teach, shared ingest, subscribe, `user_memories`, purge, logs — stays on the org key. A member token only holds `memory:read` / `memory:write`.
-- A member we cannot credential degrades **per member**: org key, shared-only grounding, no write-back, `retrieve` forced. Never member-private under the key owner. `getcognora@`, `tauqueer655@`, and the API key owner are permanently in this state.
+- A member we cannot credential degrades **per member**: org key, shared-only grounding, no write-back, `retrieve` forced. Never member-private under the key owner. **Only three accounts are in this state:** `getcognora@gmail.com`, `tauqueer655@gmail.com`, and `mohammadtuti655@gmail.com`. Any other Google account is fine. Do not sit private-memory tests on those three.
 - Delete-my-data clears the stored secret and drops the cached token. That member is shared-only afterwards — the password cannot be reissued.
 
 Latency is unchanged: the grounding filter is in-process, and the login is once per member per 12 hours, not per turn.

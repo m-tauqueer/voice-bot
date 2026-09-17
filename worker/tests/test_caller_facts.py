@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -7,10 +8,15 @@ from openai import APITimeoutError, OpenAIError
 
 from worker.config import WorkerSettings
 from worker.engram.caller_fact_defaults import (
+    DEFAULT_CALLER_FACT_CLOSING_SYSTEM_PROMPT,
     DEFAULT_CALLER_FACT_SYSTEM_PROMPT,
     render_caller_fact_prompt,
 )
-from worker.engram.caller_facts import CallerFactExtract, CallerFactExtractor
+from worker.engram.caller_facts import (
+    CallerFactExtract,
+    CallerFactExtractor,
+    stamp_caller_fact,
+)
 from worker.reframe.types import HistoryTurn
 
 
@@ -38,6 +44,9 @@ def test_render_prompt_substitutes_config_tokens_only() -> None:
     assert "{history_key}" not in rendered
     assert "turns" in rendered
     assert "The caller" in rendered
+    assert "correction" in rendered
+    assert "unsay" in rendered
+    assert 'must start with "The caller"' in rendered
 
 
 def test_parse_greeting_is_empty_success(settings: WorkerSettings) -> None:
@@ -237,3 +246,74 @@ def test_extract_mocked_model_returns_planned_facts(
         else settings.caller_fact_reason_empty
     )
     assert parsed == CallerFactExtract(facts, reason)
+
+
+def test_parse_discards_a_fact_without_the_third_person_prefix(
+    settings: WorkerSettings,
+) -> None:
+    extractor = CallerFactExtractor(settings, _DummyClient())  # type: ignore[arg-type]
+    parsed = extractor.parse(
+        _json_facts(settings, ["Lives in Pune.", "The caller sails."]),
+    )
+    assert parsed.facts == ["The caller sails."]
+    assert parsed.reason == settings.caller_fact_reason_extracted
+
+
+def test_parse_all_facts_malformed_is_unrecognised_not_empty(
+    settings: WorkerSettings,
+) -> None:
+    """A dropped-to-nothing pass must retry, not read as an honest empty."""
+    extractor = CallerFactExtractor(settings, _DummyClient())  # type: ignore[arg-type]
+    parsed = extractor.parse(_json_facts(settings, ["I live in Pune."]))
+    assert parsed.facts == []
+    assert parsed.reason == settings.caller_fact_reason_unrecognised
+
+
+def test_per_turn_prompt_extracts_the_newest_exchange_only() -> None:
+    prompt = DEFAULT_CALLER_FACT_SYSTEM_PROMPT
+    assert "newest exchange" in prompt
+    assert "Extract only from {user_turn_key} and {persona_reply_key}" in prompt
+    assert "has been recorded" in prompt
+    assert "{history_key} only to understand" in prompt
+
+
+def test_closing_prompt_is_the_whole_sitting_safety_net() -> None:
+    prompt = DEFAULT_CALLER_FACT_CLOSING_SYSTEM_PROMPT
+    assert "already extracted on its own" in prompt
+    assert "Do not restate a fact that one exchange stated plainly" in prompt
+    assert "only what held at the end" in prompt
+    assert 'must start with "{fact_prefix}"' in prompt
+
+
+def test_messages_pick_the_brief_that_matches_the_pass(
+    settings: WorkerSettings,
+) -> None:
+    extractor = CallerFactExtractor(settings, _DummyClient())  # type: ignore[arg-type]
+    per_turn = extractor._messages(
+        history=[],
+        user_turn="I live in Pune",
+        persona_reply="good to know",
+    )
+    closing = extractor._messages(
+        history=[],
+        user_turn="I live in Pune",
+        persona_reply="good to know",
+        closing=True,
+    )
+    assert "newest exchange" in per_turn[0]["content"]
+    assert "newest exchange" not in closing[0]["content"]
+    assert "already extracted on its own" in closing[0]["content"]
+
+
+def test_stamp_carries_the_date_into_the_written_row(
+    settings: WorkerSettings,
+) -> None:
+    stated = datetime(2026, 9, 17, tzinfo=UTC)
+    assert (
+        stamp_caller_fact("The caller sails.", settings, now=stated)
+        == "The caller sails. (stated 2026-09-17)"
+    )
+    off = settings.model_copy(update={"caller_fact_stamp_enabled": False})
+    assert stamp_caller_fact("The caller sails.", off, now=stated) == (
+        "The caller sails."
+    )

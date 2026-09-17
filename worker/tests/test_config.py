@@ -46,7 +46,10 @@ def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
     assert loaded.memory_ref_pool_persona == "persona"
     assert loaded.memory_ref_pool_caller == "caller"
     assert loaded.engram_scope_router_enabled is False
-    assert loaded.engram_scope_router_timeout_seconds == 1.0
+    assert loaded.engram_scope_router_timeout_seconds == 1.5
+    assert loaded.answer_temperature == 0.0
+    assert loaded.caller_fact_stamp_enabled is True
+    assert loaded.caller_fact_stamp_template == " (stated {date})"
     assert loaded.engram_scope_router_workers == 4
     assert loaded.engram_scope_router_scope_key == "scope"
     assert loaded.engram_scope_router_reason_key == "reason"

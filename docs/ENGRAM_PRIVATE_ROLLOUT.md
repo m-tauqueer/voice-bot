@@ -109,7 +109,7 @@ A `401` re-logs in once, then that turn degrades. There is no path from a failed
 ## Outstanding (operator, not code)
 
 - **Engram admin-pool forget** — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §10. The mixed-owner product traffic is still in the key owner's pool. Nothing writes to it any more.
-- **Three permanently stranded accounts:** `getcognora@gmail.com`, `tauqueer655@gmail.com`, and `mohammadtuti655@gmail.com` (the API key owner). We hold no credential for them and an org admin cannot reset an Engram password. They degrade to shared-only for good. Any new member is fine.
+- **Three permanently stranded accounts, and only these three:** `getcognora@gmail.com`, `tauqueer655@gmail.com`, and `mohammadtuti655@gmail.com` (the API key owner). We hold no credential for them and an org admin cannot reset an Engram password. They degrade to shared-only for good. Any other Google account, including later testers, gets private memory. Do not sit private-recall tests on those three.
 - **Delete-my-data is a one-way door.** Erase clears the stored secret, and that member's Engram password can never be reissued, so they are shared-only afterwards. Member-facing copy for this is drafted but not shipped — see the wipe section of the workaround doc.
 - Still worth asking Engram for: an org-admin-scoped session mint for a member of their own org, which would remove password custody entirely. Not a blocker.
 

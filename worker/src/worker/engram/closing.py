@@ -5,7 +5,7 @@ from uuid import UUID
 
 import structlog
 
-from worker.engram.caller_facts import CallerFactExtract
+from worker.engram.caller_facts import CallerFactExtract, stamp_caller_fact
 from worker.engram.errors import BrainError
 from worker.persistence.db import borrow
 from worker.persistence.personas import get_persona
@@ -169,7 +169,10 @@ def run_closing_pass(
                 app_user_id=app_user_id,
                 engram_user_id=engram_user_id,
                 email=email,
-                op=lambda active, body=fact: active.ingest_private_text(
+                op=lambda active, body=stamp_caller_fact(
+                    fact,
+                    settings,
+                ): active.ingest_private_text(
                     engram_persona_id,
                     body,
                 ),
@@ -224,6 +227,7 @@ def _extract_with_retry(
             user_turn=user_turn,
             persona_reply=persona_reply,
             history_limit=settings.caller_fact_closing_max_turns,
+            closing=True,
         )
         if extracted.reason in success:
             return extracted

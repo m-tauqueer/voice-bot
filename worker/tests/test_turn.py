@@ -6,7 +6,11 @@ import pytest
 
 from worker.config import WorkerSettings
 from worker.controller.decision import Action, Decision, ReasonCode
-from worker.engram.caller_facts import CallerFactExtract, CallerFactExtractor
+from worker.engram.caller_facts import (
+    CallerFactExtract,
+    CallerFactExtractor,
+    stamp_caller_fact,
+)
 from worker.engram.errors import BrainError
 from worker.engram.interface import RetrieveHit, RetrieveOutcome
 from worker.engram.scope_router import ScopeDecision
@@ -726,7 +730,7 @@ def test_write_back_mocked_extract_writes_private_text_not_converse(
     plan.app_user_id = uuid4()
     try:
         runner._write_back(plan)
-        assert ingested == facts
+        assert ingested == [stamp_caller_fact(fact, settings) for fact in facts]
         assert conversed == []
         assert shared == []
         assert extractor.calls[0]["user_turn"] == user_turn
