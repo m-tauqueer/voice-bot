@@ -43,6 +43,21 @@ export function applyTranscriptEvent(
   };
 }
 
+export function commitInterimRole(
+  lines: readonly TranscriptLine[],
+  role: string,
+): TranscriptLine[] {
+  let changed = false;
+  const next = lines.map((line) => {
+    if (line.role !== role || !line.interim) {
+      return line;
+    }
+    changed = true;
+    return { ...line, interim: false };
+  });
+  return changed ? next : [...lines];
+}
+
 export function labelForTranscriptRole(
   role: string,
   userRole: string,

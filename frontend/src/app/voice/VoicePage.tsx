@@ -23,6 +23,7 @@ import {
 } from "../../lib/publishedPersonas";
 import {
   applyTranscriptEvent,
+  commitInterimRole,
   type TranscriptLine,
 } from "../../lib/voiceTranscript";
 import { useSession } from "../session";
@@ -204,6 +205,9 @@ export function VoicePage() {
     if (type === config.thinkingType) {
       session.current.bargeIn?.onAgentThinking();
       session.current.thinkingCue?.start();
+      setTranscript((current) =>
+        commitInterimRole(current, config.transcriptUserRole),
+      );
       setSignalLevel(0);
       setPhase("thinking");
       return;
@@ -212,6 +216,12 @@ export function VoicePage() {
       session.current.thinkingCue?.stop();
       session.current.playback?.restore();
       session.current.bargeIn?.onAgentAudioDone();
+      setTranscript((current) =>
+        commitInterimRole(
+          commitInterimRole(current, config.transcriptUserRole),
+          config.transcriptAssistantRole,
+        ),
+      );
       setSignalLevel(0);
       setPhase("listening");
       return;
