@@ -274,7 +274,7 @@ export const viteTestEnv: Record<string, string> = {
   VITE_CALL_SESSION_SAVED_BADGE: "Session saved",
   VITE_CALL_TRANSCRIPT_LISTENING: "Speak when the badge says Listening.",
   VITE_CALL_TRANSCRIPT_IDLE: "Start a call to see the live transcript.",
-  VITE_CHAT_NEW_CONVERSATION_LABEL: "New conversation",
+  VITE_CHAT_END_LABEL: "End chat",
   VITE_CHAT_THINKING_LABEL: "Thinking…",
   VITE_CHAT_MESSAGE_LABEL: "Message",
   VITE_CHAT_SEND_LABEL: "Send",

@@ -50,6 +50,7 @@ from worker.engram.user_id import persona_engine_user_id
 from worker.fish.accept import clip_allowed, parse_allowlist
 from worker.fish.clone import ClonedVoice, FishCloneClient, HttpFishClone
 from worker.fish.errors import FishCloneError
+from worker.lifecycle.purge import list_private_pool, purge_private_pool
 from worker.schema import SUBSCRIPTION_ACTIVE
 
 
@@ -424,6 +425,89 @@ class PersonaAdmin:
             "removed": removed,
         }
 
+    def _named_member(self, identifier: str) -> dict[str, Any]:
+        with connect(self._settings) as conn:
+            user = find_user(conn, identifier)
+        if user is None:
+            raise AdminError(
+                self._settings.admin_error_user_missing,
+                status=404,
+                reason="user_missing",
+            )
+        stored = user.get("engram_user_id")
+        if stored is None:
+            raise AdminError(
+                self._settings.admin_error_engram_user_missing,
+                status=409,
+                reason="engram_user_missing",
+            )
+        engine_id = str(stored).strip()
+        if not engine_id:
+            raise AdminError(
+                self._settings.admin_error_engram_user_missing,
+                status=409,
+                reason="engram_user_missing",
+            )
+        return {**user, "engram_user_id": engine_id}
+
+    def list_private(
+        self,
+        identifier: str,
+        *,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        persona = self._require_active(persona_id)
+        user = self._named_member(identifier)
+        listed = list_private_pool(
+            self._settings,
+            engram_user_id=str(user["engram_user_id"]),
+            engram_persona_id=str(persona["engram_persona_id"]),
+        )
+        return {
+            "ok": True,
+            "persona": _row(persona),
+            "user": _row(user),
+            "engram": listed["engram"],
+            "count": listed["count"],
+            "memories": listed["memories"],
+        }
+
+    def forget_private(
+        self,
+        identifier: str,
+        *,
+        confirmation: str,
+        persona_id: str | UUID | None = None,
+    ) -> dict[str, Any]:
+        """Forget one member's private pool for one persona.
+
+        Uses the same `user_memories` / `forget_user_memory` loop as
+        delete-my-data. Does not `personas.delete`, does not unsubscribe,
+        and never walks every member.
+        """
+        persona = self._require_active(persona_id)
+        if not confirmation_matches(confirmation, str(persona["handle"])):
+            raise AdminError(
+                self._settings.admin_error_forget_private_confirmation,
+                status=400,
+                reason="confirmation_mismatch",
+            )
+        user = self._named_member(identifier)
+        result = purge_private_pool(
+            self._settings,
+            engram_user_id=str(user["engram_user_id"]),
+            engram_persona_id=str(persona["engram_persona_id"]),
+            unsubscribe=False,
+        )
+        return {
+            "ok": True,
+            "persona": _row(persona),
+            "user": _row(user),
+            "engram": result["engram"],
+            "forgotten": result["forgotten"],
+            "unsubscribed": result["unsubscribed"],
+        }
+
     def teach(
         self,
         text: str,
@@ -506,7 +590,7 @@ class PersonaAdmin:
             user = find_user(conn, identifier)
         if user is None:
             raise AdminError(
-                "no signed-in user matches that identifier",
+                self._settings.admin_error_user_missing,
                 status=404,
                 reason="user_missing",
             )

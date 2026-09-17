@@ -4,6 +4,7 @@ import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import WebSocket from "ws";
 import type { AppUser } from "../auth/types.js";
+import { endSitting } from "../chat/closingPass.js";
 import {
   type GatewayConfig,
   voiceAudioPersistEnabled,
@@ -40,13 +41,7 @@ import {
 } from "./failures.js";
 import { applyVoiceLatency } from "./latency.js";
 import type { VoiceNoticeHub } from "./notices.js";
-import {
-  endVoiceSession,
-  recordSttMeta,
-  recordTtsMeta,
-  sttMeta,
-  ttsMeta,
-} from "./record.js";
+import { recordSttMeta, recordTtsMeta, sttMeta, ttsMeta } from "./record.js";
 import { redisQuiet } from "./redisSafe.js";
 import { streamThink } from "./thinkStream.js";
 import { pcmDurationMs } from "./wav.js";
@@ -104,6 +99,8 @@ export async function runFishVoiceCall(args: {
     voiceId,
   } = args;
   const log = request.log;
+  const hangUpSitting = (onLost?: () => void) =>
+    endSitting(sql, config, log, session.id, user.id, onLost);
   let listen: DeepgramListen | null = null;
   let fish: FishLiveTts | null = null;
   let thinkAbort: AbortController | null = null;
@@ -119,12 +116,7 @@ export async function runFishVoiceCall(args: {
     reportVoiceFailure(sql, config, log, config.FAILURE_CODE_DEEPGRAM);
     sendJson(socket, voiceFailurePayload(config, config.FAILURE_CODE_DEEPGRAM));
     closeClient(socket);
-    await endVoiceSession(sql, session.id).catch((endError: unknown) => {
-      log.error(
-        { err: endError, sessionId: session.id },
-        "voice session not closed",
-      );
-    });
+    await hangUpSitting();
     return;
   }
 
@@ -405,13 +397,7 @@ export async function runFishVoiceCall(args: {
       if (cleared === null) {
         noteRedisFail();
       }
-      await endVoiceSession(sql, session.id).catch((error: unknown) => {
-        log.error(
-          { err: error, sessionId: session.id },
-          "voice session not closed",
-        );
-        noteRecordLost();
-      });
+      await hangUpSitting(noteRecordLost);
       log.info({ sessionId: session.id }, "voice call ended");
     })();
   };

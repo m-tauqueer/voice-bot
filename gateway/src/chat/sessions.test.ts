@@ -3,6 +3,7 @@ import { queuedSql } from "../test/http.js";
 import {
   createTextSession,
   createVoiceSession,
+  endSessionForUser,
   getSessionForUser,
 } from "./sessions.js";
 
@@ -90,5 +91,51 @@ describe("getSessionForUser", () => {
     await expect(
       createTextSession(queuedSql([[]]) as never, ownerId, personaId),
     ).rejects.toThrow(/session insert returned no row/);
+  });
+});
+
+describe("endSessionForUser", () => {
+  it("returns null when the session belongs to someone else", async () => {
+    await expect(
+      endSessionForUser(
+        queuedSql([
+          [
+            {
+              id: sessionId,
+              user_id: otherId,
+              persona_id: personaId,
+              ended_at: null,
+            },
+          ],
+        ]) as never,
+        sessionId,
+        ownerId,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("ends the sitting when the caller owns it", async () => {
+    await expect(
+      endSessionForUser(
+        queuedSql([
+          [
+            {
+              id: sessionId,
+              user_id: ownerId,
+              persona_id: personaId,
+              ended_at: null,
+            },
+          ],
+          [],
+        ]) as never,
+        sessionId,
+        ownerId,
+      ),
+    ).resolves.toEqual({
+      id: sessionId,
+      userId: ownerId,
+      personaId,
+      endedAt: null,
+    });
   });
 });

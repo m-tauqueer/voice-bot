@@ -169,7 +169,7 @@ export type UiCopy = {
   callSessionSavedBadge: string;
   callTranscriptListening: string;
   callTranscriptIdle: string;
-  chatNewConversationLabel: string;
+  chatEndLabel: string;
   chatThinkingLabel: string;
   chatMessageLabel: string;
   chatSendLabel: string;
@@ -431,7 +431,7 @@ export function loadUiCopy(): UiCopy {
     callSessionSavedBadge: requiredVite("VITE_CALL_SESSION_SAVED_BADGE"),
     callTranscriptListening: requiredVite("VITE_CALL_TRANSCRIPT_LISTENING"),
     callTranscriptIdle: requiredVite("VITE_CALL_TRANSCRIPT_IDLE"),
-    chatNewConversationLabel: requiredVite("VITE_CHAT_NEW_CONVERSATION_LABEL"),
+    chatEndLabel: requiredVite("VITE_CHAT_END_LABEL"),
     chatThinkingLabel: requiredVite("VITE_CHAT_THINKING_LABEL"),
     chatMessageLabel: requiredVite("VITE_CHAT_MESSAGE_LABEL"),
     chatSendLabel: requiredVite("VITE_CHAT_SEND_LABEL"),

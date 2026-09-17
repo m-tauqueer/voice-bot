@@ -14,3 +14,7 @@ Current architecture (mutable “how”): [TRD.md](../TRD.md). Current snapshot:
 | [0004](0004-early-product-locks.md) | First-build locks that still hold (point to TRD / SHIPPED) | Accepted | 2026-09-08 |
 | [0005](0005-persona-voice-provider.md) | Owner chooses Aura or Fish via an env-named provider key; do not infer from a Fish id | Accepted | 2026-09-08 |
 | [0006](0006-memory-scope-is-a-model-decision.md) | Which memory pool the answerer sees is a model output, concurrent with retrieve, fail-open | Proposed | 2026-09-09 |
+| [0007](0007-production-same-origin.md) | First production sit: one public origin, nginx edge, linear az script | Accepted | 2026-09-09 |
+| [0008](0008-deploy-in-cognora-alpha-rg.md) | Bot resources go in cognora-alpha-rg; do not touch Cognora servers | Accepted | 2026-09-09 |
+| [0009](0009-private-is-extracted-caller-facts.md) | Private pool is extracted caller facts, not the sitting transcript | Accepted | 2026-09-17 |
+| [0010](0010-chat-ends-with-hangup.md) | Typed chat ends with hang-up, like a voice call | Accepted | 2026-09-17 |

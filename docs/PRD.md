@@ -1,6 +1,6 @@
 # PRD — Voice Persona Bot
 
-Status: Locked for build. Owner: Tauqueer. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Decisions: [decisions/README.md](decisions/README.md). Companions: [TRD](TRD.md), [ENGRAM](ENGRAM.md), [current work](PHASE_6_PLAN.md), [personas](PHASE_5_PLAN.md).
+Status: Locked for build. Owner: Tauqueer. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Decisions: [decisions/README.md](decisions/README.md). Companions: [TRD](TRD.md), [ENGRAM](ENGRAM.md), [current work](CALLER_MEMORY_PLAN.md), [personas](PHASE_5_PLAN.md).
 
 ---
 
@@ -22,13 +22,13 @@ The product's reason to exist is **persona memory**: without Engram there is no 
 
 ## 3. Non-goals (for the first build)
 
-These were out of scope for the first build. **Cloned voices and member UI are current work** — [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas (several, member picks) are built — leftover sittings in [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4. Launch ops and parked product live in [FUTURE.md](FUTURE.md).
+These were out of scope for the first build. **Caller-fact private memory is current work** — [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Cloned voices and member UI are paused — [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas (several, member picks) are built — leftover sittings in [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4. Launch ops and parked product live in [FUTURE.md](FUTURE.md).
 
 - Multi-persona: several personas a member can pick, with memory and history per (user, persona). *(Built.)*
 - Telephony / WhatsApp / mobile-native channels. *(Parked.)*
 - Video, facial-emotion, or any non-text modality into Engram. *(Still out of scope.)*
 - Billing/usage dashboards and cost optimization. *(Parked if we charge; cost guardrails and quotas: shipped.)*
-- Voice cloning on a persona (hosted Fish Audio; Deepgram Aura otherwise). *(Current: [PHASE_6_PLAN.md](PHASE_6_PLAN.md).)*
+- Voice cloning on a persona (hosted Fish Audio; Deepgram Aura otherwise). *(Paused: [PHASE_6_PLAN.md](PHASE_6_PLAN.md).)*
 - Formal compliance / consent / delete-my-data flows. *(Shipped.)*
 - Open self-serve signup. Launch is **waitlist-gated**: anyone can request access, the owner approves in batches. *(Shipped.)*
 
@@ -50,7 +50,7 @@ For the first build there are ~2-3 test users, then the product is productionize
 - **Turn behavior:** the bot may speak, or deliberately stay silent/wait; the decision is model/signal driven, never keyword-based.
 - **Latency:** the reply is streamed to the voice transport as it is composed, so speech starts on the first words rather than the last. Measured ~2.5-4s to the first spoken word; a brief "thinking" cue covers the wait. (The alternative brain, which asks Engram to compose the reply, costs ~12.5s and is kept only as a switch.)
 - **Language:** English first (Deepgram Nova-3). Multilingual code-switching is a later phase.
-- **Memory continuity:** the persona remembers earlier turns in the same call and prior conversations across restarts, because memory lives in Engram, not in the process.
+- **Memory continuity:** this sitting’s conversation lives in Postgres (speaker-labelled turns). Across sittings, the persona remembers **extracted facts about that member** in Engram private, and who the persona is from shared teach. Intent: [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Retrieve writes those facts as private text after each reply; it does not dump the sitting. Hang-up runs a second extract over the finished sitting. Live recall sittings wait for [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) Phase 5.
 - **Reply fidelity:** the reframing LLM speaks the persona's recalled answer in natural, spoken, first-person style; it must not invent facts beyond what Engram returned (minor connective phrasing only).
 
 ---
@@ -81,12 +81,13 @@ The build is successful when, in the browser:
 
 ## 8. Scope mapped to phases
 
-See [PHASE_PLAN.md](PHASE_PLAN.md) for the index. Map: [README.md](README.md). History: [SHIPPED.md](SHIPPED.md). Current: [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Later: [FUTURE.md](FUTURE.md).
+See [PHASE_PLAN.md](PHASE_PLAN.md) for the index. Map: [README.md](README.md). History: [SHIPPED.md](SHIPPED.md). Current: [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Fish/UI: [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Later: [FUTURE.md](FUTURE.md).
 
 - **Phases 0–4 product (complete):** setup, typed chat, voice, hardening, waitlist, quotas, lifecycle, `/status`.
 - **Personas (built):** several personas; member picks on voice and chat; memory per (user, persona).
-- **Current:** cloned Fish voices per persona, then Home/picker UI, onboarding, mobile, accessibility, accounts.
-- **After that:** parked product, then Plan X (Azure last).
+- **Current:** caller facts in Engram private, sitting transcript in Postgres ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)).
+- **Paused:** cloned Fish voices per persona, then Home/picker UI, onboarding, mobile, accessibility, accounts ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)).
+- **After that:** parked product, then Plan X leftovers.
 
 ---
 

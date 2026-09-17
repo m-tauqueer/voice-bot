@@ -73,6 +73,9 @@ def test_turns_hit_before_minutes() -> None:
 
 
 def test_refuse_quota_uses_configured_copy(settings: WorkerSettings) -> None:
+    settings = settings.model_copy(
+        update={"quota_turns_per_day": 200, "quota_voice_minutes_per_day": 60},
+    )
     limits = env_quota_limits(settings)
     usage = QuotaUsage(
         turns_used=limits.turns_per_day,

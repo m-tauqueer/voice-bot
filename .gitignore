@@ -40,3 +40,9 @@ htmlcov/
 # Agent local scratch
 .claude/settings.local.json
 .claude/launch.json
+
+# Azure deploy scratch (names, generated secrets, baked Vite env)
+infra/azure/env
+infra/azure/.state
+infra/azure/.tmp/
+infra/azure/.build.env

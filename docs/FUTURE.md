@@ -1,6 +1,6 @@
 # Later work (parked)
 
-Do **not** start anything in this file until Tauqueer names it. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work is [PHASE_6_PLAN.md](PHASE_6_PLAN.md). History: [SHIPPED.md](SHIPPED.md). Personas (built): [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+Do **not** start anything in this file until Tauqueer names it. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Fish/UI (paused): [PHASE_6_PLAN.md](PHASE_6_PLAN.md). History: [SHIPPED.md](SHIPPED.md). Personas (built): [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
 
 Onboarding, cloned Fish voices, Home/picker UI, mobile, accessibility, and accounts moved to [PHASE_6_PLAN.md](PHASE_6_PLAN.md).
 
@@ -42,4 +42,6 @@ CSP, HSTS, X-Content-Type-Options, Referrer-Policy; dependency/image scanning in
 
 ### X.4 — Azure deployment (retire the tunnel)
 
-Container Apps for gateway, worker, frontend; managed Postgres and Redis; Blob on (`VOICE_AUDIO_PERSIST_ENABLED=true`); migrations as a deploy step; Key Vault; worker `/internal/*` private; only the BYO-LLM think path public. Manual test: staging spoken call; blobs fetchable; `npm run smoke` Azure `OK`.
+First production sit (named): `cognora-alpha-rg`, a linear `infra/azure/deploy.sh` from the working tree, then GoDaddy CNAME and the existing Google OAuth client. Bot servers stay on their own names; Cognora’s Postgres / VMs / Key Vault are left alone. One public Container App runs nginx, gateway, and worker on localhost; Flexible Server Postgres; Azure Managed Redis. Worker `/internal/*` is not on the public edge; only the think path is. Blob persist stays **off**. No GitHub Actions, Key Vault, staging slot, or backups in this sit. Manual test: sign-in and a live `/voice` call on the public origin.
+
+Still parked with the rest of Plan X: CI/CD, automated backups, security 2.0, turning blobs on.

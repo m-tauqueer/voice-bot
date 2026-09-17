@@ -87,3 +87,22 @@ export async function getSessionForUser(
     endedAt: row.ended_at,
   };
 }
+
+export async function endSessionForUser(
+  sql: Sql,
+  sessionId: string,
+  userId: string,
+): Promise<ChatSession | null> {
+  const session = await getSessionForUser(sql, sessionId, userId);
+  if (!session) {
+    return null;
+  }
+  await sql`
+    UPDATE sessions
+    SET ended_at = now()
+    WHERE id = ${sessionId}
+      AND user_id = ${userId}
+      AND ended_at IS NULL
+  `;
+  return session;
+}

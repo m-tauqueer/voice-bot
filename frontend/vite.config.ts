@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, "..", "");
   const frontendOrigin = env.FRONTEND_ORIGIN;
   const gatewayPort = env.GATEWAY_PORT;
@@ -13,28 +13,34 @@ export default defineConfig(({ mode }) => {
   }
   const frontend = new URL(frontendOrigin);
   const listenPort = Number(frontend.port);
-  if (!Number.isInteger(listenPort) || listenPort <= 0) {
-    throw new Error("FRONTEND_ORIGIN must include a port");
-  }
   const gateway = `http://127.0.0.1:${gatewayPort}`;
   const proxy = {
     target: gateway,
     changeOrigin: true,
   } as const;
 
+  if (command === "serve") {
+    if (!Number.isInteger(listenPort) || listenPort <= 0) {
+      throw new Error("FRONTEND_ORIGIN must include a port");
+    }
+  }
+
   return {
     plugins: [react()],
     envDir: "..",
-    server: {
-      host: true,
-      port: listenPort,
-      strictPort: true,
-      proxy: {
-        "/auth": proxy,
-        "/api": proxy,
-        "/health": proxy,
-        "/ws": { ...proxy, ws: true },
-      },
-    },
+    server:
+      command === "serve"
+        ? {
+            host: true,
+            port: listenPort,
+            strictPort: true,
+            proxy: {
+              "/auth": proxy,
+              "/api": proxy,
+              "/health": proxy,
+              "/ws": { ...proxy, ws: true },
+            },
+          }
+        : undefined,
   };
 });

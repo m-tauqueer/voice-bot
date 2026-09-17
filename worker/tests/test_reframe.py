@@ -63,7 +63,7 @@ def test_reframe_rejects_empty_messages(settings: WorkerSettings) -> None:
         reframer._request(["", "  "], [], {})
 
 
-def test_answer_request_uses_labelled_lists_as_only_facts(
+def test_answer_request_keeps_labelled_lists_and_sitting_history(
     settings: WorkerSettings,
 ) -> None:
     answerer = Answerer(settings, DummyClient())
@@ -89,7 +89,116 @@ def test_answer_request_uses_labelled_lists_as_only_facts(
         "I taught in Oxford.",
     ]
     assert payload[settings.answer_payload_caller_memories_key] == ["They sail."]
+    assert payload[settings.answer_payload_history_key] == [
+        {"speaker": "user", "text": "Where did you teach?"},
+    ]
     assert payload[settings.answer_payload_question_key] == "Where did you teach?"
+    assert "Where did you teach?" not in payload[
+        settings.answer_payload_persona_memories_key
+    ]
+    assert "Where did you teach?" not in payload[
+        settings.answer_payload_caller_memories_key
+    ]
+
+
+def test_answer_prompt_does_not_treat_coverage_as_the_persona_job() -> None:
+    prompt = DEFAULT_ANSWER_SYSTEM_PROMPT
+    assert "recalling their own work" not in prompt
+    assert "Knowledge of an organization is not a claim" in prompt
+    assert "Never speak caller_memories in the first person as yourself" in prompt
+    assert "First-person fragments in memories may be quotes" in prompt
+    assert "Say they and their, not we and our" in prompt
+    assert "They are not employers you join" in prompt
+    assert "the correction wins" in prompt
+    assert "Do not restore the unsay from caller_memories" in prompt
+    assert "treat the question as current" in prompt
+    assert "outranks caller_memories" in prompt
+    assert "Do not swap it for a different one" in prompt
+    assert "believe the question" in prompt
+    assert "Using them is not inventing a long-term fact" in prompt
+
+
+def test_answer_history_length_follows_config(settings: WorkerSettings) -> None:
+    loaded = settings.model_copy(update={"reframe_history_turns": 2})
+    answerer = Answerer(loaded, DummyClient())
+    history = [
+        HistoryTurn(speaker="user", text="one"),
+        HistoryTurn(speaker="persona", text="two"),
+        HistoryTurn(speaker="user", text="three"),
+        HistoryTurn(speaker="persona", text="four"),
+    ]
+    _, messages = answerer._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=history,
+        question="what did I just say",
+        persona_identity={},
+        voice_config={},
+    )
+    payload = json.loads(messages[1]["content"])
+    assert payload[loaded.answer_payload_history_key] == [
+        {"speaker": "persona", "text": "four"},
+        {"speaker": loaded.engram_converse_user_speaker, "text": "what did I just say"},
+    ]
+    assert payload[loaded.answer_payload_persona_memories_key] == ["persona fact"]
+    assert payload[loaded.answer_payload_caller_memories_key] == ["caller fact"]
+    empty = loaded.model_copy(update={"reframe_history_turns": 0})
+    _, none = Answerer(empty, DummyClient())._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=history,
+        question="what did I just say",
+        persona_identity={},
+        voice_config={},
+    )
+    none_payload = json.loads(none[1]["content"])
+    assert none_payload[empty.answer_payload_history_key] == []
+    assert none_payload[empty.answer_payload_persona_memories_key] == ["persona fact"]
+    assert none_payload[empty.answer_payload_caller_memories_key] == ["caller fact"]
+
+
+def test_answer_history_includes_the_current_question(
+    settings: WorkerSettings,
+) -> None:
+    answerer = Answerer(settings, DummyClient())
+    said = "I sail on Tuesdays"
+    _, messages = answerer._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=[HistoryTurn(speaker="persona", text="hello")],
+        question=said,
+        persona_identity={},
+        voice_config={},
+    )
+    payload = json.loads(messages[1]["content"])
+    assert payload[settings.answer_payload_history_key] == [
+        {"speaker": "persona", "text": "hello"},
+        {
+            "speaker": settings.engram_converse_user_speaker,
+            "text": said,
+        },
+    ]
+    already = [
+        HistoryTurn(
+            speaker=settings.engram_converse_user_speaker,
+            text=said,
+        ),
+    ]
+    _, again = answerer._request(
+        persona_memories=["persona fact"],
+        caller_memories=["caller fact"],
+        history=already,
+        question=said,
+        persona_identity={},
+        voice_config={},
+    )
+    again_payload = json.loads(again[1]["content"])
+    assert again_payload[settings.answer_payload_history_key] == [
+        {
+            "speaker": settings.engram_converse_user_speaker,
+            "text": said,
+        },
+    ]
 
 
 def test_answer_allows_both_lists_empty_when_the_question_is_present(
@@ -272,11 +381,26 @@ def test_reframe_stream_yields_tokens(settings: WorkerSettings) -> None:
 
 
 def test_answer_returns_spoken_text(settings: WorkerSettings) -> None:
+    captured: dict[str, object] = {}
+
     class Completions:
-        def create(self, **_kwargs):
+        def create(self, **kwargs):
+            captured.update(kwargs)
             return SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content="Oxford"))],
             )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    spoken = Answerer(settings, client).answer(
+        persona_memories=["I taught in Oxford."],
+        caller_memories=[],
+        history=[],
+        question="Where?",
+        persona_identity={},
+        voice_config={},
+    )
+    assert spoken == "Oxford"
+    assert captured["temperature"] == settings.answer_temperature
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     spoken = Answerer(settings, client).answer(

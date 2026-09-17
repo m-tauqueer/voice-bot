@@ -819,3 +819,137 @@ def test_clone_fails_closed_without_sending_clip_to_engram(
     )
     assert pasted["persona"]["voice_config"]["fish_voice"] == "pasted-id"
     assert brain.ingested == []
+
+
+def test_forget_private_named_member_only(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog(
+        [
+            _row(),
+            _row(
+                id=NOVA,
+                engram_persona_id="eng-nova",
+                handle="nova",
+                display_name="Nova",
+            ),
+        ]
+    )
+    catalog.users.append(
+        {
+            "id": "user-2",
+            "google_sub": "sub2",
+            "email": "b@example.com",
+            "engram_user_id": "e-user-2",
+        }
+    )
+    brain = FakeBrain()
+    calls: list[dict[str, Any]] = []
+
+    def fake_purge(_settings: WorkerSettings, **kwargs: Any) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"engram": "ok", "forgotten": 2, "unsubscribed": False}
+
+    monkeypatch.setattr("worker.admin.service.purge_private_pool", fake_purge)
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    result = admin.forget_private(
+        "a@example.com",
+        confirmation="ada",
+        persona_id=ADA,
+    )
+    assert brain.deleted == []
+    assert [row["handle"] for row in catalog.rows] == ["ada", "nova"]
+    assert result["forgotten"] == 2
+    assert result["unsubscribed"] is False
+    assert result["user"]["engram_user_id"] == "e-user-1"
+    assert len(calls) == 1
+    assert calls[0]["engram_user_id"] == "e-user-1"
+    assert calls[0]["engram_persona_id"] == "eng-ada"
+    assert calls[0]["unsubscribe"] is False
+
+
+def test_forget_private_refuses_wrong_handle(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    calls: list[dict[str, Any]] = []
+
+    def fake_purge(_settings: WorkerSettings, **kwargs: Any) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"engram": "ok", "forgotten": 1, "unsubscribed": False}
+
+    monkeypatch.setattr("worker.admin.service.purge_private_pool", fake_purge)
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    with pytest.raises(AdminError) as caught:
+        admin.forget_private("a@example.com", confirmation="nova", persona_id=ADA)
+    assert caught.value.reason == "confirmation_mismatch"
+    assert caught.value.status == 400
+    assert calls == []
+    assert brain.deleted == []
+    assert catalog.rows[0]["handle"] == "ada"
+
+
+def test_forget_private_missing_user(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    brain = FakeBrain()
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    with pytest.raises(AdminError) as caught:
+        admin.forget_private("missing@example.com", confirmation="ada", persona_id=ADA)
+    assert caught.value.reason == "user_missing"
+    assert caught.value.status == 404
+    assert brain.deleted == []
+
+
+def test_forget_private_missing_engram_id(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    catalog.users[0]["engram_user_id"] = "  "
+    brain = FakeBrain()
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    with pytest.raises(AdminError) as caught:
+        admin.forget_private("a@example.com", confirmation="ada", persona_id=ADA)
+    assert caught.value.reason == "engram_user_missing"
+    assert caught.value.status == 409
+
+
+def test_list_private_named_member_only(
+    settings: WorkerSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = Catalog([_row()])
+    catalog.users.append(
+        {
+            "id": "user-2",
+            "google_sub": "sub2",
+            "email": "b@example.com",
+            "engram_user_id": "e-user-2",
+        }
+    )
+    brain = FakeBrain()
+    calls: list[dict[str, Any]] = []
+
+    def fake_list(_settings: WorkerSettings, **kwargs: Any) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "engram": "ok",
+            "count": 1,
+            "memories": [{"gid": 1001, "text": "The caller lives in Pune."}],
+        }
+
+    monkeypatch.setattr("worker.admin.service.list_private_pool", fake_list)
+    admin = _admin(settings, monkeypatch, catalog, brain)
+    result = admin.list_private("a@example.com", persona_id=ADA)
+    assert result["count"] == 1
+    assert result["memories"][0]["gid"] == 1001
+    assert len(calls) == 1
+    assert calls[0]["engram_user_id"] == "e-user-1"
+    assert calls[0]["engram_persona_id"] == "eng-ada"
+    assert brain.deleted == []

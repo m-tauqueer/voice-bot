@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeStoredChatSessionId } from "../../lib/chatSession";
+import {
+  readStoredChatSessionId,
+  writeStoredChatSessionId,
+} from "../../lib/chatSession";
+import { personaPinField } from "../../lib/personaVoice";
 import { ChatPage } from "./ChatPage";
 
 const sessionState = {
@@ -108,5 +112,75 @@ describe("ChatPage picker", () => {
         true,
       );
     });
+  });
+
+  it("hangs up the sitting and the next send starts a new one", async () => {
+    const adaSession = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const nextSession = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    writeStoredChatSessionId("member", ada.id, adaSession);
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/api/personas") {
+        return { personas: [ada, nova] };
+      }
+      if (path === "/api/chat/end") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ session_id: adaSession });
+        return undefined;
+      }
+      if (path === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as Record<string, string>;
+        expect(body.session_id).toBeUndefined();
+        expect(body[personaPinField()]).toBe(ada.id);
+        return {
+          action: "speak",
+          reply_text: "fresh sitting",
+          session_id: nextSession,
+          reasons: [],
+        };
+      }
+      if (typeof path === "string" && path.includes(adaSession)) {
+        return {
+          persona: ada,
+          session_id: adaSession,
+          turns: [{ ordinal: 1, speaker: "user", text: "ada hello" }],
+        };
+      }
+      if (typeof path === "string" && path.includes(nextSession)) {
+        return {
+          persona: ada,
+          session_id: nextSession,
+          turns: [
+            { ordinal: 1, speaker: "user", text: "hello again" },
+            { ordinal: 2, speaker: "persona", text: "fresh sitting" },
+          ],
+        };
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+    render(<ChatPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    expect(await screen.findByText("ada hello")).toBeTruthy();
+    const hangUp = screen.getByRole("button", { name: "End chat" }) as HTMLButtonElement;
+    expect(hangUp.disabled).toBe(false);
+    fireEvent.click(hangUp);
+    await waitFor(() => {
+      expect(screen.queryByText("ada hello")).toBeNull();
+    });
+    expect(readStoredChatSessionId("member", ada.id)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "hello again" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("fresh sitting")).toBeTruthy();
+    expect(readStoredChatSessionId("member", ada.id)).toBe(nextSession);
+  });
+
+  it("keeps hang-up disabled until a sitting exists", async () => {
+    render(<ChatPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    expect(await screen.findByRole("heading", { name: "Ada" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "End chat" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

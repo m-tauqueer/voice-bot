@@ -101,6 +101,14 @@ class PersonaBrain(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def ingest_private_text(
+        self,
+        persona_id: str,
+        text: str,
+    ) -> IngestOutcome:
+        raise NotImplementedError
+
+    @abstractmethod
     def subscribe(self, persona_id: str, user_id: str) -> Any:
         raise NotImplementedError
 

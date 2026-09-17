@@ -15,14 +15,26 @@ def memory_rows(payload: object) -> list[dict[str, Any]]:
     return []
 
 
+def row_gid(row: dict[str, Any]) -> int | str | None:
+    gid = row.get("gid")
+    if gid is None:
+        gid = row.get("id")
+    if isinstance(gid, bool) or not isinstance(gid, (int, str)):
+        return None
+    return gid
+
+
+def memory_text(row: dict[str, Any]) -> str | None:
+    value = row.get("text")
+    return value if isinstance(value, str) else None
+
+
 def memory_gids(payload: object) -> list[int | str]:
     gids: list[int | str] = []
     seen: set[str] = set()
     for row in memory_rows(payload):
-        gid = row.get("gid")
+        gid = row_gid(row)
         if gid is None:
-            gid = row.get("id")
-        if isinstance(gid, bool) or not isinstance(gid, (int, str)):
             continue
         key = str(gid)
         if key in seen:

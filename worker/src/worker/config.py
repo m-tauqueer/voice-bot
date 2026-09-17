@@ -38,8 +38,8 @@ class WorkerSettings(BaseSettings):
     redis_url: str | None = None
     voice_notice_redis_channel: str = Field(default="voice-notice", min_length=1)
     redis_command_timeout_ms: int = Field(default=500, gt=0)
-    quota_turns_per_day: int = Field(default=200, ge=0)
-    quota_voice_minutes_per_day: float = Field(default=60, ge=0)
+    quota_turns_per_day: int = Field(default=0, ge=0)
+    quota_voice_minutes_per_day: float = Field(default=0, ge=0)
     quota_timezone: str = Field(default="UTC", min_length=1)
     quota_warn_ratio: float = Field(default=0.8, ge=0, le=1)
     quota_kind_turns: str = Field(default="turns", min_length=1)
@@ -137,6 +137,10 @@ class WorkerSettings(BaseSettings):
         default="engram_credential_unavailable",
         min_length=1,
     )
+    log_engram_writeback_skipped: str = Field(
+        default="engram_writeback_skipped",
+        min_length=1,
+    )
     log_retrieve_grounded_event: str = Field(
         default="retrieve grounded",
         min_length=1,
@@ -172,13 +176,13 @@ class WorkerSettings(BaseSettings):
     engram_message_join: str = Field(default=" ")
     engram_read_max_retries: int = Field(default=2, ge=0)
     engram_client_cache_size: int = Field(default=8, gt=0)
-    # "retrieve" reads memory and lets the answer model compose the reply,
-    # writing the turn back with converse. "chat" lets Engram compose it, which
-    # costs about ten more seconds a turn.
+    # "retrieve" reads memory and lets the answer model compose the reply.
+    # Sitting transcript stays in Postgres; Engram private is not converse-written.
+    # "chat" lets Engram compose it, which costs about ten more seconds a turn.
     brain_mode: Literal["chat", "retrieve"] = "retrieve"
     # When true, member turns authenticate as that member (session token).
     # Leave false until that credential path exists. False is containment:
-    # converse write-back is off and BRAIN_MODE=chat cannot boot, so we stop
+    # private write-back is off and BRAIN_MODE=chat cannot boot, so we stop
     # growing the API key owner's private pool. See docs/ENGRAM.md §2.3.
     engram_member_session_auth: bool = False
     # 32 random bytes, base64. Encrypts each member's Engram password at rest.
@@ -198,8 +202,98 @@ class WorkerSettings(BaseSettings):
     engram_retrieve_top_k_private: int = Field(default=25, gt=0)
     memory_panel_query: str = Field(min_length=1)
     memory_panel_top_k: int = Field(default=25, gt=0)
+    # Gates the off-path write worker. That worker extracts caller facts and
+    # writes them as private text. It does not converse the sitting. Degraded
+    # members never write regardless of this flag.
     engram_converse_writeback: bool = Field(default=True)
     engram_writeback_workers: int = Field(default=2, gt=0)
+    engram_writeback_reason_paused: str = Field(
+        default="private_write_paused",
+        min_length=1,
+    )
+    engram_writeback_reason_unauthenticated: str = Field(
+        default="unauthenticated",
+        min_length=1,
+    )
+    log_engram_writeback: str = Field(default="engram_writeback", min_length=1)
+    engram_writeback_reason_claim_failed: str = Field(
+        default="claim_failed",
+        min_length=1,
+    )
+    engram_writeback_reason_write_failed: str = Field(
+        default="write_failed",
+        min_length=1,
+    )
+    # Off the reply path. Empty model uses OPENAI_MODEL.
+    caller_fact_model: str | None = None
+    caller_fact_timeout_seconds: float = Field(default=15.0, gt=0)
+    caller_fact_temperature: float = Field(default=0.0, ge=0, le=2)
+    caller_fact_max_tokens: int = Field(default=256, gt=0)
+    caller_fact_max_facts: int = Field(default=8, gt=0)
+    caller_fact_system_prompt: str | None = None
+    # The hang-up sweep runs the same extractor with a different brief: the
+    # per-turn pass already recorded each exchange, so closing only catches
+    # what needed the whole sitting to see.
+    caller_fact_closing_system_prompt: str | None = None
+    caller_fact_prefix: str = Field(default="The caller", min_length=1)
+    # Private rows are append-only, so a corrected fact never removes the
+    # stale one. The date travels in the row so the answerer can prefer the
+    # newer of two conflicting caller memories.
+    caller_fact_stamp_enabled: bool = Field(default=True)
+    caller_fact_stamp_template: str = Field(
+        default=" (stated {date})",
+        min_length=1,
+    )
+    caller_fact_stamp_date_format: str = Field(default="%Y-%m-%d", min_length=1)
+    caller_fact_payload_history_key: str = Field(default="history", min_length=1)
+    caller_fact_payload_user_turn_key: str = Field(
+        default="user_turn",
+        min_length=1,
+    )
+    caller_fact_payload_persona_reply_key: str = Field(
+        default="persona_reply",
+        min_length=1,
+    )
+    caller_fact_payload_facts_key: str = Field(
+        default="caller_facts",
+        min_length=1,
+    )
+    caller_fact_payload_speaker_key: str = Field(default="speaker", min_length=1)
+    caller_fact_payload_text_key: str = Field(default="text", min_length=1)
+    caller_fact_response_format_type: str = Field(
+        default="json_object",
+        min_length=1,
+    )
+    caller_fact_reason_empty: str = Field(default="empty", min_length=1)
+    caller_fact_reason_extracted: str = Field(default="extracted", min_length=1)
+    caller_fact_reason_timeout: str = Field(default="timeout", min_length=1)
+    caller_fact_reason_error: str = Field(default="error", min_length=1)
+    caller_fact_reason_unrecognised: str = Field(
+        default="unrecognised",
+        min_length=1,
+    )
+    # Hang-up safety net. Same extractor, full sitting, size-capped. Off the
+    # client path. One extra extract attempt on worker fault; never dump.
+    caller_fact_closing_max_turns: int = Field(default=200, gt=0)
+    caller_fact_closing_max_bytes: int = Field(default=48000, gt=0)
+    caller_fact_closing_retries: int = Field(default=1, ge=0)
+    internal_closing_path: str = Field(
+        default="/internal/closing-pass",
+        min_length=1,
+    )
+    log_engram_closing: str = Field(default="engram_closing", min_length=1)
+    caller_fact_closing_reason_missing: str = Field(
+        default="missing",
+        min_length=1,
+    )
+    caller_fact_closing_reason_not_ended: str = Field(
+        default="not_ended",
+        min_length=1,
+    )
+    caller_fact_closing_reason_already: str = Field(
+        default="already",
+        min_length=1,
+    )
     # Reads sit on the path to first word, so they get a pool of their own
     # rather than sharing the write-back one. Each turn submits a single
     # private read; the shared read runs on the calling thread.
@@ -210,7 +304,7 @@ class WorkerSettings(BaseSettings):
     # path either way.
     engram_scope_router_enabled: bool = Field(default=False)
     engram_scope_router_model: str | None = None
-    engram_scope_router_timeout_seconds: float = Field(default=1.0, gt=0)
+    engram_scope_router_timeout_seconds: float = Field(default=1.5, gt=0)
     engram_scope_router_system_prompt: str | None = None
     engram_scope_router_workers: int = Field(default=4, gt=0)
     engram_scope_router_temperature: float = Field(default=0.0, ge=0, le=2)
@@ -288,6 +382,20 @@ class WorkerSettings(BaseSettings):
         default="type the persona handle exactly to destroy it",
         min_length=1,
     )
+    admin_error_forget_private_confirmation: str = Field(
+        default=(
+            "type the persona handle exactly to forget that private pool"
+        ),
+        min_length=1,
+    )
+    admin_error_user_missing: str = Field(
+        default="no signed-in user matches that identifier",
+        min_length=1,
+    )
+    admin_error_engram_user_missing: str = Field(
+        default="that member has no Engram user id",
+        min_length=1,
+    )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     persona_voice_fish_key: str = Field(default="fish_voice", min_length=1)
     persona_voice_provider_key: str = Field(
@@ -361,13 +469,14 @@ class WorkerSettings(BaseSettings):
     openai_model: str = Field(default="gpt-4o-mini")
     openai_base_url: str | None = None
     openai_api_base_url: str | None = None
-    reframe_history_turns: int = Field(default=8, ge=0)
+    reframe_history_turns: int = Field(default=24, ge=0)
     reframe_temperature: float = Field(default=0.2, ge=0, le=2)
     reframe_max_tokens: int = Field(default=256, gt=0)
     reframe_timeout_seconds: float = Field(default=30, gt=0)
     reframe_stream_enabled: bool = Field(default=True)
     reframe_system_prompt: str | None = None
     answer_system_prompt: str | None = None
+    answer_temperature: float = Field(default=0, ge=0, le=2)
     answer_max_tokens: int = Field(default=320, gt=0)
     answer_payload_persona_memories_key: str = Field(
         default="persona_memories",
@@ -475,6 +584,8 @@ class WorkerSettings(BaseSettings):
         "openai_api_base_url",
         "reframe_system_prompt",
         "answer_system_prompt",
+        "caller_fact_system_prompt",
+        "caller_fact_closing_system_prompt",
         "engram_scope_router_model",
         "engram_scope_router_system_prompt",
         "redis_url",
@@ -532,6 +643,13 @@ class WorkerSettings(BaseSettings):
             raise ValueError("ENGRAM_API_VERSION_PATH must start with /")
         return value
 
+    @field_validator("internal_closing_path")
+    @classmethod
+    def closing_path_absolute(cls, value: str) -> str:
+        if not value.startswith("/") or value.startswith("//"):
+            raise ValueError("INTERNAL_CLOSING_PATH must start with /")
+        return value
+
     @model_validator(mode="after")
     def distinct_answer_and_memory_ref_keys(self) -> WorkerSettings:
         payload = {
@@ -558,6 +676,60 @@ class WorkerSettings(BaseSettings):
         if self.memory_ref_pool_persona == self.memory_ref_pool_caller:
             raise ValueError(
                 "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER"
+            )
+        writeback_reasons = {
+            self.engram_writeback_reason_paused,
+            self.engram_writeback_reason_unauthenticated,
+            self.engram_writeback_reason_claim_failed,
+            self.engram_writeback_reason_write_failed,
+        }
+        if len(writeback_reasons) != 4:
+            raise ValueError(
+                "ENGRAM_WRITEBACK reason codes must be distinct"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def distinct_caller_fact_keys(self) -> WorkerSettings:
+        payload = {
+            self.caller_fact_payload_history_key,
+            self.caller_fact_payload_user_turn_key,
+            self.caller_fact_payload_persona_reply_key,
+            self.caller_fact_payload_facts_key,
+            self.caller_fact_payload_speaker_key,
+            self.caller_fact_payload_text_key,
+        }
+        if len(payload) != 6:
+            raise ValueError(
+                "CALLER_FACT_PAYLOAD_HISTORY_KEY, "
+                "CALLER_FACT_PAYLOAD_USER_TURN_KEY, "
+                "CALLER_FACT_PAYLOAD_PERSONA_REPLY_KEY, "
+                "CALLER_FACT_PAYLOAD_FACTS_KEY, "
+                "CALLER_FACT_PAYLOAD_SPEAKER_KEY, and "
+                "CALLER_FACT_PAYLOAD_TEXT_KEY must be distinct"
+            )
+        reasons = {
+            self.caller_fact_reason_empty,
+            self.caller_fact_reason_extracted,
+            self.caller_fact_reason_timeout,
+            self.caller_fact_reason_error,
+            self.caller_fact_reason_unrecognised,
+        }
+        if len(reasons) != 5:
+            raise ValueError("CALLER_FACT reason codes must be distinct")
+        closing = {
+            self.caller_fact_closing_reason_missing,
+            self.caller_fact_closing_reason_not_ended,
+            self.caller_fact_closing_reason_already,
+        }
+        if len(closing) != 3:
+            raise ValueError("CALLER_FACT_CLOSING reason codes must be distinct")
+        if (
+            self.caller_fact_stamp_enabled
+            and "{date}" not in self.caller_fact_stamp_template
+        ):
+            raise ValueError(
+                "CALLER_FACT_STAMP_TEMPLATE must contain {date} when stamping is on"
             )
         return self
 

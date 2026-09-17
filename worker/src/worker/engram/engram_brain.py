@@ -281,6 +281,16 @@ class EngramBrain(PersonaBrain):
         )
         return _ingest_outcome(result)
 
+    def ingest_private_text(
+        self,
+        persona_id: str,
+        text: str,
+    ) -> IngestOutcome:
+        result = self._write(
+            lambda: self._client.personas.private(persona_id).text(text),
+        )
+        return _ingest_outcome(result)
+
     def subscribe(self, persona_id: str, user_id: str) -> Any:
         engine_user_id = persona_engine_user_id(user_id)
         return self._write(

@@ -100,9 +100,10 @@ export function ChatPage() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [sittingLoad, setSittingLoad] = useState(false);
+  const [ending, setEnding] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   const picked = directory.find((row) => row.id === pickedId) ?? null;
-  const pickerLocked = busy || sittingLoad;
+  const blocked = busy || sittingLoad || ending;
 
   const applySession = useCallback(
     (userId: string, personaId: string, next: string) => {
@@ -173,7 +174,7 @@ export function ChatPage() {
   }
 
   async function pickPersona(id: string) {
-    if (!me || id === pickedId || pickerLocked) {
+    if (!me || id === pickedId || blocked) {
       return;
     }
     setPickedId(id);
@@ -192,7 +193,7 @@ export function ChatPage() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!me || !picked || !text || busy || sittingLoad) {
+    if (!me || !picked || !text || busy || sittingLoad || ending) {
       return;
     }
     setBusy(true);
@@ -249,14 +250,31 @@ export function ChatPage() {
     }
   }
 
-  function startFresh() {
-    if (!me || !picked || pickerLocked) {
+  async function hangUp() {
+    if (!me || !picked || !sessionId || blocked) {
       return;
     }
-    clearStoredChatSessionId(me.id, picked.id);
-    setSessionId(null);
-    setTurns([]);
+    setEnding(true);
     setBanner(null);
+    try {
+      await api("/api/chat/end", {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      clearStoredChatSessionId(me.id, picked.id);
+      setSessionId(null);
+      setTurns([]);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        clearStoredChatSessionId(me.id, picked.id);
+        setSessionId(null);
+        setTurns([]);
+        return;
+      }
+      setBanner({ tone: "error", text: errorMessage(error, copy.requestFailed) });
+    } finally {
+      setEnding(false);
+    }
   }
 
   if (!me || boot === "loading") {
@@ -281,8 +299,14 @@ export function ChatPage() {
               {picked?.handle ? `@${picked.handle}` : copy.personaPickerChatHelp}
             </p>
           </div>
-          <Button type="button" onClick={startFresh} disabled={pickerLocked || !picked}>
-            {copy.chatNewConversationLabel}
+          <Button
+            type="button"
+            onClick={() => {
+              void hangUp();
+            }}
+            disabled={blocked || !sessionId}
+          >
+            {copy.chatEndLabel}
           </Button>
         </div>
 
@@ -304,7 +328,7 @@ export function ChatPage() {
         <PersonaPicker
           directory={directory}
           pickedId={pickedId}
-          locked={pickerLocked}
+          locked={blocked}
           title={copy.personaPickerTitle}
           empty={copy.personaPickerEmpty}
           help={copy.personaPickerChatHelp}
@@ -338,7 +362,7 @@ export function ChatPage() {
               label={copy.chatMessageLabel}
               rows={3}
               value={draft}
-              disabled={busy || sittingLoad || !canTalk}
+              disabled={busy || sittingLoad || ending || !canTalk}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -351,7 +375,7 @@ export function ChatPage() {
               <Button
                 type="submit"
                 variant="solid"
-                disabled={busy || sittingLoad || !canTalk || draft.trim().length === 0}
+                disabled={busy || sittingLoad || ending || !canTalk || draft.trim().length === 0}
               >
                 {busy ? copy.chatSendingLabel : copy.chatSendLabel}
               </Button>

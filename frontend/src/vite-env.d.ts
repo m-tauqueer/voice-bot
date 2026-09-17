@@ -269,7 +269,7 @@ interface ImportMetaEnv {
   readonly VITE_CALL_SESSION_SAVED_BADGE: string;
   readonly VITE_CALL_TRANSCRIPT_LISTENING: string;
   readonly VITE_CALL_TRANSCRIPT_IDLE: string;
-  readonly VITE_CHAT_NEW_CONVERSATION_LABEL: string;
+  readonly VITE_CHAT_END_LABEL: string;
   readonly VITE_CHAT_THINKING_LABEL: string;
   readonly VITE_CHAT_MESSAGE_LABEL: string;
   readonly VITE_CHAT_SEND_LABEL: string;

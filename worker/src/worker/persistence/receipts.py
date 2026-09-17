@@ -91,3 +91,24 @@ def claim_writeback(
             (str(session_id), str(correlation_id)),
         )
         return cur.fetchone() is not None
+
+
+def claim_closing_pass(
+    conn: psycopg.Connection,
+    session_id: UUID,
+    app_user_id: UUID,
+) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET closing_pass_at = now()
+            WHERE id = %s
+              AND user_id = %s
+              AND ended_at IS NOT NULL
+              AND closing_pass_at IS NULL
+            RETURNING id
+            """,
+            (str(session_id), str(app_user_id)),
+        )
+        return cur.fetchone() is not None

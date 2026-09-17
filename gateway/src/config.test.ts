@@ -80,4 +80,17 @@ describe("config helpers", () => {
       }),
     ).toThrow("PERSONA_VOICE_FISH_KEY must differ from PERSONA_VOICE_TTS_KEY");
   });
+
+  it("loads the closing-pass worker path from config", () => {
+    expect(testConfig().WORKER_CLOSING_PASS_PATH).toBe(
+      "/internal/closing-pass",
+    );
+    expect(testConfig().WORKER_CLOSING_PASS_RETRIES).toBe(1);
+    expect(() =>
+      testConfig({ WORKER_CLOSING_PASS_PATH: "internal/closing-pass" }),
+    ).toThrow("WORKER_CLOSING_PASS_PATH must start with /");
+    expect(() => testConfig({ WORKER_CLOSING_PASS_PATH: "//evil" })).toThrow(
+      "WORKER_CLOSING_PASS_PATH must start with /",
+    );
+  });
 });

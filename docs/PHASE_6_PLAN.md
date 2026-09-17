@@ -1,6 +1,8 @@
 # Phase 6 — Cloned voices, then member UI
 
-Current product work. Owner: Tauqueer. **Do only the part he names.** Never start the next part yourself.
+**Paused.** Current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Resume only when Tauqueer names a part from **this** file.
+
+Owner: Tauqueer. **Do only the part he names.** Never start the next part yourself.
 
 Goal: an owner can put a **cloned Fish Audio voice** on a persona (paste an id or upload a clip). A member who picks that persona on `/voice` hears that voice. Personas without a Fish id keep Deepgram Aura. Then Home, chat, and voice use a **card-grid picker**, then onboarding, mobile, accessibility, and accounts.
 
@@ -12,7 +14,7 @@ A Fish API key is not required to write tests. Live Fish sittings start when `FI
 
 Canonical map (roles, read order, what to update): [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Why: [decisions/README.md](decisions/README.md). How we write docs and run a sitting: [WORKFLOW.md](WORKFLOW.md).
 
-This file is the **named parts** for current product work only. Do not put implementation in SHIPPED. Do not put parked work here. Do not mention phase/part numbers in commits, comments, or PR titles.
+This file is the **named parts** for cloned Fish voices and member UI. It is **paused**; current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Resume only when Tauqueer names a part from this file.
 
 ---
 

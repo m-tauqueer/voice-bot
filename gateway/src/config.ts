@@ -61,11 +61,11 @@ const envFileSchema = z.object({
   ),
   QUOTA_TURNS_PER_DAY: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.coerce.number().int().nonnegative().default(200),
+    z.coerce.number().int().nonnegative().default(0),
   ),
   QUOTA_VOICE_MINUTES_PER_DAY: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.coerce.number().nonnegative().default(60),
+    z.coerce.number().nonnegative().default(0),
   ),
   QUOTA_TIMEZONE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -219,6 +219,18 @@ const envFileSchema = z.object({
   WORKER_HTTP_TIMEOUT_MS: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(120000),
+  ),
+  WORKER_CLOSING_PASS_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/internal/closing-pass"),
+  ),
+  WORKER_CLOSING_PASS_RETRIES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(1),
+  ),
+  LOG_CLOSING_PASS_FAILED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("closing_pass_failed"),
   ),
   INTERNAL_SECRET_HEADER: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
@@ -1383,6 +1395,12 @@ export function loadGatewayConfig(
       throw new Error(
         "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER",
       );
+    }
+    if (
+      !parsed.data.WORKER_CLOSING_PASS_PATH.startsWith("/") ||
+      parsed.data.WORKER_CLOSING_PASS_PATH.startsWith("//")
+    ) {
+      throw new Error("WORKER_CLOSING_PASS_PATH must start with /");
     }
   } catch (error) {
     throw new Error(

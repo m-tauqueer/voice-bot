@@ -13,7 +13,7 @@ When you need **behaviour**, read the code. When you change **intent**, update t
 1. [AGENTS.md](../AGENTS.md) — owner, working loop, commit rules, how to start.
 2. [CONTEXT.md](CONTEXT.md) — snapshot: what exists, what is current, what is parked.
 3. [decisions/README.md](decisions/README.md) — why we chose what we chose. Do not re-litigate Accepted records.
-4. The **named plan** (today: [PHASE_6_PLAN.md](PHASE_6_PLAN.md)).
+4. The **named plan** (today: [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)).
 5. [PRD.md](PRD.md) / [TRD.md](TRD.md) / [ENGRAM.md](ENGRAM.md) when the work touches product, architecture, or memory.
 
 ---
@@ -36,7 +36,8 @@ Roles follow [Diátaxis](https://diataxis.fr): tutorials teach, how-to guides ge
 | [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) | How-to: named plan | Tauqueer names a part from that file |
 | [ENGRAM_SCOPE_ISOLATION.md](ENGRAM_SCOPE_ISOLATION.md) | How-to: named plan | Tauqueer names a part from that file |
 | [PHASE_PLAN.md](PHASE_PLAN.md) | Reference: current vs shipped vs later | The current-work file changes |
-| [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | How-to: **current named parts** | A part is added, split, or locked |
+| [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) | How-to: **current named parts** | A part is added, split, or locked |
+| [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | How-to leftover: cloned voices, then member UI (paused) | Tauqueer names a part from that file |
 | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) | How-to leftover: persona sittings in §4 | A leftover sitting passes or is dropped |
 | [SHIPPED.md](SHIPPED.md) | Explanation: history. Not a build plan | A slice is live and measured |
 | [FUTURE.md](FUTURE.md) | Reference: parked product and Plan X | Something is pulled forward or parked |
@@ -51,6 +52,6 @@ Existing files stay where they are. We do not split them into `tutorials/` / `ho
 
 ## Working loop (product)
 
-Full text: [AGENTS.md](../AGENTS.md) §3 and [PHASE_6_PLAN.md](PHASE_6_PLAN.md). Short form:
+Full text: [AGENTS.md](../AGENTS.md) §3 and [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Short form:
 
 one named part → its subparts in order → tests and logic check after **each** subpart → after the part, tell Tauqueer if a manual sitting is needed → one short commit (no phase/part numbers, no AI attribution) → stop until he names the next part.
