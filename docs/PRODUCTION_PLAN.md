@@ -12,4 +12,4 @@ This file used to hold later phases plus Plan X. It was split so agents do not m
 | Engram | [ENGRAM.md](ENGRAM.md) |
 | Index | [PHASE_PLAN.md](PHASE_PLAN.md) |
 
-Do not start FUTURE until Tauqueer names it. Azure deploy is last of all.
+Do not start parked FUTURE work until Tauqueer names it. A first production deploy was named (linear Azure script; CI/CD / backups / security 2.0 stay parked).

@@ -21,4 +21,4 @@ Working loop: [AGENTS.md](../AGENTS.md) and [WORKFLOW.md](WORKFLOW.md). Docs map
 
 Phases 0–4 product work are done. Personas are built end to end. Automated checks including `npm run isolation`, `npm run security`, and `npm run failures` are green. Leftover live sittings: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4. Engram-side per-member private memory works as of 8 Sep 2026 ([ENGRAM.md](ENGRAM.md) §2.3). Do not mark leftover persona sittings done until they pass.
 
-**Current work is [PHASE_6_PLAN.md](PHASE_6_PLAN.md).** Parked product and Plan X stay in [FUTURE.md](FUTURE.md) until named. Azure deploy is last of all.
+**Current work is [PHASE_6_PLAN.md](PHASE_6_PLAN.md).** Parked product stays in [FUTURE.md](FUTURE.md) until named. A first production deploy was named ([FUTURE.md](FUTURE.md) X.4, linear script only).

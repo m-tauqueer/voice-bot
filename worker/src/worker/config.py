@@ -38,8 +38,8 @@ class WorkerSettings(BaseSettings):
     redis_url: str | None = None
     voice_notice_redis_channel: str = Field(default="voice-notice", min_length=1)
     redis_command_timeout_ms: int = Field(default=500, gt=0)
-    quota_turns_per_day: int = Field(default=200, ge=0)
-    quota_voice_minutes_per_day: float = Field(default=60, ge=0)
+    quota_turns_per_day: int = Field(default=0, ge=0)
+    quota_voice_minutes_per_day: float = Field(default=0, ge=0)
     quota_timezone: str = Field(default="UTC", min_length=1)
     quota_warn_ratio: float = Field(default=0.8, ge=0, le=1)
     quota_kind_turns: str = Field(default="turns", min_length=1)

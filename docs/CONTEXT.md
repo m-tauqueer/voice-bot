@@ -16,7 +16,7 @@ Speech today: Deepgram Voice Agent (Nova-3 STT + Aura-2 TTS + barge-in) with our
 
 ## What already works
 
-Typed chat, spoken Aura calls, personal `/dashboard`, owner `/admin` (create/link, teach, ingest, publish, destroy), waitlist, quotas, consent/export/delete, `/status`, isolation probes. Personas are built end to end. Engram-side per-member private memory works (8 Sep 2026): each member authenticates with their own session token; a member we cannot credential degrades to shared-only, never the key owner’s private pool. **Private recall on the default brain was restored 9 Sep 2026** after Engram 0.5.0 made unscoped retrieve shared-only: two parallel scoped reads, labelled `persona_memories` / `caller_memories` for the answerer, private-only memory panel. A scope classifier can now run beside those reads and drop the list that does not bear on the question; it is off until `ENGRAM_SCOPE_ROUTER_ENABLED=true`. Live `/chat` and `/voice` sittings for the labelled lists and for the classifier are still outstanding.
+Typed chat, spoken Aura calls, personal `/dashboard`, owner `/admin` (create/link, teach, ingest, publish, destroy), waitlist, daily quotas (off: `0` turns and minutes), consent/export/delete, `/status`, isolation probes. Personas are built end to end. Engram-side per-member private memory works (8 Sep 2026): each member authenticates with their own session token; a member we cannot credential degrades to shared-only, never the key owner’s private pool. **Private recall on the default brain was restored 9 Sep 2026** after Engram 0.5.0 made unscoped retrieve shared-only: two parallel scoped reads, labelled `persona_memories` / `caller_memories` for the answerer, private-only memory panel. A scope classifier can now run beside those reads and drop the list that does not bear on the question; it is off until `ENGRAM_SCOPE_ROUTER_ENABLED=true`. Live `/chat` and `/voice` sittings for the labelled lists and for the classifier are still outstanding.
 
 History and measured latency: [SHIPPED.md](SHIPPED.md). Leftover live sittings from personas: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
 
@@ -26,7 +26,7 @@ Deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false` unti
 
 ## What we are doing now
 
-[PHASE_6_PLAN.md](PHASE_6_PLAN.md). Tauqueer names **one part**. Do not start [FUTURE.md](FUTURE.md) or Azure deploy until he names them. Per-member Engram credential leftovers live in [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) — only if he names a part from that file.
+[PHASE_6_PLAN.md](PHASE_6_PLAN.md). Tauqueer names **one part**. Parked product in [FUTURE.md](FUTURE.md) stays parked until named. He named a first production deploy: `cognora-alpha-rg`, `infra/azure/deploy.sh`, GoDaddy, then the existing Google OAuth client. CI/CD, backups, security 2.0, and blob persist stay off. Per-member Engram credential leftovers live in [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) — only if he names a part from that file.
 
 Fish is **not** shipped. No GPU, no self-host. A Fish API key is not required to write tests; live Fish sittings need `FISH_API_KEY` in `.env`.
 
@@ -52,7 +52,7 @@ Full decision log: [decisions/README.md](decisions/README.md).
 | `frontend/` | React 18 + Vite + Tailwind. `/`, `/status`, `/waitlist`, `/dashboard`, `/chat`, `/voice`, `/admin` |
 | `gateway/` | TypeScript: Google auth, chat HTTP, admin proxy, Deepgram Voice Agent and Fish speech transport |
 | `worker/` | Python (uv, CPython 3.12): Engram, reframe, controller, BYO-LLM, clone upload |
-| `infra/` | Compose Postgres/Redis, migrations |
+| `infra/` | Compose Postgres/Redis, migrations, Azure deploy script |
 | `docs/` | This tree. Map: [README.md](README.md) |
 
 Install and commands: [AGENTS.md](../AGENTS.md) §6.

@@ -68,9 +68,9 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 **Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Personas are built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green. Live sittings left from that work: [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4. Engram-side per-member private memory works as of 8 Sep 2026: each member authenticates with their own session token, so their turns land in their own private pool, and a member we cannot credential degrades to shared-only rather than falling back to the key owner ([`docs/ENGRAM.md`](docs/ENGRAM.md) §2.3, §11). Read [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) before touching memory.
 
-**Current work is [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md)** (cloned Fish voices, then member UI). Do not start [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. Azure deploy is last of all.
+**Current work is [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md)** (cloned Fish voices, then member UI). Do not start parked product in [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. A first production deploy was named: `cognora-alpha-rg`, linear `infra/azure/deploy.sh`, GoDaddy DNS, then the existing Google OAuth client. No CI/CD, no blob persist, no backups, no security 2.0.
 
-Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until there is a storage account) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls also need a live public worker URL (`BYO_LLM_PUBLIC_URL`, usually ngrok in local dev); if that tunnel is offline, Deepgram cannot reach the brain and the voice UI shows the think-failed message. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
+Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until a storage account is named) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls need a live public think URL (`BYO_LLM_PUBLIC_URL`). Locally that is a tunnel; in production it is the public origin. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -104,6 +104,9 @@ npm run nav          # Personal vs admin nav lists (from frontend/)
 npm run budgets      # First-word p50/p90 vs budget, plus Engram request-log review
 npm run observe      # Postgres/Redis health, optional gateway/worker ping, forced alert row
 npm run security     # Cookie/CORS/secrets, think-endpoint unauth, OpenAPI hidden, then isolation
+./infra/azure/deploy.sh check   # Azure login + write on the configured group
+./infra/azure/deploy.sh up      # images and Container Apps in cognora-alpha-rg (current tree)
+./infra/azure/deploy.sh bind    # after the GoDaddy CNAME exists
 npm run admin -- show
 npm run admin -- destroy --persona-id <uuid> --confirm <handle> # irreversible
 

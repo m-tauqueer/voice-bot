@@ -61,11 +61,11 @@ const envFileSchema = z.object({
   ),
   QUOTA_TURNS_PER_DAY: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.coerce.number().int().nonnegative().default(200),
+    z.coerce.number().int().nonnegative().default(0),
   ),
   QUOTA_VOICE_MINUTES_PER_DAY: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
-    z.coerce.number().nonnegative().default(60),
+    z.coerce.number().nonnegative().default(0),
   ),
   QUOTA_TIMEZONE: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
