@@ -178,6 +178,11 @@ export type UiCopy = {
   chatMessageLabel: string;
   chatSendLabel: string;
   chatSendingLabel: string;
+  chatStopLabel: string;
+  chatInputPlaceholder: string;
+  chatColumnMaxPx: number;
+  chatInputMaxPx: number;
+  chatThreadMinPx: number;
   personaHandleLabel: string;
   personaNameLabel: string;
   personaDescriptionLabel: string;
@@ -236,6 +241,12 @@ let cached: UiCopy | null = null;
 
 export function resetUiCopy(): void {
   cached = null;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    cached = null;
+  });
 }
 
 export function loadUiCopy(): UiCopy {
@@ -444,6 +455,11 @@ export function loadUiCopy(): UiCopy {
     chatMessageLabel: requiredVite("VITE_CHAT_MESSAGE_LABEL"),
     chatSendLabel: requiredVite("VITE_CHAT_SEND_LABEL"),
     chatSendingLabel: requiredVite("VITE_CHAT_SENDING_LABEL"),
+    chatStopLabel: requiredVite("VITE_CHAT_STOP_LABEL"),
+    chatInputPlaceholder: requiredVite("VITE_CHAT_INPUT_PLACEHOLDER"),
+    chatColumnMaxPx: requiredViteInt("VITE_CHAT_COLUMN_MAX_PX"),
+    chatInputMaxPx: requiredViteInt("VITE_CHAT_INPUT_MAX_PX"),
+    chatThreadMinPx: requiredViteInt("VITE_CHAT_THREAD_MIN_PX"),
     personaHandleLabel: requiredVite("VITE_PERSONA_HANDLE_LABEL"),
     personaNameLabel: requiredVite("VITE_PERSONA_NAME_LABEL"),
     personaDescriptionLabel: requiredVite("VITE_PERSONA_DESCRIPTION_LABEL"),

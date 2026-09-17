@@ -475,14 +475,26 @@ export function VoicePage() {
             </Button>
           )}
           {inCall && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
-              onClick={stopSpeaking}
-            >
-              {copy.callStopSpeakLabel}
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={stopSpeaking}
+              >
+                {copy.callStopSpeakLabel}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => {
+                  void endCall();
+                }}
+              >
+                {copy.callEndLabel}
+              </Button>
+            </>
           )}
         </div>
         <CallPhaseBadge phase={phase} copy={copy} config={voiceUi} />
@@ -515,6 +527,14 @@ export function VoicePage() {
         assistantRole={voiceUi.transcriptAssistantRole}
         userLabel={copy.audioUser}
         assistantLabel={picked.display_name}
+        avatar={{
+          userSeed: me.id,
+          personaSeed: picked.handle,
+          size: voiceUi.transcriptAvatarSize,
+          gridSize: voiceUi.avatarGrid,
+          hueSpread: voiceUi.avatarHueSpread,
+          animated: voiceUi.avatarAnimated,
+        }}
       />
     </div>
   );

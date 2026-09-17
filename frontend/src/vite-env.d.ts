@@ -66,6 +66,7 @@ interface ImportMetaEnv {
   readonly VITE_VOICE_DOCK_GAP_PX: string;
   readonly VITE_VOICE_SWARM_RESPECT_REDUCED_MOTION: string;
   readonly VITE_VOICE_TRANSCRIPT_WIDTH_PX: string;
+  readonly VITE_VOICE_TRANSCRIPT_AVATAR_SIZE: string;
   readonly VITE_VOICE_STOP_SPEAK_PHASES: string;
   readonly VITE_VOICE_ORB_SIZE: string;
   readonly VITE_VOICE_ORB_THEME: string;
@@ -307,6 +308,11 @@ interface ImportMetaEnv {
   readonly VITE_CHAT_MESSAGE_LABEL: string;
   readonly VITE_CHAT_SEND_LABEL: string;
   readonly VITE_CHAT_SENDING_LABEL: string;
+  readonly VITE_CHAT_STOP_LABEL: string;
+  readonly VITE_CHAT_INPUT_PLACEHOLDER: string;
+  readonly VITE_CHAT_COLUMN_MAX_PX: string;
+  readonly VITE_CHAT_INPUT_MAX_PX: string;
+  readonly VITE_CHAT_THREAD_MIN_PX: string;
   readonly VITE_PERSONA_HANDLE_LABEL: string;
   readonly VITE_PERSONA_NAME_LABEL: string;
   readonly VITE_PERSONA_DESCRIPTION_LABEL: string;

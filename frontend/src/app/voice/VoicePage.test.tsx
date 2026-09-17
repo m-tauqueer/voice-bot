@@ -74,8 +74,10 @@ describe("VoicePage picker", () => {
     expect(screen.getByRole("region", { name: "Ada" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Start chat" }).length).toBe(2);
     expect(screen.queryByRole("button", { name: "Pause chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "End call" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
     expect(screen.getByRole("complementary", { name: "Live chat" })).toBeTruthy();
     expect(
       screen.getByText("Start a chat to see the live transcript."),

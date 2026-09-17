@@ -48,32 +48,42 @@ describe("ChatPage picker", () => {
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
+    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
     apiMock.mockReset();
     apiMock.mockResolvedValue({ personas: [ada, nova] });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   });
 
-  it("keeps send disabled until a published persona is picked", async () => {
+  it("keeps send off the picker until a published persona is picked", async () => {
     render(<ChatPage />);
     expect(await screen.findByRole("button", { name: /@ada/i })).toBeTruthy();
-    expect(screen.getByText("Pick someone first.")).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /@ada/i }));
     expect(await screen.findByRole("heading", { name: "Ada" })).toBeTruthy();
     expect(screen.getByText("Say something. Memory stays with this persona.")).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("shows empty copy when nothing is published", async () => {
     apiMock.mockResolvedValue({ personas: [] });
     render(<ChatPage />);
     expect(await screen.findByText("No published personas yet.")).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  it("returns to the selector from an idle sitting", async () => {
+    render(<ChatPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    expect(await screen.findByRole("heading", { name: "Ada" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("button", { name: /@nova/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
   });
 
   it("keeps Ada and Nova sittings on separate stored pins", async () => {
@@ -104,7 +114,8 @@ describe("ChatPage picker", () => {
     render(<ChatPage />);
     fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
     expect(await screen.findByText("ada hello")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /@nova/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("button", { name: /@nova/i }));
     expect(await screen.findByText("nova hello")).toBeTruthy();
     expect(screen.queryByText("ada hello")).toBeNull();
     await waitFor(() => {
@@ -173,6 +184,8 @@ describe("ChatPage picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("fresh sitting")).toBeTruthy();
     expect(readStoredChatSessionId("member", ada.id)).toBe(nextSession);
+    expect(screen.getByText("hello again").className).toContain("chat-bubble--user");
+    expect(screen.getByText("fresh sitting").className).toContain("chat-bubble--assistant");
   });
 
   it("keeps hang-up disabled until a sitting exists", async () => {
@@ -182,5 +195,41 @@ describe("ChatPage picker", () => {
     expect(
       (screen.getByRole("button", { name: "End chat" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("stops an in-flight send and restores the draft", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/api/personas") {
+        return { personas: [ada, nova] };
+      }
+      if (path === "/api/chat" && init?.method === "POST") {
+        return await new Promise((_resolve, reject) => {
+          const fail = () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          };
+          if (init.signal?.aborted) {
+            fail();
+            return;
+          }
+          init.signal?.addEventListener("abort", fail);
+        });
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+    render(<ChatPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /@ada/i }));
+    expect(await screen.findByRole("heading", { name: "Ada" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "hold this" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    });
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("hold this");
   });
 });

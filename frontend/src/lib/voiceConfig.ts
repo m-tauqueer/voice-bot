@@ -109,6 +109,7 @@ export type VoiceClientConfig = {
   swarmRespectReducedMotion: boolean;
   stopSpeakPhases: ReadonlySet<CallPhase>;
   transcriptWidthPx: number;
+  transcriptAvatarSize: number;
 };
 
 export function loadVoiceClientConfig(): VoiceClientConfig {
@@ -306,6 +307,7 @@ export function loadVoiceClientConfig(): VoiceClientConfig {
       "VITE_VOICE_STOP_SPEAK_PHASES",
     ),
     transcriptWidthPx: requiredViteInt("VITE_VOICE_TRANSCRIPT_WIDTH_PX"),
+    transcriptAvatarSize: requiredViteInt("VITE_VOICE_TRANSCRIPT_AVATAR_SIZE"),
   };
 
   if (loaded.ringActiveMin > loaded.ringActiveMax) {
