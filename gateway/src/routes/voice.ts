@@ -4,6 +4,7 @@ import type postgres from "postgres";
 import WebSocket from "ws";
 import { z } from "zod";
 import { createRequireAppUser } from "../auth/guard.js";
+import { endSitting } from "../chat/closingPass.js";
 import { createVoiceSession } from "../chat/sessions.js";
 import {
   type GatewayConfig,
@@ -48,7 +49,6 @@ import { runFishVoiceCall } from "../voice/fishSession.js";
 import { applyVoiceLatency, readVoiceLatency } from "../voice/latency.js";
 import { createVoiceNoticeHub } from "../voice/notices.js";
 import {
-  endVoiceSession,
   recordSttMeta,
   recordTtsMeta,
   sttMeta,
@@ -131,6 +131,9 @@ export async function registerVoiceRoutes(
         closeClient(socket);
         return;
       }
+
+      const hangUpSitting = (id: string, onLost?: () => void) =>
+        endSitting(sql, config, request.log, id, user.id, onLost);
 
       const readyError = voiceSocketReady(config);
       if (readyError) {
@@ -225,14 +228,7 @@ export async function registerVoiceRoutes(
           if (sitting.kind === "error") {
             sendJson(socket, voiceFailurePayload(config, sitting.code));
             closeClient(socket);
-            await endVoiceSession(sql, session.id).catch(
-              (endError: unknown) => {
-                request.log.error(
-                  { err: endError, sessionId: session.id },
-                  "voice session not closed",
-                );
-              },
-            );
+            await hangUpSitting(session.id);
             return;
           }
           if (sitting.kind === "fish") {
@@ -247,14 +243,7 @@ export async function registerVoiceRoutes(
                 ),
               );
               closeClient(socket);
-              await endVoiceSession(sql, session.id).catch(
-                (endError: unknown) => {
-                  request.log.error(
-                    { err: endError, sessionId: session.id },
-                    "voice session not closed",
-                  );
-                },
-              );
+              await hangUpSitting(session.id);
               return;
             }
             await runFishVoiceCall({
@@ -279,14 +268,7 @@ export async function registerVoiceRoutes(
               error: auraReady,
             });
             closeClient(socket);
-            await endVoiceSession(sql, session.id).catch(
-              (endError: unknown) => {
-                request.log.error(
-                  { err: endError, sessionId: session.id },
-                  "voice session not closed",
-                );
-              },
-            );
+            await hangUpSitting(session.id);
             return;
           }
           const settings = buildVoiceAgentSettings(
@@ -325,14 +307,7 @@ export async function registerVoiceRoutes(
               voiceFailurePayload(config, config.FAILURE_CODE_DEEPGRAM),
             );
             closeClient(socket);
-            await endVoiceSession(sql, session.id).catch(
-              (endError: unknown) => {
-                request.log.error(
-                  { err: endError, sessionId: session.id },
-                  "voice session not closed",
-                );
-              },
-            );
+            await hangUpSitting(session.id);
             return;
           }
           agent = opened.agent;
@@ -345,12 +320,7 @@ export async function registerVoiceRoutes(
               session.id,
               () => clearVoiceCallState(redis, config, session.id),
             );
-            await endVoiceSession(sql, session.id).catch((error: unknown) => {
-              request.log.error(
-                { err: error, sessionId: session.id },
-                "voice session not closed",
-              );
-            });
+            await hangUpSitting(session.id);
             return;
           }
           const redisOk = await redisQuiet(
@@ -683,16 +653,7 @@ export async function registerVoiceRoutes(
                 if (cleared === null) {
                   noteRedisFail();
                 }
-                const ended = await endVoiceSession(sql, sessionId).catch(
-                  (error: unknown) => {
-                    request.log.error(
-                      { err: error, sessionId },
-                      "voice session not closed",
-                    );
-                    noteRecordLost();
-                    return false;
-                  },
-                );
+                const ended = await hangUpSitting(id, noteRecordLost);
                 request.log.info({ sessionId, ended }, "voice call ended");
               }
             })();
@@ -996,12 +957,7 @@ export async function registerVoiceRoutes(
               id,
               () => clearVoiceCallState(redis, config, id),
             );
-            await endVoiceSession(sql, id).catch((error: unknown) => {
-              request.log.error(
-                { err: error, sessionId: id },
-                "voice session not closed",
-              );
-            });
+            await hangUpSitting(id);
           }
         }
       })();

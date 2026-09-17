@@ -4,7 +4,12 @@ import type { Redis } from "ioredis";
 import type postgres from "postgres";
 import { z } from "zod";
 import { touchChatActivity } from "../chat/activity.js";
-import { createTextSession, getSessionForUser } from "../chat/sessions.js";
+import { promoteEndedSitting } from "../chat/closingPass.js";
+import {
+  createTextSession,
+  endSessionForUser,
+  getSessionForUser,
+} from "../chat/sessions.js";
 import { listTurnsForUser } from "../chat/turns.js";
 import { callWorker, memberFacingBody } from "../clients/worker.js";
 import { type GatewayConfig, isOwnerEmail } from "../config.js";
@@ -39,6 +44,12 @@ function chatBodySchema() {
     text: z.string().min(1),
     session_id: z.string().uuid().optional(),
     correlation_id: z.string().uuid().optional(),
+  });
+}
+
+function chatEndBodySchema() {
+  return z.object({
+    session_id: z.string().uuid(),
   });
 }
 
@@ -154,6 +165,36 @@ export async function registerChatRoutes(
       return reply.code(404).send(notFound(config));
     } catch (error) {
       request.log.error({ err: error }, "chat lookup failed");
+      return sendDatabaseUnavailable(reply, request, sql, config);
+    }
+  });
+
+  app.post("/api/chat/end", async (request, reply) => {
+    const user = request.appUser;
+    if (!user) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const parsed = chatEndBodySchema().safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid body" });
+    }
+    try {
+      const session = await endSessionForUser(
+        sql,
+        parsed.data.session_id,
+        user.id,
+      );
+      if (!session) {
+        request.log.info(
+          { sessionId: parsed.data.session_id, userId: user.id },
+          "chat session not found",
+        );
+        return reply.code(404).send(notFound(config));
+      }
+      promoteEndedSitting(config, request.log, session.id, user.id);
+      return reply.code(204).send();
+    } catch (error) {
+      request.log.error({ err: error }, "chat session end failed");
       return sendDatabaseUnavailable(reply, request, sql, config);
     }
   });

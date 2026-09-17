@@ -18,7 +18,7 @@ def get_session(
 ) -> SessionRow | None:
     query = """
         SELECT id, user_id, persona_id, engram_session_id, channel,
-               started_at, ended_at
+               started_at, ended_at, closing_pass_at
         FROM sessions
         WHERE id = %s
     """

@@ -62,6 +62,7 @@ addopts = [
     "--cov=worker.engram.scope_defaults",
     "--cov=worker.engram.caller_facts",
     "--cov=worker.engram.caller_fact_defaults",
+    "--cov=worker.engram.closing",
     "--cov=worker.admin.service",
     "--cov=worker.admin.confirm",
     "--cov=worker.admin.store",

@@ -220,6 +220,18 @@ const envFileSchema = z.object({
     (val) => (val === undefined || val === "" ? undefined : val),
     z.coerce.number().int().positive().default(120000),
   ),
+  WORKER_CLOSING_PASS_PATH: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("/internal/closing-pass"),
+  ),
+  WORKER_CLOSING_PASS_RETRIES: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.coerce.number().int().nonnegative().default(1),
+  ),
+  LOG_CLOSING_PASS_FAILED: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.string().min(1).default("closing_pass_failed"),
+  ),
   INTERNAL_SECRET_HEADER: z.preprocess(
     (val) => (val === undefined || val === "" ? undefined : val),
     z.string().min(1).default("x-internal-secret"),
@@ -1383,6 +1395,12 @@ export function loadGatewayConfig(
       throw new Error(
         "MEMORY_REF_POOL_PERSONA must differ from MEMORY_REF_POOL_CALLER",
       );
+    }
+    if (
+      !parsed.data.WORKER_CLOSING_PASS_PATH.startsWith("/") ||
+      parsed.data.WORKER_CLOSING_PASS_PATH.startsWith("//")
+    ) {
+      throw new Error("WORKER_CLOSING_PASS_PATH must start with /");
     }
   } catch (error) {
     throw new Error(

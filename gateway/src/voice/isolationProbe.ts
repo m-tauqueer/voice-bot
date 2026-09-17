@@ -861,6 +861,28 @@ try {
       );
       check("other_user_chat_write_logged", logged("chat session not found"));
 
+      const [beforeEnd] = await sql<{ ended_at: Date | null }[]>`
+        SELECT ended_at FROM sessions WHERE id = ${ownerSession.id}
+      `;
+      const endedByOther = await post("/api/chat/end", otherCookie, {
+        session_id: ownerSession.id,
+      });
+      check(
+        "other_user_cannot_end",
+        endedByOther.statusCode === 404,
+        `HTTP ${endedByOther.statusCode}`,
+      );
+      const [afterEnd] = await sql<{ ended_at: Date | null }[]>`
+        SELECT ended_at FROM sessions WHERE id = ${ownerSession.id}
+      `;
+      const stamp = (value: Date | null | undefined) =>
+        value instanceof Date ? value.toISOString() : String(value ?? "");
+      check(
+        "other_user_end_leaves_sitting_untouched",
+        stamp(beforeEnd?.ended_at) === stamp(afterEnd?.ended_at),
+        `${stamp(beforeEnd?.ended_at)} -> ${stamp(afterEnd?.ended_at)}`,
+      );
+
       const [audio] = await sql<{ n: string }[]>`
         SELECT count(*)::text AS n
         FROM audio_assets a

@@ -15,6 +15,7 @@ from worker.config import WorkerSettings
 from worker.controller.controller import Controller
 from worker.controller.decision import Action, Decision, ReasonCode, TurnSignals
 from worker.engram.caller_facts import CallerFactExtractor
+from worker.engram.closing import run_closing_pass
 from worker.engram.errors import (
     BrainError,
     ConflictError,
@@ -1236,6 +1237,20 @@ class TurnRunner:
             reason=settings.caller_fact_reason_extracted,
             fact_count=written,
         )
+
+    def enqueue_closing_pass(self, session_id: UUID, app_user_id: UUID) -> None:
+        """Queue the hang-up extract. Must not sit on the path to first word."""
+        self._writers.submit(self._closing_pass, session_id, app_user_id)
+
+    def _closing_pass(self, session_id: UUID, app_user_id: UUID) -> None:
+        try:
+            run_closing_pass(self, session_id, app_user_id)
+        except Exception:  # noqa: BLE001 - a writer thread must not die
+            log.exception(
+                self._settings.log_engram_closing,
+                session_id=str(session_id),
+                reason=self._settings.engram_writeback_reason_write_failed,
+            )
 
     def _start_scope_router(
         self,

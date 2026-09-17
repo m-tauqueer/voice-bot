@@ -25,7 +25,7 @@ Same-call “you just told me” does not wait on Engram. Next sitting recall de
 
 Build order: [CALLER_MEMORY_PLAN.md](../CALLER_MEMORY_PLAN.md). Code still converse-writes both sides until that plan ships.
 
-Notes after 2026-09-17: typed-chat hang-up locked in [0010](0010-chat-ends-with-hangup.md). Retrieve path no longer converse-writes the sitting; Postgres history is this-call context; per-turn extractor writes caller facts as private text on the member JWT. Closing pass at hang-up is not shipped yet.
+Notes after 2026-09-17: typed-chat hang-up locked in [0010](0010-chat-ends-with-hangup.md). Retrieve path no longer converse-writes the sitting; Postgres history is this-call context; per-turn extractor writes caller facts as private text on the member JWT. Hang-up (voice `ended_at`, `/chat` End chat) runs the closing pass off the client path.
 
 ## Alternatives considered
 

@@ -62,6 +62,10 @@ def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
     assert loaded.caller_fact_prefix == "The caller"
     assert loaded.caller_fact_timeout_seconds == 15.0
     assert loaded.caller_fact_max_facts == 8
+    assert loaded.caller_fact_closing_max_turns == 200
+    assert loaded.caller_fact_closing_max_bytes == 48000
+    assert loaded.caller_fact_closing_retries == 1
+    assert loaded.internal_closing_path == "/internal/closing-pass"
     assert "retrieve_scope" in loaded.log_turn_fields
     assert "retrieve_scope_reason" in loaded.log_turn_fields
     kwargs = settings.model_dump()
@@ -119,6 +123,17 @@ def test_scope_router_keys_and_reason_codes_must_be_distinct(
     with pytest.raises(ValidationError) as caught:
         WorkerSettings(_env_file=None, **kwargs)
     assert "CALLER_FACT reason codes" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["caller_fact_closing_reason_missing"] = "already"
+    kwargs["caller_fact_closing_reason_already"] = "already"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "CALLER_FACT_CLOSING reason codes" in str(caught.value)
+    kwargs = settings.model_dump()
+    kwargs["internal_closing_path"] = "internal/closing-pass"
+    with pytest.raises(ValidationError) as caught:
+        WorkerSettings(_env_file=None, **kwargs)
+    assert "INTERNAL_CLOSING_PATH" in str(caught.value)
 
 
 def test_boot_allows_missing_fish_key_and_refuses_shared_voice_keys(

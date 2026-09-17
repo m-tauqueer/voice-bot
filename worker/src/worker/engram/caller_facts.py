@@ -41,6 +41,7 @@ class CallerFactExtractor:
         history: list[HistoryTurn],
         user_turn: str,
         persona_reply: str,
+        history_limit: int | None = None,
     ) -> CallerFactExtract:
         closed = self._fail_closed()
         if self._client is None:
@@ -55,6 +56,7 @@ class CallerFactExtractor:
                     history=history,
                     user_turn=user_turn,
                     persona_reply=persona_reply,
+                    history_limit=history_limit,
                 ),
                 temperature=self._settings.caller_fact_temperature,
                 max_completion_tokens=self._settings.caller_fact_max_tokens,
@@ -119,6 +121,7 @@ class CallerFactExtractor:
         history: list[HistoryTurn],
         user_turn: str,
         persona_reply: str,
+        history_limit: int | None = None,
     ) -> list[dict[str, str]]:
         settings = self._settings
         template = (
@@ -136,7 +139,11 @@ class CallerFactExtractor:
                 "fact_prefix": settings.caller_fact_prefix,
             },
         )
-        limit = settings.reframe_history_turns
+        limit = (
+            settings.reframe_history_turns
+            if history_limit is None
+            else history_limit
+        )
         recent = history[-limit:] if limit > 0 else []
         payload = json.dumps(
             {

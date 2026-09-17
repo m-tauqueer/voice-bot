@@ -143,6 +143,24 @@ def test_messages_history_length_follows_config(settings: WorkerSettings) -> Non
     ]
 
 
+def test_messages_history_limit_override_ignores_reframe_window(
+    settings: WorkerSettings,
+) -> None:
+    loaded = settings.model_copy(update={"reframe_history_turns": 1})
+    extractor = CallerFactExtractor(loaded, _DummyClient())  # type: ignore[arg-type]
+    messages = extractor._messages(
+        history=[
+            HistoryTurn(speaker="user", text="one"),
+            HistoryTurn(speaker="persona", text="two"),
+        ],
+        user_turn="now",
+        persona_reply="",
+        history_limit=2,
+    )
+    payload = json.loads(messages[1]["content"])
+    assert len(payload[loaded.caller_fact_payload_history_key]) == 2
+
+
 def test_extract_without_client_is_closed(settings: WorkerSettings) -> None:
     extractor = CallerFactExtractor(settings, None)
     parsed = extractor.extract(history=[], user_turn="hi", persona_reply="")

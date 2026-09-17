@@ -100,8 +100,8 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
   - **2.a** Config: model, prompt, payload keys, timeout, third-person fact framing, empty-list success. Structured JSON out. Unrecognised / timeout / error → no Engram write, reason code on the log allowlist (no memory text in logs).
   - **2.b** Input: this user turn + this persona reply + the sitting history window, speakers labelled. Output: `caller_facts` strings. Write each with `personas.private` text ingest on the **member JWT**. Fail closed. Never `converse`. Never shared.
   - **2.c** Same write-back thread / receipt as today’s converse so it cannot sit in front of retrieve. Tests with a mocked model: greeting → empty; “I live in Pune” → one caller fact; “are you working at Metacognition?” → empty; persona “I work at …” → empty.
-- Manual: `/chat` with a published persona. Say something about yourself; next **new** sitting should retrieve it as `caller_memories`. Ask the persona about their job; that must not appear as your private fact.
-- Waiting on that Manual sitting (17 Sep 2026): config, extractor, `personas.private(pid).text` on the member JWT, write-back receipt. Do not mark done until the sitting passes. Do not start hang-up / closing pass.
+- Manual: deferred to Phase 5 (Tauqueer, 17 Sep 2026: live sittings at the end). Until then: `/chat` with a published persona; say something about yourself; next **new** sitting should retrieve it as `caller_memories`. Ask the persona about their job; that must not appear as your private fact.
+- Done 17 Sep 2026: config, extractor, `personas.private(pid).text` on the member JWT, write-back receipt. Automated checks passed. Live sitting waits for Phase 5. Do not start hang-up / closing pass until named.
 
 ### Phase 3 — Closing pass
 
@@ -111,7 +111,8 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
   - **3.b** `/voice`: fire when `ended_at` is set (existing hangup / socket close).
   - **3.c** `/chat`: hang-up control (config copy) sets `ended_at` and fires the same job. Replace today’s local-only **New conversation** wipe so we do not ship two similar buttons. Next send creates a new sitting. Isolation: only the sitting owner can end it.
 - Tests: double hangup one job; extractor error writes nothing; size cap. Isolation: job is the sitting owner.
-- Manual: voice hangup after a call that included both a caller fact and a persona-job question; private has the fact, not the job. Chat hang-up ends the sitting, closing pass runs, next send is a new sitting.
+- Manual: deferred to Phase 5 (Tauqueer, 17 Sep 2026: live sittings at the end). Until then: voice hangup after a call that included both a caller fact and a persona-job question; private has the fact, not the job. Chat hang-up ends the sitting, closing pass runs, next send is a new sitting.
+- Done 17 Sep 2026: internal promote-sitting job, fire on voice `ended_at`, `/chat` End chat replaces New conversation. Automated checks passed. Live sitting waits for Phase 5. Do not start dirty-pool cleanup until named.
 
 ### Phase 4 — Dirty pool cleanup
 
@@ -125,7 +126,7 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
 
 - Goal: the product rule is true on `/chat` and `/voice` with a real persona (Caleb and/or Sahil Dhutt).
 - Subparts:
-  - **5.a** Typed sitting: user-about-self remembered next sitting; user-about-persona not in private; same-sitting follow-up uses Postgres history.
+  - **5.a** Typed sitting (includes the deferred Phase 2 check): user-about-self remembered next sitting; user-about-persona not in private; same-sitting follow-up uses Postgres history.
   - **5.b** Voice sitting: hangup closing pass; next call still has caller facts; barge-in unchanged.
   - **5.c** Memory panel shows extracted facts, not a raw transcript dump. `isolation` / `security` green.
 - Manual: the sittings above, including a Fish persona if he names one.

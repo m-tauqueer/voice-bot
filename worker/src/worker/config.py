@@ -259,6 +259,28 @@ class WorkerSettings(BaseSettings):
         default="unrecognised",
         min_length=1,
     )
+    # Hang-up safety net. Same extractor, full sitting, size-capped. Off the
+    # client path. One extra extract attempt on worker fault; never dump.
+    caller_fact_closing_max_turns: int = Field(default=200, gt=0)
+    caller_fact_closing_max_bytes: int = Field(default=48000, gt=0)
+    caller_fact_closing_retries: int = Field(default=1, ge=0)
+    internal_closing_path: str = Field(
+        default="/internal/closing-pass",
+        min_length=1,
+    )
+    log_engram_closing: str = Field(default="engram_closing", min_length=1)
+    caller_fact_closing_reason_missing: str = Field(
+        default="missing",
+        min_length=1,
+    )
+    caller_fact_closing_reason_not_ended: str = Field(
+        default="not_ended",
+        min_length=1,
+    )
+    caller_fact_closing_reason_already: str = Field(
+        default="already",
+        min_length=1,
+    )
     # Reads sit on the path to first word, so they get a pool of their own
     # rather than sharing the write-back one. Each turn submits a single
     # private read; the shared read runs on the calling thread.
@@ -591,6 +613,13 @@ class WorkerSettings(BaseSettings):
             raise ValueError("ENGRAM_API_VERSION_PATH must start with /")
         return value
 
+    @field_validator("internal_closing_path")
+    @classmethod
+    def closing_path_absolute(cls, value: str) -> str:
+        if not value.startswith("/") or value.startswith("//"):
+            raise ValueError("INTERNAL_CLOSING_PATH must start with /")
+        return value
+
     @model_validator(mode="after")
     def distinct_answer_and_memory_ref_keys(self) -> WorkerSettings:
         payload = {
@@ -658,6 +687,13 @@ class WorkerSettings(BaseSettings):
         }
         if len(reasons) != 5:
             raise ValueError("CALLER_FACT reason codes must be distinct")
+        closing = {
+            self.caller_fact_closing_reason_missing,
+            self.caller_fact_closing_reason_not_ended,
+            self.caller_fact_closing_reason_already,
+        }
+        if len(closing) != 3:
+            raise ValueError("CALLER_FACT_CLOSING reason codes must be distinct")
         return self
 
     @model_validator(mode="after")

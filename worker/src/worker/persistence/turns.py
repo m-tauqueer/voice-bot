@@ -139,3 +139,36 @@ def recent_history(
         if isinstance(speaker, str) and isinstance(text, str):
             history.append(HistoryTurn(speaker=speaker, text=text))
     return history
+
+
+def cap_sitting(
+    turns: list[HistoryTurn],
+    *,
+    max_turns: int,
+    max_bytes: int,
+) -> list[HistoryTurn]:
+    """Keep the newest turns that fit the turn and byte budgets.
+
+    Byte size is UTF-8 length of stored text, not language understanding.
+    """
+    if max_turns <= 0 or max_bytes <= 0:
+        return []
+    window = turns[-max_turns:]
+    sizes = [len(turn.text.encode("utf-8")) for turn in window]
+    total = sum(sizes)
+    drop = 0
+    while drop < len(window) and total > max_bytes:
+        total -= sizes[drop]
+        drop += 1
+    return window[drop:]
+
+
+def sitting_history(
+    conn: psycopg.Connection,
+    session_id: UUID,
+    *,
+    max_turns: int,
+    max_bytes: int,
+) -> list[HistoryTurn]:
+    loaded = recent_history(conn, session_id, max_turns)
+    return cap_sitting(loaded, max_turns=max_turns, max_bytes=max_bytes)
