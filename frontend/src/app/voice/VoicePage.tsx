@@ -9,6 +9,7 @@ import { createVoiceBargeIn, type VoiceBargeIn } from "../../lib/bargeIn";
 import { callIsLive, type CallPhase } from "../../lib/callPhase";
 import {
   captureHeld,
+  captureHoldGapMs,
   emptyCaptureHold,
   noteCaptureHold,
   type CaptureHold,
@@ -334,6 +335,10 @@ export function VoicePage() {
       const thinkingCue = createThinkingCue(config);
       session.current.thinkingCue = thinkingCue;
       const live = { current: false };
+      const holdGapMs = captureHoldGapMs(
+        config.captureFrameSamples,
+        config.inputSampleRate,
+      );
       const mic = await startMicCapture(config, {
         onFrame: (frame) => {
           if (live.current) {
@@ -342,7 +347,7 @@ export function VoicePage() {
               session.current.captureHold,
               session.current.playback?.playing() ?? false,
               now,
-              config.captureHoldAfterMs,
+              holdGapMs,
             );
             session.current.socket?.sendBinary(
               uplinkMicFrame(
@@ -373,7 +378,7 @@ export function VoicePage() {
             session.current.captureHold,
             true,
             performance.now(),
-            config.captureHoldAfterMs,
+            holdGapMs,
           );
           publishLevel(playback.level());
         },

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   captureHeld,
+  captureHoldGapMs,
   emptyCaptureHold,
   noteCaptureHold,
-  playbackIsActive,
+  playbackHoldActive,
 } from "./captureHold";
 
 describe("captureHold", () => {
@@ -26,15 +27,46 @@ describe("captureHold", () => {
     expect(idle.until).toBe(1500);
   });
 
-  it("opens capture once scheduled playback ends, without waiting on a later phase", () => {
-    const during = noteCaptureHold(emptyCaptureHold(), true, 1000, 40);
-    const after = noteCaptureHold(during, false, 1040, 40);
-    expect(captureHeld(after, 1040)).toBe(false);
+  it("sizes the mic-frame gap from the capture hop", () => {
+    expect(captureHoldGapMs(320, 16000)).toBe(40);
   });
 
-  it("treats scheduled audio as playing", () => {
-    expect(playbackIsActive(0, 1.2, 1.0)).toBe(true);
-    expect(playbackIsActive(1, 0, 2.0)).toBe(true);
-    expect(playbackIsActive(0, 1.0, 1.0)).toBe(false);
+  it("holds until scheduled audio plus the sink pad, then opens", () => {
+    const input = {
+      stopped: false,
+      sourceCount: 0,
+      queued: true,
+      lastAudioEnd: 1,
+      padSec: 2.5,
+      now: 3.4,
+    };
+    expect(playbackHoldActive(input)).toBe(true);
+    expect(playbackHoldActive({ ...input, now: 3.5 })).toBe(false);
+  });
+
+  it("does not hold before audio is queued or after a flush", () => {
+    expect(
+      playbackHoldActive({
+        stopped: false,
+        sourceCount: 0,
+        queued: false,
+        lastAudioEnd: 0,
+        now: 0.2,
+        padSec: 2.5,
+      }),
+    ).toBe(false);
+  });
+
+  it("stays active while a source is still scheduled", () => {
+    expect(
+      playbackHoldActive({
+        stopped: false,
+        sourceCount: 1,
+        queued: true,
+        lastAudioEnd: 0,
+        now: 9,
+        padSec: 2.5,
+      }),
+    ).toBe(true);
   });
 });

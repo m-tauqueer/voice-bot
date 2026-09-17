@@ -1,4 +1,4 @@
-import { playbackIsActive } from "./captureHold";
+import { playbackHoldActive } from "./captureHold";
 import { int16LeToFloat, rmsLevel } from "./pcm";
 import type { VoiceClientConfig } from "./voiceConfig";
 import {
@@ -97,6 +97,8 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
   );
   const sources = new Set<ScheduledSource>();
   let nextTime = 0;
+  let lastAudioEnd = 0;
+  let queued = false;
   let stopped = false;
   let outputLevel = 0;
 
@@ -121,6 +123,8 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
     }
     sources.clear();
     nextTime = now;
+    lastAudioEnd = 0;
+    queued = false;
     return hadAudio;
   }
 
@@ -162,6 +166,8 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
         }
       };
       nextTime = startAt + buffer.duration;
+      lastAudioEnd = nextTime;
+      queued = true;
     },
     duck() {
       if (stopped) {
@@ -185,10 +191,17 @@ export function createPcmPlayback(config: VoiceClientConfig): PcmPlayback {
       return outputLevel;
     },
     playing() {
-      if (stopped) {
-        return false;
-      }
-      return playbackIsActive(sources.size, nextTime, context.currentTime);
+      const outputLag =
+        (typeof context.outputLatency === "number" ? context.outputLatency : 0) +
+        (typeof context.baseLatency === "number" ? context.baseLatency : 0);
+      return playbackHoldActive({
+        stopped,
+        sourceCount: sources.size,
+        queued,
+        lastAudioEnd,
+        now: context.currentTime,
+        padSec: config.captureHoldAfterMs / 1000 + outputLag,
+      });
     },
     async stop() {
       stopped = true;
