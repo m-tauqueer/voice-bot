@@ -3,6 +3,8 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import Grainient from "../../components/Grainient";
 import { RadialMenu } from "../../components/RadialMenu";
 import type { NavItem } from "../../lib/nav";
+import { SitChromeProvider, useMaxWidth, useSitChrome } from "../../lib/sitChrome";
+import { loadUiCopy } from "../../lib/uiCopy";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -33,7 +35,7 @@ function useDialShortcut(setOpen: Dispatch<SetStateAction<boolean>>) {
   }, [setOpen]);
 }
 
-export function AppShell({
+function AppShellView({
   active,
   items,
   brand,
@@ -46,6 +48,10 @@ export function AppShell({
   startCollapsed = false,
   children,
 }: AppShellProps) {
+  const copy = loadUiCopy();
+  const { sitting } = useSitChrome();
+  const narrow = useMaxWidth(copy.sitNarrowMaxPx);
+  const hideChrome = sitting && narrow;
   const [collapsed, setCollapsed] = useState(startCollapsed);
   const [dialOpen, setDialOpen] = useState(false);
 
@@ -57,40 +63,69 @@ export function AppShell({
 
   useDialShortcut(setDialOpen);
 
+  const classes = [
+    "mc-app",
+    collapsed ? "mc-app--collapsed" : "",
+    narrow ? "mc-app--narrow" : "",
+    hideChrome ? "mc-app--sit-chrome" : "",
+  ]
+    .filter((value) => value.length > 0)
+    .join(" ");
+
   return (
-    <div className={"mc-app" + (collapsed ? " mc-app--collapsed" : "")}>
+    <div className={classes}>
       <Grainient color3="#202028" saturation={0.7} />
 
-      <Sidebar
-        active={active}
-        items={items}
-        brand={brand}
-        homeTo={homeTo}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((value) => !value)}
-        onOpenDial={() => setDialOpen(true)}
-      />
+      {!hideChrome && (
+        <Sidebar
+          active={active}
+          items={items}
+          brand={brand}
+          homeTo={homeTo}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((value) => !value)}
+          onOpenDial={() => setDialOpen(true)}
+        />
+      )}
 
       <div className="mc-main">
-        <TopBar
-          personaName={personaName}
-          accountEmail={accountEmail}
-          signOutLabel={signOutLabel}
-          onSignOut={onSignOut}
-        />
-        <div className={"mc-canvas" + (flush ? " mc-canvas--flush" : "")}>{children}</div>
+        {!hideChrome && (
+          <TopBar
+            personaName={personaName}
+            accountEmail={accountEmail}
+            signOutLabel={signOutLabel}
+            onSignOut={onSignOut}
+          />
+        )}
+        <div
+          className={
+            "mc-canvas" + (flush || hideChrome ? " mc-canvas--flush" : "")
+          }
+        >
+          {children}
+        </div>
       </div>
 
-      <RadialMenu
-        open={dialOpen}
-        onClose={() => setDialOpen(false)}
-        items={items.map((item) => ({
-          icon: item.icon,
-          name: item.label,
-          to: item.to,
-          items: [item.label],
-        }))}
-      />
+      {!hideChrome && (
+        <RadialMenu
+          open={dialOpen}
+          onClose={() => setDialOpen(false)}
+          items={items.map((item) => ({
+            icon: item.icon,
+            name: item.label,
+            to: item.to,
+            items: [item.label],
+          }))}
+        />
+      )}
     </div>
+  );
+}
+
+export function AppShell(props: AppShellProps) {
+  return (
+    <SitChromeProvider>
+      <AppShellView {...props} />
+    </SitChromeProvider>
   );
 }

@@ -64,6 +64,9 @@ describe("ChatPage picker", () => {
     expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /@ada/i }));
     expect(await screen.findByRole("heading", { name: "Ada" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Ada" }).className).toContain(
+      "chat-page--sit",
+    );
     expect(screen.getByText("Say something. Memory stays with this persona.")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled,

@@ -304,3 +304,57 @@
 .voice-sit__row--interim .voice-sit__bubble {
   opacity: 0.62;
 }
+
+.mc-app--sit-chrome .voice-sit {
+  flex-direction: column-reverse;
+}
+
+.mc-app--sit-chrome .voice-sit__stage {
+  flex: 0 0 calc(var(--voice-sit-stage-percent) * 1%);
+  height: calc(var(--voice-sit-stage-percent) * 1dvh);
+  min-height: 0;
+}
+
+.mc-app--sit-chrome .voice-sit__canvas {
+  transform: translateY(calc(-1 * var(--voice-sit-swarm-lift)));
+}
+
+.mc-app--sit-chrome .voice-sit__hit {
+  transform: translate(-50%, calc(-50% - var(--voice-sit-swarm-lift)));
+}
+
+.mc-app--sit-chrome .voice-sit__dock {
+  top: auto;
+  bottom: var(--voice-dock-gap);
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100% - (2 * var(--voice-dock-gap)));
+}
+
+.mc-app--sit-chrome .voice-sit__transcript {
+  flex: 0 1 calc((100 - var(--voice-sit-stage-percent)) * 1%);
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: var(--voice-dock-gap);
+  border-left: 0;
+  border-top: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mc-app--sit-chrome .voice-sit__transcript-empty,
+.mc-app--sit-chrome .voice-sit__bubble {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mc-app--sit-chrome .voice-sit__rail {
+  top: 12px;
+  left: 12px;
+}
+
+.mc-app--sit-chrome .voice-sit__badge {
+  top: 12px;
+  padding: 8px 16px 8px 10px;
+  font-size: 13px;
+}

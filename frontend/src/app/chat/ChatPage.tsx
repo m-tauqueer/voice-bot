@@ -20,6 +20,7 @@ import {
   parsePublishedDirectory,
   type PublishedPersona,
 } from "../../lib/publishedPersonas";
+import { useSitChrome } from "../../lib/sitChrome";
 import { loadUiCopy } from "../../lib/uiCopy";
 import { loadVoiceClientConfig } from "../../lib/voiceConfig";
 import { useSession } from "../session";
@@ -94,6 +95,7 @@ export function ChatPage() {
   const session = useSession();
   const copy = loadUiCopy();
   const voiceUi = loadVoiceClientConfig();
+  const { setSitting } = useSitChrome();
   const { loadingLabel } = loadNavConfig();
   const me = session.status === "ready" ? session.me : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
@@ -109,6 +111,13 @@ export function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const picked = directory.find((row) => row.id === pickedId) ?? null;
   const blocked = busy || sittingLoad || ending;
+
+  useEffect(() => {
+    setSitting(picked !== null);
+    return () => {
+      setSitting(false);
+    };
+  }, [picked, setSitting]);
   const userSpeaker = turnSpeakerUser();
   const personaSpeaker = turnSpeakerPersona();
   const pageStyle = {
@@ -348,7 +357,12 @@ export function ChatPage() {
   }
 
   return (
-    <div className="chat-page" style={pageStyle} role="region" aria-label={picked.display_name}>
+    <div
+      className="chat-page chat-page--sit"
+      style={pageStyle}
+      role="region"
+      aria-label={picked.display_name}
+    >
       <div className="chat-page__toolbar">
         <Button type="button" variant="glass" disabled={blocked} onClick={leaveSitting}>
           {copy.callBackLabel}

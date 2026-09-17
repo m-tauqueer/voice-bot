@@ -16,7 +16,9 @@ import { ringAmplitude, ringSourceForPhase } from "../../lib/ringAmplitude";
 import { swarmHearTarget } from "../../lib/swarmHear";
 import { loadVoiceClientConfig, voiceSocketUrl, type VoiceClientConfig } from "../../lib/voiceConfig";
 import { openVoiceSocket, type VoiceSocket } from "../../lib/voiceSocket";
+import { useSitChrome } from "../../lib/sitChrome";
 import { loadUiCopy } from "../../lib/uiCopy";
+import { VoiceDockIcon, type VoiceDockIconName } from "../../lib/voiceDockIcons";
 import {
   parsePublishedDirectory,
   type PublishedPersona,
@@ -28,6 +30,37 @@ import {
 } from "../../lib/voiceTranscript";
 import { useSession } from "../session";
 import { AgentSelector } from "./AgentSelector";
+
+function DockControl({
+  label,
+  icon,
+  iconSize,
+  pressed,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: VoiceDockIconName;
+  iconSize: number;
+  pressed?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="md"
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      icon={<VoiceDockIcon name={icon} size={iconSize} />}
+      onClick={onClick}
+    >
+      {label}
+    </Button>
+  );
+}
 
 type Banner = {
   tone: "error" | "warning";
@@ -68,6 +101,7 @@ export function VoicePage() {
   const identity = useSession();
   const copy = loadUiCopy();
   const voiceUi = loadVoiceClientConfig();
+  const { setSitting } = useSitChrome();
   const { loadingLabel } = loadNavConfig();
   const me = identity.status === "ready" ? identity.me : null;
   const [boot, setBoot] = useState<"loading" | "ready">("loading");
@@ -103,6 +137,13 @@ export function VoicePage() {
   mutedRef.current = muted;
   const transcriptSeq = useRef(1);
   const picked = directory.find((row) => row.id === pickedId) ?? null;
+
+  useEffect(() => {
+    setSitting(picked !== null);
+    return () => {
+      setSitting(false);
+    };
+  }, [picked, setSitting]);
 
   useEffect(() => {
     if (!me) {
@@ -433,6 +474,8 @@ export function VoicePage() {
         ["--voice-hit-ratio" as string]: String(voiceUi.swarmHitRatio),
         ["--voice-dock-gap" as string]: `${voiceUi.swarmDockGapPx}px`,
         ["--voice-transcript-width" as string]: `${voiceUi.transcriptWidthPx}px`,
+        ["--voice-sit-stage-percent" as string]: String(copy.voiceSitStagePercent),
+        ["--voice-sit-swarm-lift" as string]: `${copy.voiceSitSwarmLiftCm}cm`,
       }}
     >
       <div className="voice-sit__stage">
@@ -455,55 +498,50 @@ export function VoicePage() {
         )}
         {!inCall && !starting && (
           <div className="voice-sit__rail">
-            <Button type="button" variant="ghost" onClick={leaveSitting}>
-              {copy.callBackLabel}
-            </Button>
+            <DockControl
+              label={copy.callBackLabel}
+              icon={copy.voiceIconBack}
+              iconSize={copy.voiceDockIconPx}
+              onClick={leaveSitting}
+            />
           </div>
         )}
         <div className="voice-sit__dock">
           {inCall ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
-              aria-pressed={muted}
+            <DockControl
+              label={muted ? copy.callUnmuteLabel : copy.callMuteLabel}
+              icon={muted ? copy.voiceIconUnmute : copy.voiceIconMute}
+              iconSize={copy.voiceDockIconPx}
+              pressed={muted}
               onClick={toggleMute}
-            >
-              {muted ? copy.callUnmuteLabel : copy.callMuteLabel}
-            </Button>
+            />
           ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
+            <DockControl
+              label={startLabel}
+              icon={copy.voiceIconStart}
+              iconSize={copy.voiceDockIconPx}
               disabled={starting}
               onClick={() => {
                 void startCall();
               }}
-            >
-              {startLabel}
-            </Button>
+            />
           )}
           {inCall && (
             <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
+              <DockControl
+                label={copy.callStopSpeakLabel}
+                icon={copy.voiceIconInterrupt}
+                iconSize={copy.voiceDockIconPx}
                 onClick={stopSpeaking}
-              >
-                {copy.callStopSpeakLabel}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
+              />
+              <DockControl
+                label={copy.callEndLabel}
+                icon={copy.voiceIconEnd}
+                iconSize={copy.voiceDockIconPx}
                 onClick={() => {
                   void endCall();
                 }}
-              >
-                {copy.callEndLabel}
-              </Button>
+              />
             </>
           )}
         </div>

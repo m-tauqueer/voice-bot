@@ -1,5 +1,9 @@
-import { requiredVite, requiredViteBool, requiredViteInt } from "./env";
+import { requiredVite, requiredViteBool, requiredViteFloat, requiredViteInt } from "./env";
 import { labelFor, parseLabeledList, type Labeled } from "./pairs";
+import {
+  requiredVoiceDockIcon,
+  type VoiceDockIconName,
+} from "./voiceDockIcons";
 
 export type UiCopy = {
   ranges: Labeled[];
@@ -183,6 +187,16 @@ export type UiCopy = {
   chatColumnMaxPx: number;
   chatInputMaxPx: number;
   chatThreadMinPx: number;
+  sitNarrowMaxPx: number;
+  voiceSitStagePercent: number;
+  voiceSitSwarmLiftCm: number;
+  voiceDockIconPx: number;
+  voiceIconStart: VoiceDockIconName;
+  voiceIconMute: VoiceDockIconName;
+  voiceIconUnmute: VoiceDockIconName;
+  voiceIconInterrupt: VoiceDockIconName;
+  voiceIconEnd: VoiceDockIconName;
+  voiceIconBack: VoiceDockIconName;
   personaHandleLabel: string;
   personaNameLabel: string;
   personaDescriptionLabel: string;
@@ -460,6 +474,16 @@ export function loadUiCopy(): UiCopy {
     chatColumnMaxPx: requiredViteInt("VITE_CHAT_COLUMN_MAX_PX"),
     chatInputMaxPx: requiredViteInt("VITE_CHAT_INPUT_MAX_PX"),
     chatThreadMinPx: requiredViteInt("VITE_CHAT_THREAD_MIN_PX"),
+    sitNarrowMaxPx: requiredViteInt("VITE_SIT_NARROW_MAX_PX"),
+    voiceSitStagePercent: requiredViteFloat("VITE_VOICE_SIT_STAGE_PERCENT", 20, 80),
+    voiceSitSwarmLiftCm: requiredViteFloat("VITE_VOICE_SIT_SWARM_LIFT_CM", 0, 4),
+    voiceDockIconPx: requiredViteInt("VITE_VOICE_DOCK_ICON_PX"),
+    voiceIconStart: requiredVoiceDockIcon("VITE_VOICE_ICON_START"),
+    voiceIconMute: requiredVoiceDockIcon("VITE_VOICE_ICON_MUTE"),
+    voiceIconUnmute: requiredVoiceDockIcon("VITE_VOICE_ICON_UNMUTE"),
+    voiceIconInterrupt: requiredVoiceDockIcon("VITE_VOICE_ICON_INTERRUPT"),
+    voiceIconEnd: requiredVoiceDockIcon("VITE_VOICE_ICON_END"),
+    voiceIconBack: requiredVoiceDockIcon("VITE_VOICE_ICON_BACK"),
     personaHandleLabel: requiredVite("VITE_PERSONA_HANDLE_LABEL"),
     personaNameLabel: requiredVite("VITE_PERSONA_NAME_LABEL"),
     personaDescriptionLabel: requiredVite("VITE_PERSONA_DESCRIPTION_LABEL"),

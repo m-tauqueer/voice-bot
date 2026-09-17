@@ -71,7 +71,9 @@ describe("VoicePage picker", () => {
     expect(screen.getByRole("button", { name: /@nova/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Start chat" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /@ada/i }));
-    expect(screen.getByRole("region", { name: "Ada" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Ada" }).className).toContain(
+      "voice-sit",
+    );
     expect(screen.getAllByRole("button", { name: "Start chat" }).length).toBe(2);
     expect(screen.queryByRole("button", { name: "Pause chat" })).toBeNull();
     expect(screen.queryByRole("button", { name: "End call" })).toBeNull();

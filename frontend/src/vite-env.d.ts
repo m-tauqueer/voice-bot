@@ -313,6 +313,16 @@ interface ImportMetaEnv {
   readonly VITE_CHAT_COLUMN_MAX_PX: string;
   readonly VITE_CHAT_INPUT_MAX_PX: string;
   readonly VITE_CHAT_THREAD_MIN_PX: string;
+  readonly VITE_SIT_NARROW_MAX_PX: string;
+  readonly VITE_VOICE_SIT_STAGE_PERCENT: string;
+  readonly VITE_VOICE_SIT_SWARM_LIFT_CM: string;
+  readonly VITE_VOICE_DOCK_ICON_PX: string;
+  readonly VITE_VOICE_ICON_START: string;
+  readonly VITE_VOICE_ICON_MUTE: string;
+  readonly VITE_VOICE_ICON_UNMUTE: string;
+  readonly VITE_VOICE_ICON_INTERRUPT: string;
+  readonly VITE_VOICE_ICON_END: string;
+  readonly VITE_VOICE_ICON_BACK: string;
   readonly VITE_PERSONA_HANDLE_LABEL: string;
   readonly VITE_PERSONA_NAME_LABEL: string;
   readonly VITE_PERSONA_DESCRIPTION_LABEL: string;
