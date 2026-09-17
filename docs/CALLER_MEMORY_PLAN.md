@@ -121,6 +121,7 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
   - **4.a** Named purge of that member’s private pool for that persona (`user_memories` / `forget_user_memory` or equivalent already used by delete-my-data). Do not `personas.delete` (that destroys shared + every member).
   - **4.b** Document the operator steps Tauqueer runs (which member, which persona). No automatic wipe of every private pool.
 - Manual: he confirms the named pool is empty, then a clean sitting.
+- Done 17 Sep 2026: named `list-private` / `forget-private` on `npm run admin`. Same `user_memories` / `forget_user_memory` loop as delete-my-data. Does not `personas.delete`, does not unsubscribe, does not walk every member. Operator steps: [ENGRAM.md](ENGRAM.md) §12.
 
 ### Phase 5 — Live sittings
 

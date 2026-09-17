@@ -102,6 +102,36 @@ def main(argv: list[str] | None = None) -> int:
     show = sub.add_parser("show")
     _add_persona_id(show)
 
+    list_private = sub.add_parser(
+        "list-private",
+        help="list one member's private memories for one persona",
+    )
+    list_private.add_argument(
+        "--user",
+        required=True,
+        help="email, app user id, or Engram user id",
+    )
+    _add_persona_id(list_private)
+
+    forget_private = sub.add_parser(
+        "forget-private",
+        help=(
+            "forget one member's private pool for one persona; "
+            "does not destroy the persona"
+        ),
+    )
+    forget_private.add_argument(
+        "--user",
+        required=True,
+        help="email, app user id, or Engram user id",
+    )
+    forget_private.add_argument(
+        "--confirm",
+        required=True,
+        help="the persona handle, typed exactly",
+    )
+    _add_persona_id(forget_private)
+
     args = parser.parse_args(argv)
     settings = load_settings()
     admin = PersonaAdmin(settings)
@@ -182,6 +212,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "show":
             _print(admin.show(pin))
+            return 0
+        if args.command == "list-private":
+            _print(admin.list_private(args.user, persona_id=pin))
+            return 0
+        if args.command == "forget-private":
+            _print(
+                admin.forget_private(
+                    args.user,
+                    confirmation=args.confirm,
+                    persona_id=pin,
+                ),
+            )
             return 0
     except AdminError as exc:
         print(json.dumps({"error": str(exc), "reason": exc.reason}), file=sys.stderr)

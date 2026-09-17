@@ -205,7 +205,7 @@ Tables exist (Phase 1 migrations, extended in Phase 2). All ids/keys configurabl
 
 Redis keys (ephemeral, TTL'd): active session map (kinds `member` / `waitlist` / `refused` / `consent`), current turn state, barge-in/cancel flags, interim-STT assembly buffer. The voice notice Redis channel also carries a trace payload after a turn is recorded so the gateway can log the voice correlation id; that payload is log-only and is never sent to the caller.
 
-Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are deleted by `npm run retain` or an optional gateway sweep. Open sessions are never retained. Audio blob delete is a no-op until archiving is on. Engram private-pool purge uses the org persona admin surface (`user_memories` / `forget_user_memory` / `unsubscribe`) and is skipped when Engram keys are unset.
+Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are deleted by `npm run retain` or an optional gateway sweep. Open sessions are never retained. Audio blob delete is a no-op until archiving is on. Engram private-pool purge uses the org persona admin surface (`user_memories` / `forget_user_memory` / `unsubscribe`) and is skipped when Engram keys are unset. Owner `forget-private` uses the same forget loop for one named member and persona, without unsubscribe and without `personas.delete`.
 
 ---
 
@@ -242,4 +242,4 @@ Ended sessions older than `RETENTION_SESSION_DAYS` (config; `0` is off) are dele
 
 ## 9. Future improvements (post first build)
 
-See [FUTURE.md](FUTURE.md) for parked product and Plan X. Caller-fact private memory is **current** work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)). Cloned voices and member UI are paused ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)). Multi-persona is built ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)). Retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. Existing converse rows stay dirty until a named purge.
+See [FUTURE.md](FUTURE.md) for parked product and Plan X. Caller-fact private memory is **current** work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)). Cloned voices and member UI are paused ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)). Multi-persona is built ([PHASE_5_PLAN.md](PHASE_5_PLAN.md)). Retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. A named owner command forgets one member's private pool for one persona; it does not destroy the persona.

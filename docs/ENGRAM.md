@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)): retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. Existing converse rows stay dirty until a named purge.
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)): retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. A named owner command forgets one member's private pool for one persona; it does not destroy the persona.
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>
@@ -185,6 +185,7 @@ For this product:
 | Draft / hide from members | local `published = false` | leave pools alone; optional `status=archived` |
 | Stop one member using it | unpublished already covers all members; do not build per-member assign | optional `unsubscribe` (private pool remains) |
 | Destroy the persona | delete local row after confirm | `personas.delete` — **all members lose that private history** |
+| Forget one dirty private pool | `npm run admin -- list-private` / `forget-private` (named member + persona; confirm the handle) | `user_memories` + `forget_user_memory` for **that** member only. Does not unsubscribe. Does not `personas.delete`. |
 | Member deletes their account | local sessions ∪ subscriptions, then `user_memories` + `forget_user_memory` + `unsubscribe` per Engram persona id | every persona that member used, not one active row |
 
 Admin-only (member naming anyone else → `ForbiddenError: cannot access another user's private memory`): `users`, `user_memories`, `forget_user_memory`, `node(..., user_id=)`, `conversations(..., user_id=)`, `compress(..., user_id=)`, `private(pid, user_id=)`, `compress_all`.
@@ -225,7 +226,7 @@ Writes: never blind-retry on HTTP status. Reads may retry 429/502/503/504. Defau
 | `teach` / `answer` / `questions` | owner admin | shared | — |
 | `pool(pid, "shared").document/text` | owner ingest | shared | — |
 | `members.add` then `subscribe` / `unsubscribe` | first talk / account delete | People + grant | — |
-| `user_memories` / `forget_user_memory` | member delete-my-data | forget private | one member’s private |
+| `user_memories` / `forget_user_memory` | member delete-my-data; owner named private-pool forget | forget private | one member’s private |
 | `delete` | owner destroy | destroys shared + all private | — |
 | `create` / `update` / `list` / `get` | owner admin | persona row | — |
 
@@ -297,3 +298,17 @@ Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensure
 App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. **Private recall on the default brain was restored 9 Sep 2026** (backend 0.5.0 made unscoped `retrieve` shared-only): two scoped reads, labelled answer lists, private memory panel. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel, and that private `memory_refs` rows are labelled as the caller's list.
 
 Two layers, and the lower one is deliberately independent of the upper: `may_ground` (`worker/src/worker/engram/tenant.py`) refuses any private row that is not the acting member's *and* refuses every private row when we did not authenticate as that member. It is unconditional, so a regression in the credential path degrades to shared-only instead of leaking. Three accounts are permanently degraded — `getcognora@`, `tauqueer655@`, and the API key owner — because an org admin cannot reset an Engram password. Member-facing reads never show another member’s pool: the memory panel filters to the acting member’s own private tenant (`worker/src/worker/engram/tenant.py`). Delete-my-data purges every catalog persona and refuses to delete our rows unless Engram reported the purge clean, because those rows are the only map back to what a member left behind.
+
+---
+
+## 12. Named private-pool forget (operator)
+
+Dirty converse dumps stay in a member’s private pool until the owner names **that member** and **that persona**. This is not delete-my-data (it does not unsubscribe, and it does not wipe every persona that member used). It is not destroy (it does not `personas.delete`).
+
+1. `npm run admin -- show` — copy the local persona UUID and the handle.
+2. Name the member: Google email, app user id, or Engram user id.
+3. `npm run admin -- list-private --user <email> --persona-id <uuid>`
+4. `npm run admin -- forget-private --user <email> --persona-id <uuid> --confirm <handle>`
+5. `list-private` again — `count` is 0.
+6. Then a clean sitting. Do not run this for every member. Do not destroy the persona (shared plus every private pool would go). Subscription stays, so the next sitting still talks.
+

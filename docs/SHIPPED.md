@@ -48,7 +48,7 @@ Blob path proven against Azurite; real Azure credentials still unexercised. Stor
 
 Failure handling and reconnect copy. Read API (personal history, owner reconstruct). App shell: landing, `/dashboard`, `/admin`. Per-turn traces / correlation id. Latency budget check (`npm run budgets`). Security review: cookie/CORS, think-endpoint unauth 401, OpenAPI hidden, isolation probe. Gateway rate limit + worker internal-secret throttle. Memory panel identity bind.
 
-Not built in 3.x: Azure deploy and multilingual stay in [FUTURE.md](FUTURE.md). Voice clone is paused ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)), not shipped. Retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)). Existing converse rows stay dirty until a named purge.
+Not built in 3.x: Azure deploy and multilingual stay in [FUTURE.md](FUTURE.md). Voice clone is paused ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)), not shipped. Retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)). A named owner command forgets one member's private pool for one persona; it does not destroy the persona.
 
 Engram subscribe **is** the product grant path now: first talk joins People (`members:manage`) then `personas.subscribe` (`org:manage`) and fails closed if either fails. Isolation for transcripts is still app session + identity match. Engram-side private pools are per-member as of 8 Sep 2026 — see [ENGRAM.md](ENGRAM.md) §2.3 and §4, and the memory-isolation section below.
 

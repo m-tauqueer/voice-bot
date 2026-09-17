@@ -108,6 +108,8 @@ npm run security     # Cookie/CORS/secrets, think-endpoint unauth, OpenAPI hidde
 ./infra/azure/deploy.sh up      # images and Container Apps in cognora-alpha-rg (current tree)
 ./infra/azure/deploy.sh bind    # after the GoDaddy CNAME exists
 npm run admin -- show
+npm run admin -- list-private --user <email> --persona-id <uuid>
+npm run admin -- forget-private --user <email> --persona-id <uuid> --confirm <handle>
 npm run admin -- destroy --persona-id <uuid> --confirm <handle> # irreversible
 
 # Dev processes (need a filled .env; bind ports come from that file)

@@ -66,6 +66,15 @@ def test_retrieve_scope_settings_load_and_version_path_must_be_absolute(
     assert loaded.caller_fact_closing_max_bytes == 48000
     assert loaded.caller_fact_closing_retries == 1
     assert loaded.internal_closing_path == "/internal/closing-pass"
+    assert loaded.admin_error_forget_private_confirmation == (
+        "type the persona handle exactly to forget that private pool"
+    )
+    assert loaded.admin_error_user_missing == (
+        "no signed-in user matches that identifier"
+    )
+    assert loaded.admin_error_engram_user_missing == (
+        "that member has no Engram user id"
+    )
     assert "retrieve_scope" in loaded.log_turn_fields
     assert "retrieve_scope_reason" in loaded.log_turn_fields
     kwargs = settings.model_dump()

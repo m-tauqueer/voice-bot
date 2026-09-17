@@ -1,5 +1,11 @@
-from worker.lifecycle.gids import memory_gids, memory_rows, next_cursor
-from worker.lifecycle.purge import purge_private_pool
+from worker.lifecycle.gids import (
+    memory_gids,
+    memory_rows,
+    memory_text,
+    next_cursor,
+    row_gid,
+)
+from worker.lifecycle.purge import list_private_pool, purge_private_pool
 
 
 class FakePersonas:
@@ -43,6 +49,12 @@ def test_memory_gids_from_known_shapes() -> None:
     assert memory_rows([{"gid": 3}])[0]["gid"] == 3
     assert next_cursor({"next_cursor": "abc"}) == "abc"
     assert next_cursor({"next_cursor": "  "}) is None
+    assert memory_text({"text": "The caller lives in Pune."}) == (
+        "The caller lives in Pune."
+    )
+    assert memory_text({"text": 12}) is None
+    assert row_gid({"gid": 1001}) == 1001
+    assert row_gid({"id": "1002"}) == "1002"
 
 
 def test_purge_forgets_each_gid_then_unsubscribes(settings) -> None:
@@ -106,4 +118,55 @@ def test_purge_skips_when_engram_is_off(settings) -> None:
         "engram": "skipped",
         "forgotten": 0,
         "unsubscribed": False,
+    }
+
+
+def test_purge_can_forget_without_unsubscribing(settings) -> None:
+    personas = FakePersonas()
+    result = purge_private_pool(
+        settings,
+        engram_user_id="user-1",
+        engram_persona_id="persona-1",
+        personas=personas,
+        unsubscribe=False,
+    )
+    assert result == {
+        "engram": "ok",
+        "forgotten": 2,
+        "unsubscribed": False,
+    }
+    assert personas.forgotten == [
+        ("persona-1", "user-1", 1001),
+        ("persona-1", "user-1", 1002),
+    ]
+    assert personas.unsubscribed == []
+
+
+def test_list_private_pool_pages_and_dedupes(settings) -> None:
+    personas = FakePersonas()
+    result = list_private_pool(
+        settings,
+        engram_user_id="user-1",
+        engram_persona_id="persona-1",
+        personas=personas,
+    )
+    assert result["engram"] == "ok"
+    assert result["count"] == 2
+    assert result["memories"] == [
+        {"gid": 1001, "text": "a"},
+        {"gid": 1002, "text": None},
+    ]
+
+
+def test_list_private_pool_skips_when_engram_is_off(settings) -> None:
+    settings.engram_api_key = None
+    result = list_private_pool(
+        settings,
+        engram_user_id="user-1",
+        engram_persona_id="persona-1",
+    )
+    assert result == {
+        "engram": "skipped",
+        "count": 0,
+        "memories": [],
     }

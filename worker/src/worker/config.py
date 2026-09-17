@@ -369,6 +369,20 @@ class WorkerSettings(BaseSettings):
         default="type the persona handle exactly to destroy it",
         min_length=1,
     )
+    admin_error_forget_private_confirmation: str = Field(
+        default=(
+            "type the persona handle exactly to forget that private pool"
+        ),
+        min_length=1,
+    )
+    admin_error_user_missing: str = Field(
+        default="no signed-in user matches that identifier",
+        min_length=1,
+    )
+    admin_error_engram_user_missing: str = Field(
+        default="that member has no Engram user id",
+        min_length=1,
+    )
     persona_voice_tts_key: str = Field(default="tts_voice", min_length=1)
     persona_voice_fish_key: str = Field(default="fish_voice", min_length=1)
     persona_voice_provider_key: str = Field(
