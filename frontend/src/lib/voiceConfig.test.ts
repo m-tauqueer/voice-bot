@@ -21,7 +21,7 @@ describe("loadVoiceClientConfig", () => {
     expect(config.swarmRadiusCalm).toBe(0.52);
     expect(config.swarmHitRatio).toBe(0.66);
     expect(config.swarmDockGapPx).toBe(16);
-    expect(config.transcriptWidthPx).toBe(320);
+    expect(config.transcriptWidthPx).toBe(416);
     expect(config.transcriptAvatarSize).toBe(36);
     expect(config.stopSpeakPhases.has("speaking")).toBe(true);
     expect(config.stopSpeakPhases.has("listening")).toBe(true);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTranscriptEvent,
+  commitInterimRole,
   labelForTranscriptRole,
 } from "./voiceTranscript";
 
@@ -40,6 +41,24 @@ describe("live sitting transcript", () => {
     );
     expect(second.lines.map((line) => line.id)).toEqual([1, 2]);
     expect(second.lines[1]?.role).toBe("user");
+  });
+
+  it("seals an interim line so the next utterance of that role is a new row", () => {
+    const first = applyTranscriptEvent(
+      [],
+      { role: "user", text: "Hello?", interim: true },
+      1,
+    );
+    const sealed = commitInterimRole(first.lines, "user");
+    const second = applyTranscriptEvent(
+      sealed,
+      { role: "user", text: "What do you do?", interim: true },
+      first.nextId,
+    );
+    expect(second.lines.map((line) => line.text)).toEqual([
+      "Hello?",
+      "What do you do?",
+    ]);
   });
 
   it("labels roles from config, not from guessed wording", () => {
