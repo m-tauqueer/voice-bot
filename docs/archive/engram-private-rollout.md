@@ -1,10 +1,10 @@
 # Engram per-member private memory — production rollout
 
-Owner: Tauqueer. Status: **Both phases shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes were confirmed by hand on two Google accounts. The earlier subject-ingest workaround plan is withdrawn. Nothing here is left to implement — see §Outstanding for the operator tasks that remain. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Product map: [README.md](README.md).
+Owner: Tauqueer. Status: **Both phases shipped and live-verified 8 Sep 2026.** `ENGRAM_MEMBER_SESSION_AUTH=true`. Per-subscriber isolation and per-member private writes were confirmed by hand on two Google accounts. The earlier subject-ingest workaround plan is withdrawn. Nothing here is left to implement — see §Outstanding for the operator tasks that remain. Evidence: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](engram-member-private-workaround.md). Contract: [ENGRAM.md](../architecture/memory.md) §2.3. Product map: [README.md](README.md).
 
-Working rule: Tauqueer names **one phase and one part**. This file is not the current product plan ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) is). If he names a leftover operator task from here, finish only that, run its manual test, stop, and **commit only when he asks**. Do not mention phase/part numbers in commit messages.
+Working rule: Tauqueer names **one phase and one part**. This file is not the current product plan ([CALLER_MEMORY_PLAN.md](../plans/caller-memory.md) is). If he names a leftover operator task from here, finish only that, run its manual test, stop, and **commit only when he asks**. Do not mention phase/part numbers in commit messages.
 
-Sibling to [PHASE_5_PLAN.md](PHASE_5_PLAN.md). Personas product parts stay there. This file is the memory-isolation work.
+Sibling to [PHASE_5_PLAN.md](phase-5-plan.md). Personas product parts stay there. This file is the memory-isolation work.
 
 ---
 
@@ -108,7 +108,7 @@ A `401` re-logs in once, then that turn degrades. There is no path from a failed
 
 ## Outstanding (operator, not code)
 
-- **Engram admin-pool forget** — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §10. The mixed-owner product traffic is still in the key owner's pool. Nothing writes to it any more.
+- **Engram admin-pool forget** — [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](engram-member-private-workaround.md) §10. The mixed-owner product traffic is still in the key owner's pool. Nothing writes to it any more.
 - **Three permanently stranded accounts, and only these three:** `getcognora@gmail.com`, `tauqueer655@gmail.com`, and `mohammadtuti655@gmail.com` (the API key owner). We hold no credential for them and an org admin cannot reset an Engram password. They degrade to shared-only for good. Any other Google account, including later testers, gets private memory. Do not sit private-recall tests on those three.
 - **Delete-my-data is a one-way door.** Erase clears the stored secret, and that member's Engram password can never be reissued, so they are shared-only afterwards. Member-facing copy for this is drafted but not shipped — see the wipe section of the workaround doc.
 - Still worth asking Engram for: an org-admin-scoped session mint for a member of their own org, which would remove password custody entirely. Not a blocker.
@@ -171,7 +171,7 @@ A `401` re-logs in once, then that turn degrades. There is no path from a failed
 The leak did not stay in Engram. In retrieve mode `outcome.messages` is the retrieved memory text, and it was persisted to `turns.messages` (`turn/service.py:927`) and `memory_refs.memories_used` (`:936-941`), then re-served through session detail (`gateway/src/insights/queries.ts:580,589-595`) and `/api/me/export` (`gateway/src/lifecycle/export.ts:97,140-144`). `wipeMemberRows` deletes by the deleting user's id, so one member's words inside another's rows survive that member's delete-my-data.
 
 - A migration (or a reviewed one-off script Tauqueer runs) that clears `memory_refs.memories_used` and the retrieved-memory content in `turns.messages` for every turn taken before the Phase 1 filter shipped. Do not try to sort by owner — the rows are mixed-owner by construction. Delete them.
-- Operator checklist for the Engram side: forget the admin private pool's product-traffic rows for personas that took real traffic (`user_memories` + `forget_user_memory` against the admin People id, or the dashboard Private tab). Disposable under [ENGRAM.md](ENGRAM.md) §2.3. Do **not** migrate them into member pools — they are not any single member's.
+- Operator checklist for the Engram side: forget the admin private pool's product-traffic rows for personas that took real traffic (`user_memories` + `forget_user_memory` against the admin People id, or the dashboard Private tab). Disposable under [ENGRAM.md](../architecture/memory.md) §2.3. Do **not** migrate them into member pools — they are not any single member's.
 - No automatic mass-delete in product code.
 
 **Files likely touched:** `infra/migrations/`, `docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md` (cleanup appendix)
@@ -424,9 +424,9 @@ ENGRAM_MEMBER_SECRET_KEY=
 5. One Engram org per Cognora member.
 6. Treating the Engram Private-tab UI as an API.
 7. Keyword/intent heuristics for speak/silence or memory ranking.
-8. Starting [FUTURE.md](FUTURE.md) or the Azure deploy as part of this rollout.
+8. Starting [FUTURE.md](future.md) or the Azure deploy as part of this rollout.
 
-Still worth asking Engram for, but not a blocker: an org-admin-scoped session mint for a member of their own org, so a backend need not hold member passwords at all. See [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) §6.
+Still worth asking Engram for, but not a blocker: an org-admin-scoped session mint for a member of their own org, so a backend need not hold member passwords at all. See [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](engram-member-private-workaround.md) §6.
 
 ---
 

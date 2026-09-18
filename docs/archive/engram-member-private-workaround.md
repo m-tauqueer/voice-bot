@@ -1,6 +1,6 @@
 # Engram member private memory — the leak was ours, and the fix already exists
 
-Owner: Tauqueer. Status: **research redone 8 Sep 2026, fix shipped the same day.** The workaround this file used to recommend was **not needed**. Engram already supports per-member private memory for a backend serving many end users; we were not using the credential model it is built on. Each member now authenticates with their own session token, and per-subscriber isolation plus per-member private writes are live-verified. Rollout and what shipped: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). Contract: [ENGRAM.md](ENGRAM.md) §2.3. Personas sittings: [PHASE_5_PLAN.md](PHASE_5_PLAN.md) §4.
+Owner: Tauqueer. Status: **research redone 8 Sep 2026, fix shipped the same day.** The workaround this file used to recommend was **not needed**. Engram already supports per-member private memory for a backend serving many end users; we were not using the credential model it is built on. Each member now authenticates with their own session token, and per-subscriber isolation plus per-member private writes are live-verified. Rollout and what shipped: [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md). Contract: [ENGRAM.md](../architecture/memory.md) §2.3. Personas sittings: [PHASE_5_PLAN.md](phase-5-plan.md) §4.
 
 This file is the evidence record. The operator tasks it describes in §10 are still open. Product map: [README.md](README.md).
 
@@ -23,7 +23,7 @@ That part of the original diagnosis was correct: **all bot traffic landed in the
 
 ## 2. The root cause we published, and why it was wrong
 
-The earlier version of this file, and [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md), concluded:
+The earlier version of this file, and [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md), concluded:
 
 > `chat` / `retrieve` / `converse` take no `user_id`, therefore a multi-tenant backend **cannot** aim them at a member's pool. Engram must add a subject parameter before per-member private memory is possible.
 
@@ -43,7 +43,7 @@ Engram never intended a subject parameter. It resolves the member from the **aut
 
 So the missing piece was never on Engram's side. **We create each member's Engram account with a password and then delete the password** — `worker/src/worker/engram/org_member.py:124` mints it, `:138` clears it — and then talk to every persona as the key owner. The leak is a credential-model bug in our worker, not a gap in Engram's API.
 
-The earlier file also listed "Password / `auth.login` per member" as an explicit non-goal, and [ENGRAM.md](ENGRAM.md) §2.3 asserted that a discarded member password "cannot act as a member on `chat`/`retrieve`." That assertion was never measured. It is false.
+The earlier file also listed "Password / `auth.login` per member" as an explicit non-goal, and [ENGRAM.md](../architecture/memory.md) §2.3 asserted that a discarded member password "cannot act as a member on `chat`/`retrieve`." That assertion was never measured. It is false.
 
 ---
 
@@ -129,7 +129,7 @@ Per member, per persona turn:
 
 What this buys over the withdrawn workaround: real semantic private retrieve, Engram-native compression and episodes, working `session_id` threads, `BRAIN_MODE=chat` becomes correct rather than forbidden, per-member rate-limit buckets instead of one shared one, and per-member usage metrics instead of everything billed to the admin.
 
-Rollout is in [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
+Rollout is in [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md).
 
 ---
 
@@ -162,7 +162,7 @@ Not blockers. Item 1 is an improvement request; the product ships without it.
 
 ## 7. Defects on our side this exposed
 
-These are ours, they are real today, and they are not fixed by switching credentials. Parts for each are in [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
+These are ours, they are real today, and they are not fixed by switching credentials. Parts for each are in [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md).
 
 1. **The grounding path has no tenant filter; the display path does.** `worker/src/worker/turn/service.py:417-421` feeds every retrieve hit to the answer model. `:846` filters the memory panel with `is_own_private_pool`. The path that *speaks to the member* is the unfiltered one. That asymmetry is the mechanism by which "Harish" was spoken aloud.
 2. **Leaked text was copied into our own Postgres and is re-served.** In retrieve mode `outcome.messages` *is* the retrieved memory text, and `insert_turn(..., messages=…)` (`turn/service.py:927`) plus `insert_memory_refs(...)` (`:936-941`) persist it. It comes back through session detail (`gateway/src/insights/queries.ts:580,589-595`) and through `/api/me/export` (`gateway/src/lifecycle/export.ts:97,140-144`). `wipeMemberRows` deletes by the *deleting* user's id, so member A's words inside member B's rows **survive A's delete-my-data**. An upstream leak became a first-party retention defect. Historical rows need purging, not just a forward fix.

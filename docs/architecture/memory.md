@@ -1,6 +1,6 @@
 # Engram contract (this product)
 
-How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work ([CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md), [0009](decisions/0009-private-is-extracted-caller-facts.md)): retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. A named owner command forgets one member's private pool for one persona; it does not destroy the persona.
+How Engram actually works, read from the live alpha docs on 7 Sep 2026 and re-measured against the live API on 8 Sep 2026, then mapped onto this codebase. **This file is the Engram source of truth for agents.** Do not re-infer isolation from memory. When the live site disagrees with this file, update this file and the TRD together. Product map: [README.md](../README.md). Snapshot: [progress.md](../progress.md). Current work ([caller-memory.md](../plans/caller-memory.md), [0009](../decisions/0009-private-is-extracted-caller-facts.md)): retrieve writes extracted caller facts as private text; it does not converse the sitting. Hang-up runs a second extract over the finished sitting. A named owner command forgets one member's private pool for one persona; it does not destroy the persona.
 
 - Docs: <https://engram-docs-alpha.netlify.app/>
 - Agent index: <https://engram-docs-alpha.netlify.app/llms.txt>
@@ -94,7 +94,7 @@ So a backend serving many end users needs **one credential per end user**. Engra
 
 `auth.login(email, password)` returns `{token, token_type: "bearer", expires_in: 43200, user, role, tenant}` — a 12-hour JWT whose `sub` is the member. `EngramClient(org, member_id, api_key=<token>)` is then that member for every persona route.
 
-**Our bug, for months — now fixed.** The worker held one `org_admin` key and talked as the key owner for every member, so every conversation landed in `…:8de1b2b278724e0bba19000086f8bef2`. `ensure_org_member` generated each member's Engram password and then cleared it, destroying the only credential that would have made isolation work. It now keeps that password, encrypted, and mints a session token per member. Shipped and live-verified 8 Sep 2026 — see §11 and [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
+**Our bug, for months — now fixed.** The worker held one `org_admin` key and talked as the key owner for every member, so every conversation landed in `…:8de1b2b278724e0bba19000086f8bef2`. `ensure_org_member` generated each member's Engram password and then cleared it, destroying the only credential that would have made isolation work. It now keeps that password, encrypted, and mints a session token per member. Shipped and live-verified 8 Sep 2026 — see §11 and [engram-private-rollout.md](../archive/engram-private-rollout.md).
 
 It stayed invisible because the isolation probe asserted only that the returned private tenant was **not** user B's id. Assert the positive: the private tenant a member reads must **equal** that member's Engram `user_id`.
 
@@ -106,7 +106,7 @@ Which surfaces accept a subject with the **org key** (workspace-admin only): `po
 
 **The credential is per member and lives in our database.** First talk creates the Engram account with a password we generate and keep (AES-GCM at rest); `auth.login` mints a 12h JWT, cached in memory, refreshed before expiry, never logged or persisted. Conversation routes use that token; every admin surface stays on the org key. A member we cannot credential degrades to shared-only — never member-private under the key owner.
 
-Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md). Rollout: [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md). The earlier "admin subject-ingest workaround" is **withdrawn** — it traded semantic private retrieve, compression, and threads for a limitation that does not exist.
+Evidence and the full probe transcript: [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](../archive/engram-member-private-workaround.md). Rollout: [engram-private-rollout.md](../archive/engram-private-rollout.md). The earlier "admin subject-ingest workaround" is **withdrawn** — it traded semantic private retrieve, compression, and threads for a limitation that does not exist.
 
 ### 2.4 What we never ingest where
 
@@ -293,7 +293,7 @@ Support-copilot’s **main** example uses one `ENGRAM_USER_ID` and `memory.retri
 
 The owner catalog on `/admin/persona` can create or link more than one persona, teach and ingest the selected row, set TTS on `voice_config`, publish or unpublish locally, and destroy. Destroy calls `personas.delete` (shared pool plus every member's private pool) after the owner types the handle, then clears the local subscriptions, sittings and persona row. The gateway does not guess one local row.
 
-Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+Admit no longer subscribes `ENGRAM_PERSONA_ID`. First think for a sitting ensures Engram People membership (`members.add`), persists Engram’s `user_id`, then `personas.subscribe` for that persona, and fails closed if join or subscribe fails. Chat, voice, dashboard history, and the owner conversation list pin a published persona before they load that persona’s sittings or memory. Locked product shape: [phase-5-plan.md](../archive/phase-5-plan.md).
 
 App-side isolation (session ownership, persona pin, published gate, identity check on every turn) holds and is probed. **Engram-side per-member private memory now holds too**, as of 8 Sep 2026: conversation routes run on a per-member session token (`worker/src/worker/engram/session.py`, `factory.create_member_engram`), while admin surfaces keep the org key. **Private recall on the default brain was restored 9 Sep 2026** (backend 0.5.0 made unscoped `retrieve` shared-only): two scoped reads, labelled answer lists, private memory panel. `npm run isolation` asserts pool ownership on the turn path as well as the memory panel, and that private `memory_refs` rows are labelled as the caller's list.
 

@@ -6,7 +6,7 @@
 
 ## Context
 
-The first build locked product and platform choices in [TRD.md](../TRD.md) §1 and a short list in [SHIPPED.md](../SHIPPED.md). Those choices are easy to re-open while adding Fish and UI. They are not being revisited in the current plan.
+The first build locked product and platform choices in [TRD.md](../architecture.md) §1 and a short list in [SHIPPED.md](../archive/shipped.md). Those choices are easy to re-open while adding Fish and UI. They are not being revisited in the current plan.
 
 ## Decision
 
@@ -23,8 +23,8 @@ From the TRD (summary only; the TRD is the text):
 
 From SHIPPED (D-A … D-G): waitlist access; catalog many personas; free for now; GDPR-light; Azure later; Google-only; single region.
 
-Engram isolation and per-member credentials: [ENGRAM.md](../ENGRAM.md), not this file.
+Engram isolation and per-member credentials: [ENGRAM.md](../architecture/memory.md), not this file.
 
 ## Consequences
 
-Current work may add Fish TTS and member UI **on top of** these locks. It may not replace Engram, drop barge-in, open self-serve signup, or add extra IdPs. Parked items stay in [FUTURE.md](../FUTURE.md).
+Current work may add Fish TTS and member UI **on top of** these locks. It may not replace Engram, drop barge-in, open self-serve signup, or add extra IdPs. Parked items stay in [FUTURE.md](../archive/future.md).

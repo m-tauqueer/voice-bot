@@ -20,7 +20,7 @@ Members hear Deepgram Aura-2 today via the Voice Agent API. The owner wants some
 - **Studio vs API credits** are different. In-app speech uses the Wallet / API key. Model id from config.
 - **UI after speak works:** Home/picker as cards, then empty/mic/errors, mobile, a11y, accounts. Extra OAuth and member voice prefs stay parked.
 
-Build order: [PHASE_6_PLAN.md](../PHASE_6_PLAN.md). Current how: [TRD.md](../TRD.md) §1.4 and §2.4.
+Build order: [PHASE_6_PLAN.md](../archive/phase-6-plan.md). Current how: [TRD.md](../architecture.md) §1.4 and §2.4.
 
 ## Consequences
 

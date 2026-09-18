@@ -14,7 +14,7 @@ Tauqueer names **one part** from the current plan. That part’s **subparts run 
 
 On this loop he does not also have to say “commit.” Work he names **outside** this loop still waits for an explicit commit instruction.
 
-Full text: [AGENTS.md](../../AGENTS.md) §3–4 and [WORKFLOW.md](../WORKFLOW.md).
+Full text: [AGENTS.md](../../AGENTS.md) §3–4 and [WORKFLOW.md](../archive/workflow.md).
 
 ## Consequences
 

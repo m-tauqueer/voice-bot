@@ -1,8 +1,8 @@
 # Later work (parked)
 
-Do **not** start anything in this file until Tauqueer names it. Map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Fish/UI (paused): [PHASE_6_PLAN.md](PHASE_6_PLAN.md). History: [SHIPPED.md](SHIPPED.md). Personas (built): [PHASE_5_PLAN.md](PHASE_5_PLAN.md).
+Do **not** start anything in this file until Tauqueer names it. Map: [README.md](README.md). Snapshot: [CONTEXT.md](../progress.md). Current work is [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md). Fish/UI (paused): [PHASE_6_PLAN.md](phase-6-plan.md). History: [SHIPPED.md](shipped.md). Personas (built): [PHASE_5_PLAN.md](phase-5-plan.md).
 
-Onboarding, cloned Fish voices, Home/picker UI, mobile, accessibility, and accounts moved to [PHASE_6_PLAN.md](PHASE_6_PLAN.md).
+Onboarding, cloned Fish voices, Home/picker UI, mobile, accessibility, and accounts moved to [PHASE_6_PLAN.md](phase-6-plan.md).
 
 ---
 

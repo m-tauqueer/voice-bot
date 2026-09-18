@@ -1,6 +1,6 @@
 # Phase 6 — Cloned voices, then member UI
 
-**Paused.** Current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Resume only when Tauqueer names a part from **this** file.
+**Paused.** Current work is [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md). Resume only when Tauqueer names a part from **this** file.
 
 Owner: Tauqueer. **Do only the part he names.** Never start the next part yourself.
 
@@ -12,15 +12,15 @@ A Fish API key is not required to write tests. Live Fish sittings start when `FI
 
 ## Docs map
 
-Canonical map (roles, read order, what to update): [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Why: [decisions/README.md](decisions/README.md). How we write docs and run a sitting: [WORKFLOW.md](WORKFLOW.md).
+Canonical map (roles, read order, what to update): [README.md](README.md). Snapshot: [CONTEXT.md](../progress.md). Why: [decisions/README.md](../decisions/README.md). How we write docs and run a sitting: [WORKFLOW.md](workflow.md).
 
-This file is the **named parts** for cloned Fish voices and member UI. It is **paused**; current work is [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Resume only when Tauqueer names a part from this file.
+This file is the **named parts** for cloned Fish voices and member UI. It is **paused**; current work is [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md). Resume only when Tauqueer names a part from this file.
 
 ---
 
 ## Working loop
 
-Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauqueer names **one part** from this file. Do only that part. Never jump ahead.
+Full text: [WORKFLOW.md](workflow.md) and [AGENTS.md](../../AGENTS.md) §3. Tauqueer names **one part** from this file. Do only that part. Never jump ahead.
 
 1. Do its **subparts in order**. Nothing from later parts.
 2. After **each subpart**: run the automated checks that cover the change (`npm run typecheck`, lint, `npm test`, worker tests; `isolation` / `security` / `failures` when the part says so). Then a **logic check** of the diff: config not hardcoding; no keyword/heuristic language understanding; isolation and fail-closed; copy from config; no tenant strings built by hand; audio never sent to Engram.
@@ -46,11 +46,11 @@ Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauquee
 
 ### Architecture
 
-11. **Voice Agent cannot speak a Fish `reference_id`.** Aura sittings keep the current Voice Agent socket. Fish sittings use the split pipeline in [TRD](TRD.md) §2.4: Deepgram **listen** streaming WSS (STT + endpointing) + Fish TTS WebSocket + our barge-in. The worker brain is unchanged.
+11. **Voice Agent cannot speak a Fish `reference_id`.** Aura sittings keep the current Voice Agent socket. Fish sittings use the split pipeline in [TRD](../architecture.md) §2.4: Deepgram **listen** streaming WSS (STT + endpointing) + Fish TTS WebSocket + our barge-in. The worker brain is unchanged.
 12. **Fish live TTS:** `wss://api.fish.audio/v1/tts/live` (MessagePack; `StartEvent` then `TextEvent` / `FlushEvent`). Format PCM at the same sample rate the browser already plays (`VITE_DEEPGRAM_AUDIO_OUTPUT_SAMPLE_RATE`, 24000). Latency from config (`FISH_TTS_LATENCY`, agent default `balanced`). Contract: <https://docs.fish.audio/api-reference/endpoint/websocket/tts-live.md>.
 13. **Clone:** `POST /model` (`train_mode=fast`, `visibility=private`). Contract: <https://docs.fish.audio/developer-guide/sdk-guide/python/voice-cloning.md>. Official SDKs: `fishaudio` (worker) and `fish-audio` (gateway). Secrets stay server-side.
 14. **Gateway owns speech transport** (Deepgram and Fish). Worker owns clone upload and the brain. Same root `.env`.
-15. **Component library.** Copy only the file about to be used from `Desktop/component-library` into `frontend/src`. Do not copy the Metacognition memory KPI / heatmap / `FeaturedMemory` gallery. Notes: [COMPONENT_LIBRARY.md](../frontend/COMPONENT_LIBRARY.md).
+15. **Component library.** Copy only the file about to be used from `Desktop/component-library` into `frontend/src`. Do not copy the Metacognition memory KPI / heatmap / `FeaturedMemory` gallery. Notes: [COMPONENT_LIBRARY.md](../../frontend/COMPONENT_LIBRARY.md).
 
 ```
 member picks a published persona
@@ -86,12 +86,12 @@ Conversation is never promoted to shared. Clone audio is never sent to Engram.
 - Goal: the repo has a durable docs workflow (map, context, decisions, instructions) so later parts can start one at a time. No product code.
 - Subparts:
   - **0.a** This file: locks, ingest/TTS map, working loop (subpart → tests → logic → ask about manual → commit → stop), every later part with subparts.
-  - **0.b** [README.md](README.md) (canonical map, Diátaxis roles, read order), [CONTEXT.md](CONTEXT.md) (snapshot), [WORKFLOW.md](WORKFLOW.md) (how we update docs and run a sitting).
-  - **0.c** [decisions/](decisions/README.md): template plus Accepted records for docs-as-code, hosted Fish per persona, the working loop, and early product locks.
-  - **0.d** Index pointers: [PHASE_PLAN.md](PHASE_PLAN.md), [FUTURE.md](FUTURE.md), [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md), root README.
-  - **0.e** [AGENTS.md](../AGENTS.md): current work is this file; working loop matches WORKFLOW; read order points at the map.
-  - **0.f** Intent only: [TRD.md](TRD.md) §1.4 TTS is per-persona Deepgram or Fish; [PRD.md](PRD.md) cloning is current, not parked; [SHIPPED.md](SHIPPED.md) does not claim Fish shipped.
-  - **0.g** [COMPONENT_LIBRARY.md](../frontend/COMPONENT_LIBRARY.md): primitives the card-grid part may copy.
+  - **0.b** [README.md](README.md) (canonical map, Diátaxis roles, read order), [CONTEXT.md](../progress.md) (snapshot), [WORKFLOW.md](workflow.md) (how we update docs and run a sitting).
+  - **0.c** [decisions/](../decisions/README.md): template plus Accepted records for docs-as-code, hosted Fish per persona, the working loop, and early product locks.
+  - **0.d** Index pointers: [PHASE_PLAN.md](../progress.md), [FUTURE.md](future.md), [PRODUCTION_PLAN.md](../ops/deploy.md), root README.
+  - **0.e** [AGENTS.md](../../AGENTS.md): current work is this file; working loop matches WORKFLOW; read order points at the map.
+  - **0.f** Intent only: [TRD.md](../architecture.md) §1.4 TTS is per-persona Deepgram or Fish; [PRD.md](prd.md) cloning is current, not parked; [SHIPPED.md](shipped.md) does not claim Fish shipped.
+  - **0.g** [COMPONENT_LIBRARY.md](../../frontend/COMPONENT_LIBRARY.md): primitives the card-grid part may copy.
   - **0.h** Logic pass: docs agree with Engram isolation, no tenant hand-builds, no keyword TTS routing, no GPU/self-host, no duplicate locks (ADR vs TRD vs this file).
 - Tests: none (markdown). Logic: the read in 0.h.
 - Manual: none. After this part, stop and wait for Tauqueer to name Part 1.
@@ -173,8 +173,8 @@ Conversation is never promoted to shared. Clone audio is never sent to Engram.
 
 ## 4. Done when (the phase)
 
-A member picks a cloned-voice persona and hears that voice, with barge-in, while other personas still use Aura. Home shows those personas as cards. Empty/mic/errors, mobile, keyboard access, and a display name all work. Isolation and fail-closed still hold. Then stop. Parked product and Plan X stay in [FUTURE.md](FUTURE.md).
+A member picks a cloned-voice persona and hears that voice, with barge-in, while other personas still use Aura. Home shows those personas as cards. Empty/mic/errors, mobile, keyboard access, and a display name all work. Isolation and fail-closed still hold. Then stop. Parked product and Plan X stay in [FUTURE.md](future.md).
 
 ### Out of this phase
 
-Self-host / GPU, Fish Agents widget replacing our brain, Fish STT, member-created clones, multilingual, Plan X / Azure deploy, Engram private-rollout (name a part from [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md)).
+Self-host / GPU, Fish Agents widget replacing our brain, Fish STT, member-created clones, multilingual, Plan X / Azure deploy, Engram private-rollout (name a part from [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md)).

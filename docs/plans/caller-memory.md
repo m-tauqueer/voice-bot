@@ -4,13 +4,13 @@ Current product work. Owner: Tauqueer. **Do only the phase and part he names.** 
 
 Goal: a sitting with Caleb or Sahil (or any persona) must not store persona-about-persona talk as the member’s private memory. This sitting’s conversation stays in Postgres. Engram private only receives **LLM-filtered facts about the caller**. Shared stays owner teach / imported bio.
 
-Cloned Fish voices and member UI stay in [PHASE_6_PLAN.md](PHASE_6_PLAN.md) — paused until he names a part from that file.
+Cloned Fish voices and member UI stay in [phase-6-plan.md](../archive/phase-6-plan.md) — paused until he names a part from that file.
 
 ---
 
 ## Docs map
 
-Canonical map: [README.md](README.md). Snapshot: [CONTEXT.md](CONTEXT.md). Why: [decisions/README.md](decisions/README.md), especially [0009](decisions/0009-private-is-extracted-caller-facts.md). How we write docs and run a sitting: [WORKFLOW.md](WORKFLOW.md). Memory contract (live code until this plan ships): [ENGRAM.md](ENGRAM.md).
+Canonical map: [README.md](../README.md). Snapshot: [progress.md](../progress.md). Why: [decisions/README.md](../decisions/README.md), especially [0009](../decisions/0009-private-is-extracted-caller-facts.md). How we write docs and run a sitting: [README.md](../archive/workflow.md). Memory contract (live code until this plan ships): [memory.md](../architecture/memory.md).
 
 This file is the **named phases and parts** for this work only. Do not put implementation in SHIPPED. Do not put parked Fish/UI work here. Do not mention phase/part numbers in commits, comments, or PR titles.
 
@@ -18,7 +18,7 @@ This file is the **named phases and parts** for this work only. Do not put imple
 
 ## Working loop
 
-Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauqueer names **one phase and one part** from this file. Do only that part. Never jump ahead.
+Full text: [README.md](../archive/workflow.md) and [AGENTS.md](../../AGENTS.md) §3. Tauqueer names **one phase and one part** from this file. Do only that part. Never jump ahead.
 
 1. Do its **subparts in order**. Nothing from later parts.
 2. After **each subpart**: run the automated checks that cover the change (`npm run typecheck`, lint, `npm test`, worker tests; `isolation` / `security` / `failures` when the part says so). Then a **logic check** of the diff: config not hardcoding; **no keyword/heuristic language understanding** (the filter is a model output or it does not happen); isolation and fail-closed; copy from config; no tenant strings built by hand; audio never sent to Engram; conversation never promoted to shared.
@@ -30,7 +30,7 @@ Full text: [WORKFLOW.md](WORKFLOW.md) and [AGENTS.md](../AGENTS.md) §3. Tauquee
 ## 1. Locked with Tauqueer (17 Sep 2026)
 
 1. **Private is caller memory, not a transcript dump.** Engram `{org}:{persona}:{member}` holds durable facts about **that member** with that persona. The model decides what counts — plans, preferences, people, how they asked to be remembered, corrections, anything that should still be true next week — not a short coded list (name / job / city). Greetings, questions to the persona, and persona bio are dropped.
-2. **The filter is an LLM.** No keyword matching, no “if it contains working/metacognition”, no intent if/else. Same rule as [0006](decisions/0006-memory-scope-is-a-model-decision.md).
+2. **The filter is an LLM.** No keyword matching, no “if it contains working/metacognition”, no intent if/else. Same rule as [0006](../decisions/0006-memory-scope-is-a-model-decision.md).
 3. **This sitting is Postgres.** `sessions` + `turns` (already speaker-labelled) is the conversation. The answerer **may use** that history as this-call context. Raise the history window (`reframe_history_turns`; target default **24**, from config).
 4. **Two filter passes, both off the reply path, both fail closed on that pass.**
    - After every turn: this turn + the sitting window. That is the live path so we do not miss everything.
@@ -75,8 +75,8 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
 - Goal: agents start here. Fish/UI is paused, not cancelled. No product code.
 - Subparts:
   - **0.a** This file: locks, hang-up trigger, phases with parts.
-  - **0.b** Current-work pointers: [AGENTS.md](../AGENTS.md), [README.md](README.md), [CONTEXT.md](CONTEXT.md), [WORKFLOW.md](WORKFLOW.md), [PHASE_PLAN.md](PHASE_PLAN.md), [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md), [SHIPPED.md](SHIPPED.md), [PRD.md](PRD.md), [TRD.md](TRD.md) companion line, [FUTURE.md](FUTURE.md), [PHASE_5_PLAN.md](PHASE_5_PLAN.md), [PHASE_6_PLAN.md](PHASE_6_PLAN.md) paused banner, [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md).
-  - **0.c** [decisions/0009-private-is-extracted-caller-facts.md](decisions/0009-private-is-extracted-caller-facts.md) and [0010](decisions/0010-chat-ends-with-hangup.md).
+  - **0.b** Current-work pointers: [AGENTS.md](../../AGENTS.md), [README.md](../README.md), [progress.md](../progress.md), [README.md](../archive/workflow.md), [progress.md](../progress.md), [ops/deploy.md](../ops/deploy.md), [shipped.md](../archive/shipped.md), [prd.md](../archive/prd.md), [architecture.md](../architecture.md) companion line, [FUTURE.md](../archive/future.md), [phase-5-plan.md](../archive/phase-5-plan.md), [phase-6-plan.md](../archive/phase-6-plan.md) paused banner, [engram-private-rollout.md](../archive/engram-private-rollout.md).
+  - **0.c** [decisions/0009-private-is-extracted-caller-facts.md](../decisions/0009-private-is-extracted-caller-facts.md) and [0010](../decisions/0010-chat-ends-with-hangup.md).
 - Tests: none (markdown). Logic: one current-work file; PHASE_6 still findable; no duplicate locks (ADR vs this file vs TRD-as-if-shipped).
 - Manual: none.
 - Commit: docs only.
@@ -121,7 +121,7 @@ Isolation does not change: private is still `{org}:{persona}:{member}`. What we 
   - **4.a** Named purge of that member’s private pool for that persona (`user_memories` / `forget_user_memory` or equivalent already used by delete-my-data). Do not `personas.delete` (that destroys shared + every member).
   - **4.b** Document the operator steps Tauqueer runs (which member, which persona). No automatic wipe of every private pool.
 - Manual: he confirms the named pool is empty, then a clean sitting.
-- Done 17 Sep 2026: named `list-private` / `forget-private` on `npm run admin`. Same `user_memories` / `forget_user_memory` loop as delete-my-data. Does not `personas.delete`, does not unsubscribe, does not walk every member. Operator steps: [ENGRAM.md](ENGRAM.md) §12.
+- Done 17 Sep 2026: named `list-private` / `forget-private` on `npm run admin`. Same `user_memories` / `forget_user_memory` loop as delete-my-data. Does not `personas.delete`, does not unsubscribe, does not walk every member. Operator steps: [memory.md](../architecture/memory.md) §12.
 
 ### Phase 5 — Live sittings
 
@@ -140,4 +140,4 @@ A member can talk to a persona about that persona’s work without those lines b
 
 ### Out of this plan
 
-Forget/retract, `BRAIN_MODE=chat`, turning the scope router on, Fish/UI ([PHASE_6_PLAN.md](PHASE_6_PLAN.md)), Plan X / Azure leftovers, per-member Engram credential operator tasks ([ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md)).
+Forget/retract, `BRAIN_MODE=chat`, turning the scope router on, Fish/UI ([phase-6-plan.md](../archive/phase-6-plan.md)), Plan X / Azure leftovers, per-member Engram credential operator tasks ([engram-private-rollout.md](../archive/engram-private-rollout.md)).

@@ -2,7 +2,7 @@
 
 Named plan. Owner: Tauqueer. **Do only the part he names.** Never start the next part yourself.
 
-Companion to [ENGRAM.md](ENGRAM.md) (the memory contract) and [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) (how each member came to authenticate as themselves). That work made the *pools* correct. This work makes the *reads* correct: a question about the member must not be answered out of the persona's shared pool, and a question about the persona must not be answered out of the member's private pool.
+Companion to [ENGRAM.md](../architecture/memory.md) (the memory contract) and [ENGRAM_PRIVATE_ROLLOUT.md](engram-private-rollout.md) (how each member came to authenticate as themselves). That work made the *pools* correct. This work makes the *reads* correct: a question about the member must not be answered out of the persona's shared pool, and a question about the persona must not be answered out of the member's private pool.
 
 Measured against the live alpha on 9 Sep 2026. Read-only probes; no writes.
 
@@ -73,7 +73,7 @@ Never rebuild the single flat `memories` array. The turn path issues **two scope
 
 ### The scope decision is a model output, never a rule
 
-"Is this about the member or about the persona?" is language understanding. AGENTS.md §7 and [TRD](TRD.md) §1.5 forbid keyword matching and intent if/else for that. It comes from a model or it does not happen. No `if "you" in text`, no pronoun tables, no question-word lists — not even as a "temporary" heuristic.
+"Is this about the member or about the persona?" is language understanding. AGENTS.md §7 and [TRD](../architecture.md) §1.5 forbid keyword matching and intent if/else for that. It comes from a model or it does not happen. No `if "you" in text`, no pronoun tables, no question-word lists — not even as a "temporary" heuristic.
 
 ### The router runs beside retrieval, never in front of it
 
@@ -112,8 +112,8 @@ Goal: a member's own history reaches the brain again, and the answer model can t
 ### Part: Pin the contract and correct the memory doc
 
 - **1.a** Add a read-only live check that asserts the four rows of the measured table above (scope echo, pool count, tenant segment counts, and the two 422s). It runs against `PROBE_PERSONA_ID`, never a member-facing persona, and makes **no writes**.
-- **1.b** Correct [ENGRAM.md](ENGRAM.md) §2.2 — it states `retrieve` "fans out to **both** … merges by rerank" — which is the pre-0.5.0 contract and is now wrong. Record the opt-in change, the membership floor, the alias endpoints, and that SDK 0.5.0 is unpublished.
-- **1.c** Correct [ENGRAM.md](ENGRAM.md) §7's call matrix row for `retrieve`.
+- **1.b** Correct [ENGRAM.md](../architecture/memory.md) §2.2 — it states `retrieve` "fans out to **both** … merges by rerank" — which is the pre-0.5.0 contract and is now wrong. Record the opt-in change, the membership floor, the alias endpoints, and that SDK 0.5.0 is unpublished.
+- **1.c** Correct [ENGRAM.md](../architecture/memory.md) §7's call matrix row for `retrieve`.
 - Tests: the new probe skips cleanly without keys. Logic: no writes, no member-facing persona, no tenant built by hand.
 - Manual: none (probe + markdown).
 
@@ -163,7 +163,7 @@ Goal: a member's own history reaches the brain again, and the answer model can t
 ### Part: Phase 1 sitting and close-out
 
 - Live call on `/voice` and a typed sitting on `/chat`, both personas, both members.
-- Update [CONTEXT.md](CONTEXT.md) and [SHIPPED.md](SHIPPED.md) with what was measured — including the latency delta from the second retrieve, which should be ~0 because the calls are parallel.
+- Update [CONTEXT.md](../progress.md) and [SHIPPED.md](shipped.md) with what was measured — including the latency delta from the second retrieve, which should be ~0 because the calls are parallel.
 
 ### Phase 1 definition of done
 
@@ -197,11 +197,11 @@ Goal: a clearly self-directed question never has the persona's bio in front of t
 
 - Live call covering all three cases plus a deliberately ambiguous one.
 - Measure first-word p50/p90 against budget (`npm run budgets`) and confirm the classifier did not push it out.
-- Update [CONTEXT.md](CONTEXT.md), [TRD](TRD.md) §1.2/§1.5, and an ADR for scope routing if it ships.
+- Update [CONTEXT.md](../progress.md), [TRD](../architecture.md) §1.2/§1.5, and an ADR for scope routing if it ships.
 
 ### Phase 2 definition of done
 
-The scope decision is a model output, runs concurrently, fails open, only narrows, and the first-word budget is unchanged. Or: it was tried, measured, and dropped — recorded in [FUTURE.md](FUTURE.md) with the numbers.
+The scope decision is a model output, runs concurrently, fails open, only narrows, and the first-word budget is unchanged. Or: it was tried, measured, and dropped — recorded in [FUTURE.md](future.md) with the numbers.
 
 ---
 
@@ -214,7 +214,7 @@ The scope decision is a model output, runs concurrently, fails open, only narrow
 - No tenant string is ever built by hand.
 - No keyword or intent heuristic for language understanding, in either phase, including fallbacks.
 - Write-back (`converse`) behaviour is unchanged — this work is entirely about reads.
-- Degraded members (no credential) keep working on shared alone. Three accounts are permanently degraded and cannot be fixed ([ENGRAM.md](ENGRAM.md) §2.3).
+- Degraded members (no credential) keep working on shared alone. Three accounts are permanently degraded and cannot be fixed ([ENGRAM.md](../architecture/memory.md) §2.3).
 
 ---
 

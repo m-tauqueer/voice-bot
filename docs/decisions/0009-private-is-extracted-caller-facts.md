@@ -17,13 +17,13 @@ Keyword routing is forbidden. Conversation must never be promoted to shared.
 - This sitting’s conversation stays in Postgres. The answerer may use speaker-labelled sitting history as this-call context. History length is config (raised from the old default of 8).
 - Engram private receives only LLM-extracted durable facts about the caller, written as private text (“The caller …”), not raw `converse` of the transcript.
 - Two model passes, both off the reply path, both fail closed on that pass: per-turn (windowed) and a closing pass over the full sitting. Empty facts is success. Never fall back to dumping the transcript. Shared is unchanged.
-- `/voice` runs the closing pass when the call already sets `ended_at`. How `/chat` runs that pass is named in [CALLER_MEMORY_PLAN.md](../CALLER_MEMORY_PLAN.md) §2 — not in this record until Tauqueer picks it.
+- `/voice` runs the closing pass when the call already sets `ended_at`. How `/chat` runs that pass is named in [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md) §2 — not in this record until Tauqueer picks it.
 
 ## Consequences
 
 Same-call “you just told me” does not wait on Engram. Next sitting recall depends on the extractor, not on a chat log in the private tenant. First-word latency must not gain an Engram write. Existing private rows from converse stay dirty until a named purge. `BRAIN_MODE=chat` would still write both sides inside Engram and stays off. Add-only: a later unsay is not forgotten in v1.
 
-Build order: [CALLER_MEMORY_PLAN.md](../CALLER_MEMORY_PLAN.md). Code still converse-writes both sides until that plan ships.
+Build order: [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md). Code still converse-writes both sides until that plan ships.
 
 Notes after 2026-09-17: typed-chat hang-up locked in [0010](0010-chat-ends-with-hangup.md). Retrieve path no longer converse-writes the sitting; Postgres history is this-call context; per-turn extractor writes caller facts as private text on the member JWT. Hang-up (voice `ended_at`, `/chat` End chat) runs the closing pass off the client path. Owner `list-private` / `forget-private` forgets one named member's private pool for one persona without `personas.delete`.
 

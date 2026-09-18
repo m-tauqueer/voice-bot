@@ -1,57 +1,84 @@
-# Docs map
+# Documentation
 
-Canonical index for this repository. Owner: Tauqueer.
+Canonical index. Owner: Tauqueer.
 
-Agents: read [AGENTS.md](../AGENTS.md) (how to work), then [CONTEXT.md](CONTEXT.md) (where we are), then the file that owns the work you were named. Humans can start here.
+Agents: read [`../AGENTS.md`](../AGENTS.md) (how to work), then [`progress.md`](progress.md) (where
+we are), then the file that owns the work you were named. Humans can start here.
 
-When you need **behaviour**, read the code. When you change **intent**, update the files that own that intent (see [WORKFLOW.md](WORKFLOW.md)).
-
----
-
-## Read order (every sitting)
-
-1. [AGENTS.md](../AGENTS.md) — owner, working loop, commit rules, how to start.
-2. [CONTEXT.md](CONTEXT.md) — snapshot: what exists, what is current, what is parked.
-3. [decisions/README.md](decisions/README.md) — why we chose what we chose. Do not re-litigate Accepted records.
-4. The **named plan** (today: [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md)).
-5. [PRD.md](PRD.md) / [TRD.md](TRD.md) / [ENGRAM.md](ENGRAM.md) when the work touches product, architecture, or memory.
+When you need **behaviour**, read the code. When you change **intent**, update the file that owns it.
 
 ---
 
-## What each file is for
+## Active
 
-Roles follow [Diátaxis](https://diataxis.fr): tutorials teach, how-to guides get a job done, reference is lookup, explanation is why. Decision records are a fifth kind — they are not rewritten when the world changes; a new record supersedes them.
+1. [`../AGENTS.md`](../AGENTS.md) — owner, working loop, commit rules, commands
+2. [`progress.md`](progress.md) — live status: what works, what is in flight, what is parked
+3. [`plans/voice-audio.md`](plans/voice-audio.md) — **current work**: the echo/routing trade and
+   per-persona voice configuration
+4. [`plans/caller-memory.md`](plans/caller-memory.md) — caller facts in Engram private, sitting
+   transcript in Postgres
+5. [`decisions/`](decisions/README.md) — why we chose what we chose; do not re-litigate Accepted
+   records
 
-| File | Role | Update it when |
-| --- | --- | --- |
-| [AGENTS.md](../AGENTS.md) | How-to (agents): loop, commits, commands | The loop or current-work pointer changes |
-| [CONTEXT.md](CONTEXT.md) | Explanation: current snapshot | Product reality or current-work file changes |
-| [WORKFLOW.md](WORKFLOW.md) | How-to: how we write and update docs | The docs process itself changes |
-| [decisions/](decisions/README.md) | Decision log (one choice per file) | Tauqueer locks or replaces a decision |
-| [PRD.md](PRD.md) | Explanation: what and for whom | Product scope or success criteria change |
-| [TRD.md](TRD.md) | Reference: how it is built now | Transport, TTS, isolation, or data model change |
-| [ENGRAM.md](ENGRAM.md) | Reference: memory contract | Isolation or Engram API mapping changes |
-| [ENGRAM_MEMBER_PRIVATE_WORKAROUND.md](ENGRAM_MEMBER_PRIVATE_WORKAROUND.md) | Explanation: leak research | That incident’s facts change |
-| [ENGRAM_MEMBER_AUTH_REPORT.md](ENGRAM_MEMBER_AUTH_REPORT.md) | Explanation: auth measurements | Re-measured |
-| [ENGRAM_PRIVATE_ROLLOUT.md](ENGRAM_PRIVATE_ROLLOUT.md) | How-to: named plan | Tauqueer names a part from that file |
-| [ENGRAM_SCOPE_ISOLATION.md](ENGRAM_SCOPE_ISOLATION.md) | How-to: named plan | Tauqueer names a part from that file |
-| [PHASE_PLAN.md](PHASE_PLAN.md) | Reference: current vs shipped vs later | The current-work file changes |
-| [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md) | How-to: **current named parts** | A part is added, split, or locked |
-| [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | How-to leftover: cloned voices, then member UI (paused) | Tauqueer names a part from that file |
-| [PHASE_5_PLAN.md](PHASE_5_PLAN.md) | How-to leftover: persona sittings in §4 | A leftover sitting passes or is dropped |
-| [SHIPPED.md](SHIPPED.md) | Explanation: history. Not a build plan | A slice is live and measured |
-| [FUTURE.md](FUTURE.md) | Reference: parked product and Plan X | Something is pulled forward or parked |
-| [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) | Pointers only | Index files move |
-| [COMPONENT_LIBRARY.md](../frontend/COMPONENT_LIBRARY.md) | Reference: which UI we may copy | A screen is about to copy a new file |
+## Reference
 
-Do not put implementation in SHIPPED. Do not put parked work in the current plan. Do not mention phase/part numbers in commits, comments, or PR titles — those labels live only in the plan files Tauqueer uses to name work.
+| File | Role |
+| --- | --- |
+| [`architecture.md`](architecture.md) | How the system is built: transport, brain routing, data model |
+| [`architecture/voice-audio.md`](architecture/voice-audio.md) | The browser audio path: capture, playback, echo, barge-in |
+| [`architecture/memory.md`](architecture/memory.md) | Engram contract: pools, tenants, isolation |
+| [`ops/deploy.md`](ops/deploy.md) | Azure deploy and the production shape |
+| [`tests/README.md`](tests/README.md) | Every check and probe, and what each one proves |
+| [`../frontend/COMPONENT_LIBRARY.md`](../frontend/COMPONENT_LIBRARY.md) | Which UI primitives may be copied |
 
-Existing files stay where they are. We do not split them into `tutorials/` / `how-to/` / `reference/` / `explanation/` folders; the table above is the map.
+## Reviews
+
+[`reviews/`](reviews/) — audits and findings, dated. A review is a record of what was true on its
+date. It is **not** rewritten when the code is fixed; the plan that acts on it says so instead.
+
+- [`reviews/voice-audio-2026-09-18.md`](reviews/voice-audio-2026-09-18.md) — browser audio path and
+  voice-provider configuration
+
+## Archive
+
+[`archive/`](archive/README.md) — superseded plans, completed phases, incident reports, measured
+history. Ignore unless debugging history or a current file points at a parked one.
 
 ---
 
-## Working loop (product)
+## Which file owns a change
 
-Full text: [AGENTS.md](../AGENTS.md) §3 and [CALLER_MEMORY_PLAN.md](CALLER_MEMORY_PLAN.md). Short form:
+| You changed… | Update |
+| --- | --- |
+| How agents work (loop, commits, current-work pointer) | [`../AGENTS.md`](../AGENTS.md) |
+| Where we are: shipped vs current vs parked | [`progress.md`](progress.md) |
+| How the system is built | [`architecture.md`](architecture.md) |
+| The browser audio path | [`architecture/voice-audio.md`](architecture/voice-audio.md) |
+| Engram pools, tenants, subscribe | [`architecture/memory.md`](architecture/memory.md) |
+| A locked choice, new or replacement | A new file in [`decisions/`](decisions/README.md) |
+| Named build steps | The current plan file only |
+| Deploy or production shape | [`ops/deploy.md`](ops/deploy.md) |
+| A check or probe was added | [`tests/README.md`](tests/README.md) |
 
-one named part → its subparts in order → tests and logic check after **each** subpart → after the part, tell Tauqueer if a manual sitting is needed → one short commit (no phase/part numbers, no AI attribution) → stop until he names the next part.
+Do not copy the same lock into three narratives. A **decision** lives in an ADR. The **current how**
+lives in architecture. **Build order** lives in the named plan. `progress.md` points; it does not
+duplicate.
+
+---
+
+## Docs process
+
+Docs-only work follows the same loop as code ([`../AGENTS.md`](../AGENTS.md) §3). Markdown has no
+test suite; the logic check is that the files agree with each other and with the locks in
+[`decisions/`](decisions/README.md).
+
+**Decision records.** One decision per file, numbered monotonically. Required sections: Context,
+Decision, Consequences. Status becomes `Accepted` when Tauqueer locks it. Do not silently edit an
+Accepted body to match a later choice — write a **new** record that supersedes it and mark the old
+one `Superseded`. Date stamps and a short "Notes after" line on the original are fine; rewriting the
+Decision is not. ADR when a future agent might reopen the choice (transport, isolation, fail-closed,
+the working loop, docs structure) — not for every code change.
+
+**What we do not do.** Phase or part numbers in commit messages, code comments, or PR titles — those
+labels live only in the plan files. No AI attribution in git. No starting parked work because it
+looks next. No treating the archive as a backlog.

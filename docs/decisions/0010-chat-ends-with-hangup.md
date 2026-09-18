@@ -19,7 +19,7 @@ Tauqueer named an End chat / hang-up control (not “starting a new chat implies
 
 Typed chat has a real end, like a call. A sitting left open for days is still one sitting until hang-up. Members who never hang up skip the safety-net pass; they do not skip per-turn facts.
 
-Build order: [CALLER_MEMORY_PLAN.md](../CALLER_MEMORY_PLAN.md) Phase 3.
+Build order: [CALLER_MEMORY_PLAN.md](../plans/caller-memory.md) Phase 3.
 
 Notes after 2026-09-17: `/chat` End chat (`VITE_CHAT_END_LABEL`) sets `ended_at` and fires the same closing pass as End call / socket close. Next send mints a new sitting. Leaving the tab still skips the closing pass.
 

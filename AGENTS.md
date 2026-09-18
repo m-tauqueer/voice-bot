@@ -32,11 +32,11 @@ Do not infer architecture from this summary — read the TRD.
 
 ## 3. Working loop (follow exactly)
 
-1. Tauqueer names a **phase** and a **part** from [`docs/CALLER_MEMORY_PLAN.md`](docs/CALLER_MEMORY_PLAN.md) (Fish/UI leftovers in [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md), sittings left in [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md), or a part from [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) / [`docs/FUTURE.md`](docs/FUTURE.md) only when he names those files).
+1. Tauqueer names a **phase** and a **part** from a file under [`docs/plans/`](docs/plans/) — today [`docs/plans/voice-audio.md`](docs/plans/voice-audio.md) or [`docs/plans/caller-memory.md`](docs/plans/caller-memory.md). Anything in [`docs/archive/`](docs/archive/README.md) is parked and starts only when he names it.
 2. Complete **only that part** — its subparts in order, nothing from later parts.
 3. After **each subpart**: run the automated checks that cover the change, then a logic check of the diff (config, no keyword understanding, isolation/fail-closed).
 4. After the last subpart: **tell Tauqueer** whether a manual sitting is needed (live call, real Fish id, browser). If the part lists a Manual test, walk him through it and wait until it passes. If it lists none, say so. If UI changed, verify in the browser. Do not mark the part done until that is settled.
-5. **Then commit that part** (see §4) and **stop** until Tauqueer names the next part. Do not wait for a second “please commit” on this working loop. Do not start the next part in the same sitting. Docs process: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+5. **Then commit that part** (see §4) and **stop** until Tauqueer names the next part. Do not wait for a second “please commit” on this working loop. Do not start the next part in the same sitting. Docs process: [`docs/README.md`](docs/README.md).
 
 ---
 
@@ -52,13 +52,13 @@ Do not infer architecture from this summary — read the TRD.
 
 ## 5. Documents — read in this order
 
-Full map and Diátaxis roles: [`docs/README.md`](docs/README.md). How we update docs: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+Full map and how we update docs: [`docs/README.md`](docs/README.md).
 
-1. [`docs/CONTEXT.md`](docs/CONTEXT.md) — Where we are (shipped vs current vs parked).
+1. [`docs/progress.md`](docs/progress.md) — Where we are (shipped vs current vs parked).
 2. [`docs/decisions/README.md`](docs/decisions/README.md) — Why. Do not re-litigate Accepted records.
-3. [`docs/CALLER_MEMORY_PLAN.md`](docs/CALLER_MEMORY_PLAN.md) — **Current work** (caller facts in private, sitting transcript in Postgres). Tauqueer names a phase and a part from this file. Fish/UI: [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md) (paused).
-4. [`docs/PRD.md`](docs/PRD.md) / [`docs/TRD.md`](docs/TRD.md) / [`docs/ENGRAM.md`](docs/ENGRAM.md) — what, how, memory contract. Isolation extras: [`docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md`](docs/ENGRAM_MEMBER_PRIVATE_WORKAROUND.md); named rollout: [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md).
-5. [`docs/PHASE_PLAN.md`](docs/PHASE_PLAN.md) — current vs shipped vs later. Personas leftover sittings: [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4. History: [`docs/SHIPPED.md`](docs/SHIPPED.md). Parked / Plan X: [`docs/FUTURE.md`](docs/FUTURE.md) — do not start until named.
+3. [`docs/plans/`](docs/plans/) — **Current work.** Tauqueer names a phase and a part from one of these files: [`voice-audio.md`](docs/plans/voice-audio.md) (the echo/routing trade and per-persona voice config) or [`caller-memory.md`](docs/plans/caller-memory.md) (caller facts in private, sitting transcript in Postgres).
+4. [`docs/architecture.md`](docs/architecture.md) / [`docs/architecture/memory.md`](docs/architecture/memory.md) — how it is built, and the memory contract. The browser audio path: [`docs/architecture/voice-audio.md`](docs/architecture/voice-audio.md).
+5. [`docs/reviews/`](docs/reviews/) — dated audits. A review is not rewritten when its findings are fixed. [`docs/tests/README.md`](docs/tests/README.md) — every check and probe. [`docs/ops/deploy.md`](docs/ops/deploy.md) — production shape.
 
 When code and docs disagree about *intent*, ask. When you need to know *how the system actually behaves*, read the code — never assume the MD files are still accurate about implementation details.
 
@@ -66,11 +66,11 @@ When code and docs disagree about *intent*, ask. When you need to know *how the 
 
 ## 6. How to start with this codebase
 
-**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Personas are built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green. Live sittings left from that work: [`docs/PHASE_5_PLAN.md`](docs/PHASE_5_PLAN.md) §4. Engram-side per-member private memory works as of 8 Sep 2026: each member authenticates with their own session token, so their turns land in their own private pool, and a member we cannot credential degrades to shared-only rather than falling back to the key owner ([`docs/ENGRAM.md`](docs/ENGRAM.md) §2.3, §11). Read [`docs/ENGRAM_PRIVATE_ROLLOUT.md`](docs/ENGRAM_PRIVATE_ROLLOUT.md) before touching memory.
+**Phases 0–4 product work are complete.** Typed chat works at `/chat` and a spoken call works at `/voice`. Failure handling, the read API, the personal app, the owner admin app, per-turn traces, the latency budget check, the security review, the test suite, waitlist, quotas, data lifecycle, local ops alerts, and public `/status` are in. **Personas are built end to end**: many local rows; create or link, teach, ingest, publish, unpublish-with-confirmation and destroy on `/admin/persona`; pickers on `/chat`, `/voice`, `/dashboard` and the owner conversation list, with sittings and memory pinned to that persona; first talk joins Engram People, stores Engram's `user_id`, subscribes that persona and fails closed. Automated checks (`npm test`, `isolation`, `security`, `failures`) are green. Live sittings left from that work: [`docs/archive/phase-5-plan.md`](docs/archive/phase-5-plan.md) §4. Engram-side per-member private memory works as of 8 Sep 2026: each member authenticates with their own session token, so their turns land in their own private pool, and a member we cannot credential degrades to shared-only rather than falling back to the key owner ([`docs/architecture/memory.md`](docs/architecture/memory.md) §2.3, §11). Read [`docs/archive/engram-private-rollout.md`](docs/archive/engram-private-rollout.md) before touching memory.
 
-**Current work is [`docs/CALLER_MEMORY_PLAN.md`](docs/CALLER_MEMORY_PLAN.md)** (LLM-filtered caller facts in Engram private; this sitting stays in Postgres). Cloned Fish voices and member UI are paused in [`docs/PHASE_6_PLAN.md`](docs/PHASE_6_PLAN.md) until he names a part from that file. Do not start parked product in [`docs/FUTURE.md`](docs/FUTURE.md) until he names it. A first production deploy was named: `cognora-alpha-rg`, linear `infra/azure/deploy.sh`, GoDaddy DNS, then the existing Google OAuth client. No CI/CD, no blob persist, no backups, no security 2.0.
+**Current work is [`docs/plans/voice-audio.md`](docs/plans/voice-audio.md)** on branch `frontend`: the spoken call is half-duplex over the loudspeaker because echo cancellation was turned off to get sound out of the earpiece, and nobody can interrupt the persona. Phase 1 measures both modes on a real device before any code commits to one — see [`docs/decisions/0011-audio-mode-is-measured-not-assumed.md`](docs/decisions/0011-audio-mode-is-measured-not-assumed.md). Also open: [`docs/plans/caller-memory.md`](docs/plans/caller-memory.md). Nothing in [`docs/archive/`](docs/archive/README.md) starts until he names it. A first production deploy was named: `cognora-alpha-rg`, linear `infra/azure/deploy.sh`, GoDaddy DNS, then the existing Google OAuth client. No CI/CD, no blob persist, no backups, no security 2.0.
 
-Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until a storage account is named) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls need a live public think URL (`BYO_LLM_PUBLIC_URL`). Locally that is a tunnel; in production it is the public origin. Measured numbers and what the code taught us: [`docs/SHIPPED.md`](docs/SHIPPED.md). Engram pools and isolation: [`docs/ENGRAM.md`](docs/ENGRAM.md).
+Two things are deliberately off: blob audio archiving (`VOICE_AUDIO_PERSIST_ENABLED=false`, until a storage account is named) and the slower `BRAIN_MODE=chat` brain, kept as a switch. Spoken calls need a live public think URL (`BYO_LLM_PUBLIC_URL`). Locally that is a tunnel; in production it is the public origin. Measured numbers and what the code taught us: [`docs/archive/shipped.md`](docs/archive/shipped.md). Engram pools and isolation: [`docs/architecture/memory.md`](docs/architecture/memory.md).
 
 Install and run (after copying `.env.example` to `.env` and filling secrets):
 
@@ -131,9 +131,9 @@ npm run infra:reset
 - npm workspaces at the repo root. Packages: `frontend/`, `gateway/`. Worker is Python (uv) and is not in the JS workspace.
 - `frontend/` — React 18 + Vite + Tailwind UI. Landing is `/`. Public `/status` shows live health (no sign-in). Signed-in members use `/dashboard` (Home, Chat, Voice); unapproved Google accounts land on `/waitlist` with no `users` row. `/admin` is a separate owner-only app. The Metacognition gallery is not in this repo — take primitives from `Desktop/component-library` when a screen needs one. Notes: `frontend/COMPONENT_LIBRARY.md`.
 - `gateway/` — TypeScript service: Google auth, chat HTTP, admin proxy. Phase 2 adds the WebSocket bridge to Deepgram.
-- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/TRD.md) §1.2.
+- `worker/` — Python (uv, `pyproject.toml`, `src/worker/`): Engram wrapper, reframe, controller, `POST /internal/turn`, and the OpenAI-compatible BYO-LLM endpoint Deepgram calls. `BRAIN_MODE` selects which Engram call answers a turn; see [TRD](docs/architecture.md) §1.2.
 - `infra/` — Docker Compose, migrations, scripts.
-- `docs/` — PRD, TRD, phase plans.
+- `docs/` — index at [`docs/README.md`](docs/README.md): status, architecture, plans, decisions, reviews, ops, archive.
 
 External services you must have credentials for (Tauqueer holds the accounts): Deepgram, Engram, OpenAI (or the configured reframe LLM), Azure Blob Storage, Google OAuth, and Fish Audio when a persona uses a cloned voice. All secrets come from environment/config. Google Sign-In is required to boot the gateway. Azure and Deepgram stay optional until those keys are set; `npm run smoke` reports `SKIP` until then. Engram and OpenAI are required for the live brain (typed chat and voice). A Fish key is required only for sittings whose persona has a Fish voice id.
 
@@ -146,7 +146,7 @@ External services you must have credentials for (Tauqueer holds the accounts): D
 - **Build for production, not just to pass a demo.** No "TODO later" holes in a part you called done.
 - **Reference the code, not the docs, for behavior.** Keep docs updated when you change intent, but trust the code as ground truth.
 - **Use Context7 MCP for any library/API documentation, setup, or configuration lookups** (Engram SDK, Deepgram, OpenAI, Fish Audio, etc.). If Context7 MCP is not connected in your session, say so and set it up before relying on memory. The Engram alpha docs (<https://engram-docs-alpha.netlify.app/llms.txt>), Deepgram docs (<https://developers.deepgram.com/>), and Fish Audio docs (<https://docs.fish.audio/llms.txt>) are the authoritative fallback.
-- **Respect Engram's contracts:** never build tenant strings by hand; use the persona endpoints; carry `session_id` across a conversation; read `tenant` off each retrieve row. Full map: [`docs/ENGRAM.md`](docs/ENGRAM.md).
+- **Respect Engram's contracts:** never build tenant strings by hand; use the persona endpoints; carry `session_id` across a conversation; read `tenant` off each retrieve row. Full map: [`docs/architecture/memory.md`](docs/architecture/memory.md).
 
 ---
 

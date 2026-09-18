@@ -13,12 +13,12 @@ Industry practice (Diátaxis; Nygard/MADR ADRs; short `AGENTS.md` with progressi
 ## Decision
 
 - Canonical map: [docs/README.md](../README.md).
-- Snapshot: [docs/CONTEXT.md](../CONTEXT.md).
-- How we update docs and run a sitting: [docs/WORKFLOW.md](../WORKFLOW.md) plus [AGENTS.md](../../AGENTS.md).
+- Snapshot: [docs/CONTEXT.md](../progress.md).
+- How we update docs and run a sitting: [docs/WORKFLOW.md](../archive/workflow.md) plus [AGENTS.md](../../AGENTS.md).
 - Decisions: numbered Markdown under [docs/decisions/](README.md). One decision per file. Accepted records are not rewritten; a later record supersedes them.
 - Existing PRD, TRD, ENGRAM, phase plans, SHIPPED, FUTURE stay at `docs/*.md`. We map them to Diátaxis roles in the README. We do **not** move them into empty `tutorials/` / `how-to/` / `reference/` / `explanation/` directories.
 - `AGENTS.md` stays the always-on operating manual (owner, loop, commits, how to start). It points at the map instead of duplicating every file’s job.
 
 ## Consequences
 
-Agents have a single entry path and a place to put new locks without bloating the TRD. Moving files later would break links; the map is the structure, not new folders. If a lock in an ADR and the TRD drift, stop and ask — intent vs behaviour is in [WORKFLOW.md](../WORKFLOW.md).
+Agents have a single entry path and a place to put new locks without bloating the TRD. Moving files later would break links; the map is the structure, not new folders. If a lock in an ADR and the TRD drift, stop and ask — intent vs behaviour is in [WORKFLOW.md](../archive/workflow.md).

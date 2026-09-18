@@ -8,7 +8,7 @@
 
 Engram keeps two pools under a persona: shared teach (who the persona is) and the caller's private history. After the labelled retrieve path, both lists still reached the answerer on every turn. A self-directed question ("what do I do?") could still see the persona's bio; a persona-directed one could still see the member's history.
 
-Choosing the pool is language understanding. Keyword matching, pronoun tables, and intent if/else are forbidden ([TRD](../TRD.md) §1.5, [AGENTS.md](../../AGENTS.md) §7). A classifier placed *before* Engram would add a full round trip to first word. Retrieve is already 0.7–1.5s; that window is where the decision has to finish.
+Choosing the pool is language understanding. Keyword matching, pronoun tables, and intent if/else are forbidden ([TRD](../architecture.md) §1.5, [AGENTS.md](../../AGENTS.md) §7). A classifier placed *before* Engram would add a full round trip to first word. Retrieve is already 0.7–1.5s; that window is where the decision has to finish.
 
 `may_ground` is unconditional and structural. Nothing above it may bypass it or make it depend on the scope choice.
 
